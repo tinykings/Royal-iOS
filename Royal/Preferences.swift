@@ -1,4 +1,4 @@
-import Foundation
+import SwiftUI
 
 // Choices made in Settings, stored with @AppStorage under these keys.
 enum Preference {
@@ -8,6 +8,39 @@ enum Preference {
     static let hnOpen = "hnOpen"
     static let youtubePlayback = "youtubePlayback"
     static let listWhilePlaying = "listWhilePlaying"
+    static let feedTextSize = "feedTextSize"
+}
+
+// Text size for feed posts, a step on the Settings slider. Applied as a Dynamic
+// Type size so titles, details and icons all scale together.
+enum FeedTextSize: Int, CaseIterable {
+    case xSmall, small, medium, large, xLarge, xxLarge, xxxLarge
+
+    static let standard = FeedTextSize.large
+
+    var dynamicTypeSize: DynamicTypeSize {
+        switch self {
+        case .xSmall: .xSmall
+        case .small: .small
+        case .medium: .medium
+        case .large: .large
+        case .xLarge: .xLarge
+        case .xxLarge: .xxLarge
+        case .xxxLarge: .xxxLarge
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .xSmall: "Extra Small"
+        case .small: "Small"
+        case .medium: "Medium"
+        case .large: "Default"
+        case .xLarge: "Large"
+        case .xxLarge: "Extra Large"
+        case .xxxLarge: "Huge"
+        }
+    }
 }
 
 // How Reddit and YouTube posts are shown.

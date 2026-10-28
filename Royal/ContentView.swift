@@ -15,31 +15,25 @@ struct ContentView: View {
                         .id(post.id)
                 }
                 // Hidden rather than removed so each tab keeps its scroll position.
-                // All opens first. The system tab bar is hidden in favor of TabPills.
+                // All opens first.
                 TabView(selection: $store.selectedTab) {
                     HackerNewsFeedView()
                         .tabItem { Label("Hacker News", systemImage: "y.square") }
                         .tag(AppTab.hn)
-                        .toolbar(.hidden, for: .tabBar)
                     RedditFeedView()
-                        .tabItem { Label("Reddit", systemImage: "bubble.left.and.bubble.right") }
+                        .tabItem { Label { Text("Reddit") } icon: { Image(uiImage: TabIcons.reddit) } }
                         .tag(AppTab.reddit)
-                        .toolbar(.hidden, for: .tabBar)
                     CombinedFeedView()
-                        .tabItem { Label("All", systemImage: "crown") }
+                        .tabItem {
+                            Label { Text("All") } icon: { Image(uiImage: TabIcons.crown(selected: store.selectedTab == .all)) }
+                        }
                         .tag(AppTab.all)
-                        .toolbar(.hidden, for: .tabBar)
                     FeedListView(title: "YouTube", keys: [.youtube])
                         .tabItem { Label("YouTube", systemImage: "play.rectangle") }
                         .tag(AppTab.youtube)
-                        .toolbar(.hidden, for: .tabBar)
                     SettingsView()
                         .tabItem { Label("Settings", systemImage: "gearshape") }
                         .tag(AppTab.settings)
-                        .toolbar(.hidden, for: .tabBar)
-                }
-                .safeAreaInset(edge: .bottom) {
-                    TabPills(selection: $store.selectedTab)
                 }
                 // After visiting Settings (possibly to log in), retry feeds that failed.
                 .onChange(of: store.selectedTab) { oldTab, _ in
@@ -61,12 +55,10 @@ struct CombinedFeedView: View {
     var body: some View {
         FeedListView(title: "Royal", keys: FeedKey.combined, showsSource: true, savedOnly: showSaved,
                      subtitle: showSaved ? "Saved" : "All") {
-            Picker("Show", selection: $showSaved) {
-                Image(systemName: "square.stack").accessibilityLabel("All").tag(false)
-                Image(systemName: "heart").accessibilityLabel("Saved").tag(true)
+            IconSegments {
+                IconSegment(icon: "square.stack", title: "All", selected: !showSaved) { showSaved = false }
+                IconSegment(icon: "heart", title: "Saved", selected: showSaved) { showSaved = true }
             }
-            .pickerStyle(.segmented)
-            .fixedSize()
         }
     }
 }

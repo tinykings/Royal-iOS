@@ -345,6 +345,7 @@ struct PostRow: View {
     var showsSource = false
     var layout = FeedLayout.list
     var saved = false
+    @AppStorage(Preference.feedTextSize) private var textSize = FeedTextSize.standard
 
     var body: some View {
         Group {
@@ -354,6 +355,7 @@ struct PostRow: View {
                 row
             }
         }
+        .dynamicTypeSize(textSize.dynamicTypeSize)
         // Room below a list thumbnail so the heart doesn't sit on it.
         .padding(.bottom, saved && layout == .list && thumbnail != nil ? 20 : 0)
         .overlay(alignment: .bottomTrailing) {

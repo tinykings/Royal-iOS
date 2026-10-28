@@ -10,6 +10,7 @@ struct SettingsView: View {
     @AppStorage(Preference.redditLayout) private var redditLayout = FeedLayout.list
     @AppStorage(Preference.redditOpen) private var redditOpen = OpenTarget.link
     @AppStorage(Preference.hnOpen) private var hnOpen = OpenTarget.link
+    @AppStorage(Preference.feedTextSize) private var feedTextSize = FeedTextSize.standard
 
     private static let redditLogin = URL(string: "https://www.reddit.com/login/")!
     private static let youtubeLogin = URL(string: "https://accounts.google.com/ServiceLogin?service=youtube"
@@ -18,6 +19,35 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    VStack(spacing: 8) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "textformat.size.smaller")
+                                .accessibilityHidden(true)
+                            Slider(value: textSizeStep, in: 0...Double(FeedTextSize.allCases.count - 1), step: 1) {
+                                Text("Text size")
+                            }
+                            .accessibilityValue(feedTextSize.title)
+                            Image(systemName: "textformat.size.larger")
+                                .accessibilityHidden(true)
+                        }
+                        .foregroundStyle(.secondary)
+                        // Live sample at the chosen size.
+                        Text("The quick brown fox jumps over the lazy dog")
+                            .font(.body)
+                            .dynamicTypeSize(feedTextSize.dynamicTypeSize)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(.vertical, 4)
+                } header: {
+                    HStack {
+                        Text("Text Size")
+                        Spacer()
+                        Text(feedTextSize.title)
+                    }
+                } footer: {
+                    Text("Sets the size of post text in every feed.")
+                }
                 Section {
                     NavigationLink {
                         LoginPage(title: "YouTube", url: Self.youtubeLogin)
@@ -81,6 +111,15 @@ struct SettingsView: View {
             .toolbar(store.playingVideo != nil ? .hidden : .visible, for: .navigationBar)
             // Runs again when returning from a login page.
             .onAppear { Task { await store.refreshLoginStatus() } }
+        }
+    }
+
+    // The slider works in Doubles; snap to a FeedTextSize step.
+    private var textSizeStep: Binding<Double> {
+        Binding {
+            Double(feedTextSize.rawValue)
+        } set: {
+            feedTextSize = FeedTextSize(rawValue: Int($0.rounded())) ?? .standard
         }
     }
 

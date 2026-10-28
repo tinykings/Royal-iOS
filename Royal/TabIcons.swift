@@ -1,60 +1,22 @@
 import SwiftUI
 
-// Bottom navigation split into three pieces: a Hacker News/Reddit pill, the All
-// crown on its own, and a YouTube/Settings pill. Replaces the system tab bar,
-// which can't be split this way. Icons only; labels are for VoiceOver.
-struct TabPills: View {
-    @Binding var selection: AppTab
-
-    var body: some View {
-        HStack(spacing: 10) {
-            pill {
-                item(.hn, "Hacker News") { Image(systemName: "y.square") }
-                item(.reddit, "Reddit") { RedditGlyph().frame(width: 26, height: 24) }
-            }
-            Button { selection = .all } label: {
-                Image(systemName: selection == .all ? "crown.fill" : "crown")
-                    .font(.title2)
-                    .frame(width: 56, height: 56)
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(selection == .all ? Color.accentColor : .primary)
-            .glassBackground(Circle())
-            .accessibilityLabel("All")
-            .accessibilityAddTraits(selection == .all ? .isSelected : [])
-            pill {
-                item(.youtube, "YouTube") { Image(systemName: "play.rectangle") }
-                item(.settings, "Settings") { Image(systemName: "gearshape") }
-            }
-        }
-        .padding(.horizontal)
-        .padding(.bottom, 4)
+// Tab bar icons the system tab bar can't make from a plain SF Symbol name.
+@MainActor
+enum TabIcons {
+    // The tab bar tints template images itself, so the crown is drawn with its
+    // own color baked in to stay gold whether or not All is selected.
+    static func crown(selected: Bool) -> UIImage {
+        let image = UIImage(systemName: selected ? "crown.fill" : "crown") ?? UIImage()
+        return image.withTintColor(UIColor(Color.royalGold), renderingMode: .alwaysOriginal)
     }
 
-    private func pill<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        HStack(spacing: 0) { content() }
-            .padding(4)
-            .glassBackground(Capsule())
-    }
-
-    private func item<Icon: View>(_ tab: AppTab, _ title: String, @ViewBuilder icon: () -> Icon) -> some View {
-        Button { selection = tab } label: {
-            icon()
-                .font(.title2)
-                .frame(width: 56, height: 48)
-                .background {
-                    if selection == tab {
-                        Capsule().fill(.primary.opacity(0.1))
-                    }
-                }
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(selection == tab ? Color.accentColor : .primary)
-        .accessibilityLabel(title)
-        .accessibilityAddTraits(selection == tab ? .isSelected : [])
-    }
+    // RedditGlyph rendered once as a template image, so the tab bar tints it
+    // like the other icons.
+    static let reddit: UIImage = {
+        let renderer = ImageRenderer(content: RedditGlyph().frame(width: 26, height: 24).foregroundStyle(.black))
+        renderer.scale = 3
+        return (renderer.uiImage ?? UIImage()).withRenderingMode(.alwaysTemplate)
+    }()
 }
 
 // Simplified Snoo (Reddit's alien) drawn in the current foreground style, since
@@ -91,6 +53,10 @@ struct RedditGlyph: View {
         }
         .accessibilityHidden(true)
     }
+}
+
+extension Color {
+    static let royalGold = Color(red: 0.85, green: 0.65, blue: 0.13)
 }
 
 extension View {
