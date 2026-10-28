@@ -15,24 +15,24 @@ struct ContentView: View {
                         .id(post.id)
                 }
                 // Hidden rather than removed so each tab keeps its scroll position.
-                // All opens first.
+                // All opens first. Tabs are icons only; labels are for VoiceOver.
                 TabView(selection: $store.selectedTab) {
-                    HackerNewsFeedView()
-                        .tabItem { Label("Hacker News", systemImage: "y.square") }
-                        .tag(AppTab.hn)
                     RedditFeedView()
-                        .tabItem { Label { Text("Reddit") } icon: { Image(uiImage: TabIcons.reddit) } }
+                        .tabItem { Image(uiImage: TabIcons.reddit).accessibilityLabel("Reddit") }
                         .tag(AppTab.reddit)
+                    HackerNewsFeedView()
+                        .tabItem { Image(systemName: "y.square").accessibilityLabel("Hacker News") }
+                        .tag(AppTab.hn)
                     CombinedFeedView()
                         .tabItem {
-                            Label { Text("All") } icon: { Image(uiImage: TabIcons.crown(selected: store.selectedTab == .all)) }
+                            Image(uiImage: TabIcons.crown(selected: store.selectedTab == .all)).accessibilityLabel("All")
                         }
                         .tag(AppTab.all)
                     FeedListView(title: "YouTube", keys: [.youtube])
-                        .tabItem { Label("YouTube", systemImage: "play.rectangle") }
+                        .tabItem { Image(systemName: "play.rectangle").accessibilityLabel("YouTube") }
                         .tag(AppTab.youtube)
                     SettingsView()
-                        .tabItem { Label("Settings", systemImage: "gearshape") }
+                        .tabItem { Image(systemName: "gearshape").accessibilityLabel("Settings") }
                         .tag(AppTab.settings)
                 }
                 // After visiting Settings (possibly to log in), retry feeds that failed.

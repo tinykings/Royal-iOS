@@ -13,7 +13,7 @@ enum TabIcons {
     // RedditGlyph rendered once as a template image, so the tab bar tints it
     // like the other icons.
     static let reddit: UIImage = {
-        let renderer = ImageRenderer(content: RedditGlyph().frame(width: 26, height: 24).foregroundStyle(.black))
+        let renderer = ImageRenderer(content: RedditGlyph().frame(width: 32, height: 30).foregroundStyle(.black))
         renderer.scale = 3
         return (renderer.uiImage ?? UIImage()).withRenderingMode(.alwaysTemplate)
     }()
