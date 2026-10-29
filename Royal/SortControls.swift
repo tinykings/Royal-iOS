@@ -1,63 +1,27 @@
 import SwiftUI
 
-// Icon-only header toggle styled to match the tab bar's glass pills. Built by hand
-// rather than as a segmented Picker so a segment can open a menu (Reddit's Top).
-struct IconSegments<Content: View>: View {
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        HStack(spacing: 0) { content }
-            .padding(3)
-            .glassBackground(Capsule())
-    }
-}
-
-struct IconSegmentLabel: View {
-    let icon: String
+// Icon-only segmented control for feed headers. A segmented Picker sized to fit
+// squeezes icon segments together, so each segment gets a set width instead.
+struct HeaderPicker<Value: Hashable>: View {
     let title: String
-    let selected: Bool
+    @Binding var selection: Value
+    let options: [HeaderOption<Value>]
 
     var body: some View {
-        Image(systemName: icon)
-            .font(.body)
-            .frame(width: 42, height: 32)
-            .background {
-                if selected {
-                    Capsule().fill(.primary.opacity(0.1))
-                }
+        Picker(title, selection: $selection) {
+            ForEach(options, id: \.value) { option in
+                Image(systemName: option.icon)
+                    .accessibilityLabel(option.title)
+                    .tag(option.value)
             }
-            .foregroundStyle(selected ? Color.accentColor : .primary)
-            .contentShape(Capsule())
-            .accessibilityLabel(title)
-            .accessibilityAddTraits(selected ? .isSelected : [])
+        }
+        .pickerStyle(.segmented)
+        .frame(width: CGFloat(options.count) * 52)
     }
 }
 
-struct IconSegment: View {
+struct HeaderOption<Value: Hashable> {
+    let value: Value
     let icon: String
     let title: String
-    let selected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            IconSegmentLabel(icon: icon, title: title, selected: selected)
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-enum RedditTimeframe: String, CaseIterable, Identifiable {
-    case day, week, month, year
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .day: "Today"
-        case .week: "This Week"
-        case .month: "This Month"
-        case .year: "This Year"
-        }
-    }
 }

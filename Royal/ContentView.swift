@@ -55,44 +55,25 @@ struct CombinedFeedView: View {
     var body: some View {
         FeedListView(title: "Royal", keys: FeedKey.combined, showsSource: true, savedOnly: showSaved,
                      subtitle: showSaved ? "Saved" : "All") {
-            IconSegments {
-                IconSegment(icon: "square.stack", title: "All", selected: !showSaved) { showSaved = false }
-                IconSegment(icon: "heart", title: "Saved", selected: showSaved) { showSaved = true }
-            }
+            HeaderPicker(title: "Show", selection: $showSaved, options: [
+                HeaderOption(value: false, icon: "square.stack", title: "All"),
+                HeaderOption(value: true, icon: "heart", title: "Saved"),
+            ])
         }
     }
 }
 
 struct RedditFeedView: View {
     @State private var sort = "best"
-    @State private var timeframe = RedditTimeframe.day
 
     var body: some View {
-        FeedListView(title: "Reddit", keys: [.reddit(sort: sort, timeframe: timeframe.rawValue)],
-                     subtitle: sort == "top" ? "Top · \(timeframe.title)" : sort.capitalized) {
-            IconSegments {
-                IconSegment(icon: "rosette", title: "Best", selected: sort == "best") { sort = "best" }
-                // Top asks for a timeframe first.
-                Menu {
-                    ForEach(RedditTimeframe.allCases) { option in
-                        Button {
-                            timeframe = option
-                            sort = "top"
-                        } label: {
-                            if sort == "top" && timeframe == option {
-                                Label(option.title, systemImage: "checkmark")
-                            } else {
-                                Text(option.title)
-                            }
-                        }
-                    }
-                } label: {
-                    IconSegmentLabel(icon: "trophy", title: "Top", selected: sort == "top")
-                }
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                IconSegment(icon: "clock", title: "New", selected: sort == "new") { sort = "new" }
-            }
+        // Top is always today's, so Best uses the same feed as the All page.
+        FeedListView(title: "Reddit", keys: [.reddit(sort: sort, timeframe: "day")], subtitle: sort.capitalized) {
+            HeaderPicker(title: "Sort", selection: $sort, options: [
+                HeaderOption(value: "best", icon: "rosette", title: "Best"),
+                HeaderOption(value: "top", icon: "trophy", title: "Top"),
+                HeaderOption(value: "new", icon: "clock", title: "New"),
+            ])
         }
     }
 }
@@ -102,10 +83,10 @@ struct HackerNewsFeedView: View {
 
     var body: some View {
         FeedListView(title: "Hacker News", keys: [.hn(list: list)], subtitle: list.capitalized) {
-            IconSegments {
-                IconSegment(icon: "trophy", title: "Top", selected: list == "top") { list = "top" }
-                IconSegment(icon: "clock", title: "New", selected: list == "new") { list = "new" }
-            }
+            HeaderPicker(title: "List", selection: $list, options: [
+                HeaderOption(value: "top", icon: "trophy", title: "Top"),
+                HeaderOption(value: "new", icon: "clock", title: "New"),
+            ])
         }
     }
 }

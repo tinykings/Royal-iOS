@@ -58,15 +58,3 @@ struct RedditGlyph: View {
 extension Color {
     static let royalGold = Color(red: 0.85, green: 0.65, blue: 0.13)
 }
-
-extension View {
-    // Liquid Glass where available, a blurred material before iOS 26.
-    @ViewBuilder
-    func glassBackground<S: Shape>(_ shape: S) -> some View {
-        if #available(iOS 26, *) {
-            glassEffect(.regular.interactive(), in: shape)
-        } else {
-            background(.ultraThinMaterial, in: shape)
-        }
-    }
-}
