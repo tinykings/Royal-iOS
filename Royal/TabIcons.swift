@@ -4,10 +4,17 @@ import SwiftUI
 @MainActor
 enum TabIcons {
     // The tab bar tints template images itself, so the crown is drawn with its
-    // own color baked in to stay gold whether or not All is selected.
-    static func crown(selected: Bool) -> UIImage {
-        let image = UIImage(systemName: selected ? "crown.fill" : "crown") ?? UIImage()
-        return image.withTintColor(UIColor(Color.royalGold), renderingMode: .alwaysOriginal)
+    // own colors baked in: always filled gold, with a black outline in light
+    // mode where gold alone washes out against the pale bar.
+    static func crown(outlined: Bool) -> UIImage {
+        let fill = (UIImage(systemName: "crown.fill") ?? UIImage())
+            .withTintColor(UIColor(Color.royalGold), renderingMode: .alwaysOriginal)
+        guard outlined, let outline = UIImage(systemName: "crown") else { return fill }
+        let image = UIGraphicsImageRenderer(size: fill.size).image { _ in
+            fill.draw(at: .zero)
+            outline.withTintColor(.black, renderingMode: .alwaysOriginal).draw(in: CGRect(origin: .zero, size: fill.size))
+        }
+        return image.withRenderingMode(.alwaysOriginal)
     }
 
     // RedditGlyph rendered once as a template image, so the tab bar tints it

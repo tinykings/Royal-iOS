@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var store = FeedStore()
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         // Landscape has no room for feeds under the video, so it plays full screen.
@@ -25,7 +26,7 @@ struct ContentView: View {
                         .tag(AppTab.hn)
                     CombinedFeedView()
                         .tabItem {
-                            Image(uiImage: TabIcons.crown(selected: store.selectedTab == .all)).accessibilityLabel("All")
+                            Image(uiImage: TabIcons.crown(outlined: colorScheme == .light)).accessibilityLabel("All")
                         }
                         .tag(AppTab.all)
                     FeedListView(title: "YouTube", keys: [.youtube])
