@@ -4,7 +4,6 @@ import UIKit
 struct ContentView: View {
     @StateObject private var store = FeedStore()
     @Environment(\.verticalSizeClass) private var verticalSizeClass
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
     // The tabs in the order TabView lays them out, for mapping tab bar indexes back.
     private static let tabOrder: [AppTab] = [.reddit, .hn, .all, .youtube, .settings]
@@ -29,7 +28,7 @@ struct ContentView: View {
                     .tag(AppTab.hn)
                 CombinedFeedView()
                     .tabItem {
-                        Image(uiImage: TabIcons.crown(selected: store.selectedTab == .all, outlined: colorScheme == .light))
+                        Image(uiImage: TabIcons.crown(selected: store.selectedTab == .all))
                             .accessibilityLabel("All")
                     }
                     .tag(AppTab.all)

@@ -4,11 +4,10 @@ import SwiftUI
 @MainActor
 enum TabIcons {
     // The tab bar tints template images itself, so the selected crown is drawn with
-    // its own colors baked in: filled gold, with a black outline in light mode where
-    // gold alone washes out against the pale bar. Unselected, it's a template like the
-    // other tabs, so it doesn't look selected too.
+    // its own gold baked in. Unselected, it's a template like the other tabs, so it
+    // doesn't look selected too.
     // Drawn at twice the symbol's default size so it stands out from the other tabs.
-    static func crown(selected: Bool, outlined: Bool) -> UIImage {
+    static func crown(selected: Bool) -> UIImage {
         let symbol = UIImage(systemName: "crown.fill") ?? UIImage()
         let rect = CGRect(origin: .zero, size: CGSize(width: symbol.size.width * 2, height: symbol.size.height * 2))
         guard selected else {
@@ -19,9 +18,6 @@ enum TabIcons {
         }
         let image = UIGraphicsImageRenderer(size: rect.size).image { _ in
             symbol.withTintColor(UIColor(Color.royalGold), renderingMode: .alwaysOriginal).draw(in: rect)
-            if outlined, let outline = UIImage(systemName: "crown") {
-                outline.withTintColor(.black, renderingMode: .alwaysOriginal).draw(in: rect)
-            }
         }
         return image.withRenderingMode(.alwaysOriginal)
     }
