@@ -28,7 +28,7 @@ struct ContentView: View {
                     .tag(AppTab.hn)
                 CombinedFeedView()
                     .tabItem {
-                        Image(uiImage: TabIcons.crown(selected: store.selectedTab == .all))
+                        Image(uiImage: TabIcons.crown)
                             .accessibilityLabel("All")
                     }
                     .tag(AppTab.all)

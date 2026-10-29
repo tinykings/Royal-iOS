@@ -3,24 +3,17 @@ import SwiftUI
 // Tab bar icons the system tab bar can't make from a plain SF Symbol name.
 @MainActor
 enum TabIcons {
-    // The tab bar tints template images itself, so the selected crown is drawn with
-    // its own gold baked in. Unselected, it's a template like the other tabs, so it
-    // doesn't look selected too.
-    // Drawn at twice the symbol's default size so it stands out from the other tabs.
-    static func crown(selected: Bool) -> UIImage {
+    // A filled crown as a template image, so the tab bar tints it like the other tabs:
+    // the app's gold when selected. Drawn at twice the symbol's default size so it
+    // stands out from the other tabs.
+    static let crown: UIImage = {
         let symbol = UIImage(systemName: "crown.fill") ?? UIImage()
         let rect = CGRect(origin: .zero, size: CGSize(width: symbol.size.width * 2, height: symbol.size.height * 2))
-        guard selected else {
-            let image = UIGraphicsImageRenderer(size: rect.size).image { _ in
-                symbol.withTintColor(.black, renderingMode: .alwaysOriginal).draw(in: rect)
-            }
-            return image.withRenderingMode(.alwaysTemplate)
-        }
         let image = UIGraphicsImageRenderer(size: rect.size).image { _ in
-            symbol.withTintColor(UIColor(Color.royalGold), renderingMode: .alwaysOriginal).draw(in: rect)
+            symbol.withTintColor(.black, renderingMode: .alwaysOriginal).draw(in: rect)
         }
-        return image.withRenderingMode(.alwaysOriginal)
-    }
+        return image.withRenderingMode(.alwaysTemplate)
+    }()
 
     // RedditGlyph rendered once as a template image, so the tab bar tints it
     // like the other icons.
@@ -68,9 +61,8 @@ struct RedditGlyph: View {
 }
 
 extension Color {
-    static let royalGold = Color(red: 0.85, green: 0.65, blue: 0.13)
-    // The app's tint: royal gold, darkened in light mode so buttons and text in it
-    // stay readable on white.
+    // The app's tint: royal gold, darkened in light mode so buttons, text and the
+    // selected tab icon stay readable on white.
     static let royalAccent = Color(UIColor { traits in
         traits.userInterfaceStyle == .dark
             ? UIColor(red: 0.85, green: 0.65, blue: 0.13, alpha: 1)
