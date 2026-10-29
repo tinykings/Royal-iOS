@@ -3,16 +3,16 @@ import SwiftUI
 // Tab bar icons the system tab bar can't make from a plain SF Symbol name.
 @MainActor
 enum TabIcons {
-    // A filled crown as a template image, so the tab bar tints it like the other tabs:
-    // the app's gold when selected. Drawn at twice the symbol's default size so it
-    // stands out from the other tabs.
+    // The app icon's crown as a template image, so the tab bar tints it like the other
+    // tabs: the app's gold when selected. Drawn larger than the other icons so it
+    // stands out.
     static let crown: UIImage = {
-        let symbol = UIImage(systemName: "crown.fill") ?? UIImage()
-        let rect = CGRect(origin: .zero, size: CGSize(width: symbol.size.width * 2, height: symbol.size.height * 2))
-        let image = UIGraphicsImageRenderer(size: rect.size).image { _ in
-            symbol.withTintColor(.black, renderingMode: .alwaysOriginal).draw(in: rect)
-        }
-        return image.withRenderingMode(.alwaysTemplate)
+        let width: CGFloat = 44
+        let renderer = ImageRenderer(content: RoyalCrown()
+            .fill(.black)
+            .frame(width: width, height: width / RoyalCrown.aspectRatio))
+        renderer.scale = 3
+        return (renderer.uiImage ?? UIImage()).withRenderingMode(.alwaysTemplate)
     }()
 
     // RedditGlyph rendered once as a template image, so the tab bar tints it
@@ -22,6 +22,41 @@ enum TabIcons {
         renderer.scale = 3
         return (renderer.uiImage ?? UIImage()).withRenderingMode(.alwaysTemplate)
     }()
+}
+
+// The crown from the app icon: two side points and a diamond center over a separate
+// band. Traced on the icon's 1024×1024 grid and scaled from its bounds to fit.
+struct RoyalCrown: Shape {
+    private static let bounds = CGRect(x: 200, y: 250, width: 624, height: 520)
+    static let aspectRatio = bounds.width / bounds.height
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        // Left half, from the bottom-left corner of the crown up to its top point.
+        path.move(to: CGPoint(x: 310, y: 640))
+        path.addArc(tangent1End: CGPoint(x: 183, y: 305), tangent2End: CGPoint(x: 395, y: 467), radius: 40)
+        path.addLine(to: CGPoint(x: 395, y: 467))
+        path.addQuadCurve(to: CGPoint(x: 480, y: 460), control: CGPoint(x: 440, y: 505))
+        path.addQuadCurve(to: CGPoint(x: 485, y: 410), control: CGPoint(x: 500, y: 435))
+        path.addArc(tangent1End: CGPoint(x: 440, y: 350), tangent2End: CGPoint(x: 512, y: 252), radius: 14)
+        path.addArc(tangent1End: CGPoint(x: 512, y: 252), tangent2End: CGPoint(x: 584, y: 350), radius: 16)
+        // Right half, the mirror image.
+        path.addArc(tangent1End: CGPoint(x: 584, y: 350), tangent2End: CGPoint(x: 539, y: 410), radius: 14)
+        path.addLine(to: CGPoint(x: 539, y: 410))
+        path.addQuadCurve(to: CGPoint(x: 544, y: 460), control: CGPoint(x: 524, y: 435))
+        path.addQuadCurve(to: CGPoint(x: 629, y: 467), control: CGPoint(x: 584, y: 505))
+        path.addArc(tangent1End: CGPoint(x: 841, y: 305), tangent2End: CGPoint(x: 714, y: 640), radius: 40)
+        path.addLine(to: CGPoint(x: 714, y: 640))
+        path.closeSubpath()
+        // The band below.
+        path.addRoundedRect(in: CGRect(x: 310, y: 668, width: 404, height: 92), cornerSize: CGSize(width: 30, height: 30))
+
+        let bounds = Self.bounds
+        let scale = min(rect.width / bounds.width, rect.height / bounds.height)
+        return path.applying(CGAffineTransform(translationX: -bounds.midX, y: -bounds.midY)
+            .concatenating(CGAffineTransform(scaleX: scale, y: scale))
+            .concatenating(CGAffineTransform(translationX: rect.midX, y: rect.midY)))
+    }
 }
 
 // Simplified Snoo (Reddit's alien) drawn in the current foreground style, since
