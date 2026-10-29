@@ -104,6 +104,10 @@ test("YouTube ages become the latest possible publish time", () => {
   assert.equal(youTubePublishedAt("2 hours ago", 10000), 10000 - 7200);
   assert.equal(youTubePublishedAt("1 day ago", 100000), 100000 - 86400);
   assert.equal(youTubePublishedAt("Streamed 5 minutes ago", 1000), 700);
+  assert.equal(youTubePublishedAt("23h ago", 100000), 100000 - 82800);
+  assert.equal(youTubePublishedAt("5m ago", 1000), 700);
+  assert.equal(youTubePublishedAt("2mo ago", 1e8), 1e8 - 2 * 2592000);
+  assert.equal(youTubePublishedAt("1w ago", 1e6), 1e6 - 604800);
   assert.equal(youTubePublishedAt("Live", 1000), null);
   assert.equal(youTubePublishedAt("", 1000), null);
   const html = page({ items: [video()] });
