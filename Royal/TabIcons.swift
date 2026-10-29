@@ -6,13 +6,16 @@ enum TabIcons {
     // The tab bar tints template images itself, so the crown is drawn with its
     // own colors baked in: always filled gold, with a black outline in light
     // mode where gold alone washes out against the pale bar.
+    // Drawn at twice the symbol's default size so it stands out from the other tabs.
     static func crown(outlined: Bool) -> UIImage {
         let fill = (UIImage(systemName: "crown.fill") ?? UIImage())
             .withTintColor(UIColor(Color.royalGold), renderingMode: .alwaysOriginal)
-        guard outlined, let outline = UIImage(systemName: "crown") else { return fill }
-        let image = UIGraphicsImageRenderer(size: fill.size).image { _ in
-            fill.draw(at: .zero)
-            outline.withTintColor(.black, renderingMode: .alwaysOriginal).draw(in: CGRect(origin: .zero, size: fill.size))
+        let rect = CGRect(origin: .zero, size: CGSize(width: fill.size.width * 2, height: fill.size.height * 2))
+        let image = UIGraphicsImageRenderer(size: rect.size).image { _ in
+            fill.draw(in: rect)
+            if outlined, let outline = UIImage(systemName: "crown") {
+                outline.withTintColor(.black, renderingMode: .alwaysOriginal).draw(in: rect)
+            }
         }
         return image.withRenderingMode(.alwaysOriginal)
     }
