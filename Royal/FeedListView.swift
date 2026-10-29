@@ -6,12 +6,13 @@ struct FeedListView<Trailing: View>: View {
     @Environment(\.openURL) private var openURL
     @State private var browserURL: BrowserURL?
     @State private var scrolledAway = false
-    @AppStorage(Preference.redditLayout) private var redditLayout = FeedLayout.list
-    @AppStorage(Preference.youtubeLayout) private var youtubeLayout = FeedLayout.list
+    @AppStorage(Preference.redditLayout) private var redditLayout = FeedLayout.cards
+    @AppStorage(Preference.youtubeLayout) private var youtubeLayout = FeedLayout.cards
     @AppStorage(Preference.redditOpen) private var redditOpen = OpenTarget.link
     @AppStorage(Preference.hnOpen) private var hnOpen = OpenTarget.link
     @AppStorage(Preference.youtubePlayback) private var youtubePlayback = VideoPlayback.inApp
-    @AppStorage(Preference.listWhilePlaying) private var listWhilePlaying = false
+    @AppStorage(Preference.listWhilePlaying) private var listWhilePlaying = true
+    @AppStorage(Preference.setupComplete) private var setupComplete = false
     let title: String
     let keys: [FeedKey]
     var showsSource = false
@@ -27,9 +28,17 @@ struct FeedListView<Trailing: View>: View {
         // The header slides away while scrolling down, and stays hidden while the
         // docked video player is showing, to leave more room for the feed.
         let headerHidden = scrolledAway || store.playingVideo != nil
+        // On first open the All feed starts with a card for logging in, in place of login errors.
+        let showsSetup = keys == FeedKey.combined && !savedOnly && !setupComplete
         NavigationStack {
             List {
-                ForEach(savedOnly ? [] : keys, id: \.self) { key in
+                if showsSetup {
+                    SetupCard {
+                        setupComplete = true
+                        Task { await store.load(keys, force: true) }
+                    }
+                }
+                ForEach(savedOnly || showsSetup ? [] : keys, id: \.self) { key in
                     if let error = store.state(key).error {
                         Section {
                             VStack(alignment: .leading, spacing: 6) {
@@ -323,6 +332,65 @@ struct SafariView: UIViewControllerRepresentable {
 
         func safariViewControllerDidFinish(_ controller: SFSafariViewController) {
             dismiss()
+        }
+    }
+}
+
+// The All feed's first-open card: log in to Reddit and YouTube, then load the feed.
+struct SetupCard: View {
+    @EnvironmentObject private var store: FeedStore
+    @State private var loggingIn: FeedSource?
+    let complete: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Welcome to Royal")
+                .font(.title3.bold())
+            Text("Log in to Reddit and YouTube to see your subscriptions here alongside Hacker News. Close each login page when you're done. You can log in later from Settings.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            ForEach([FeedSource.reddit, .youtube]) { source in
+                let loggedIn = store.loggedIn[source] == true
+                Button {
+                    loggingIn = source
+                } label: {
+                    HStack {
+                        Image(systemName: loggedIn ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(loggedIn ? .green : .secondary)
+                        Text(loggedIn ? "Logged in to \(source.title)" : "Log in to \(source.title)")
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(12)
+                    .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+            }
+            Button(action: complete) {
+                Text("Complete Setup")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+        .padding(16)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: PostRow.cornerRadius))
+        .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+        .task { await store.refreshLoginStatus() }
+        // Check the login cookies once the page is closed.
+        .sheet(item: $loggingIn, onDismiss: { Task { await store.refreshLoginStatus() } }) { source in
+            NavigationStack {
+                LoginPage(title: source.title, url: source.loginURL!)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { loggingIn = nil }
+                        }
+                    }
+            }
         }
     }
 }

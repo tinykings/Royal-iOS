@@ -9,6 +9,8 @@ enum Preference {
     static let youtubePlayback = "youtubePlayback"
     static let listWhilePlaying = "listWhilePlaying"
     static let feedTextSize = "feedTextSize"
+    // Whether the All feed's first-open login card has been finished.
+    static let setupComplete = "setupComplete"
 }
 
 // Text size for feed posts, a step on the Settings slider. Applied as a Dynamic

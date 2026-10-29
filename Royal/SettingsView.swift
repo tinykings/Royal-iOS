@@ -4,17 +4,13 @@ import WebKit
 struct SettingsView: View {
     @EnvironmentObject private var store: FeedStore
     @State private var diagnostics = ""
-    @AppStorage(Preference.youtubeLayout) private var youtubeLayout = FeedLayout.list
+    @AppStorage(Preference.youtubeLayout) private var youtubeLayout = FeedLayout.cards
     @AppStorage(Preference.youtubePlayback) private var youtubePlayback = VideoPlayback.inApp
-    @AppStorage(Preference.listWhilePlaying) private var listWhilePlaying = false
-    @AppStorage(Preference.redditLayout) private var redditLayout = FeedLayout.list
+    @AppStorage(Preference.listWhilePlaying) private var listWhilePlaying = true
+    @AppStorage(Preference.redditLayout) private var redditLayout = FeedLayout.cards
     @AppStorage(Preference.redditOpen) private var redditOpen = OpenTarget.link
     @AppStorage(Preference.hnOpen) private var hnOpen = OpenTarget.link
     @AppStorage(Preference.feedTextSize) private var feedTextSize = FeedTextSize.standard
-
-    private static let redditLogin = URL(string: "https://www.reddit.com/login/")!
-    private static let youtubeLogin = URL(string: "https://accounts.google.com/ServiceLogin?service=youtube"
-        + "&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26next%3D%252Ffeed%252Fsubscriptions")!
 
     var body: some View {
         NavigationStack {
@@ -50,7 +46,7 @@ struct SettingsView: View {
                 }
                 Section {
                     NavigationLink {
-                        LoginPage(title: "YouTube", url: Self.youtubeLogin)
+                        LoginPage(title: "YouTube", url: FeedSource.youtube.loginURL!)
                     } label: {
                         LabeledContent("Account", value: status(.youtube))
                     }
@@ -69,7 +65,7 @@ struct SettingsView: View {
                 }
                 Section {
                     NavigationLink {
-                        LoginPage(title: "Reddit", url: Self.redditLogin)
+                        LoginPage(title: "Reddit", url: FeedSource.reddit.loginURL!)
                     } label: {
                         LabeledContent("Account", value: status(.reddit))
                     }

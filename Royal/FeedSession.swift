@@ -13,6 +13,16 @@ enum FeedSource: String, Codable, CaseIterable, Identifiable {
         case .youtube: "YouTube"
         }
     }
+
+    // Where to log in; Hacker News needs no account.
+    var loginURL: URL? {
+        switch self {
+        case .reddit: URL(string: "https://www.reddit.com/login/")!
+        case .youtube: URL(string: "https://accounts.google.com/ServiceLogin?service=youtube"
+            + "&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26next%3D%252Ffeed%252Fsubscriptions")!
+        case .hn: nil
+        }
+    }
 }
 
 // Mirrors the post shape sources.js produces for every source.
