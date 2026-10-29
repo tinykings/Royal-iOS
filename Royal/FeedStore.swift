@@ -276,9 +276,12 @@ final class FeedStore: ObservableObject {
     }
 
     // Alternates sources in key order; when one runs short the others fill the rest.
+    // A source with more pages to load ends the list where its posts run out, so its next
+    // page continues the list below what's shown instead of slotting in among rows above.
     // Links shared by several sources are kept once.
     func posts(_ keys: [FeedKey]) -> [FeedPost] {
         let lists = keys.map { state($0).posts }
+        let hasMore = keys.map { state($0).next != nil }
         var out: [FeedPost] = []
         var seenUrls = Set<String>()
         var next = Array(repeating: 0, count: lists.count)
@@ -286,14 +289,20 @@ final class FeedStore: ObservableObject {
         while progressed {
             progressed = false
             for i in lists.indices {
+                var added = false
                 while next[i] < lists[i].count {
                     let post = lists[i][next[i]]
                     next[i] += 1
                     if seenUrls.insert(post.url).inserted {
                         out.append(post)
-                        progressed = true
+                        added = true
                         break
                     }
+                }
+                if added {
+                    progressed = true
+                } else if hasMore[i] && keys.count > 1 {
+                    return out
                 }
             }
         }
