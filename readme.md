@@ -1,5 +1,7 @@
 # Royal
 
+Website: <https://tinykings.github.io/Royal-iOS/>
+
 iOS app combining Reddit, Hacker News, and your YouTube subscriptions in one feed. SwiftUI, no third-party dependencies.
 
 ## Features
