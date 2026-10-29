@@ -132,6 +132,8 @@ final class FeedStore: ObservableObject {
     private static let refreshedKey = "allFeedRefreshedAt"
     private static let seenLimit = 3000
 
+    // When the All feed was last refreshed; shown atop the feed.
+    @Published private(set) var lastRefresh: Date?
     // When the All feed was refreshed before this one; the divider shows this time.
     @Published private(set) var previousRefresh: Date?
     // Post ids the All feed had shown as of that earlier refresh.
@@ -148,7 +150,9 @@ final class FeedStore: ObservableObject {
         let currentSet = Set(current)
         let updated = stored.filter { !currentSet.contains($0) } + current
         defaults.set(Array(updated.suffix(Self.seenLimit)), forKey: Self.seenKey)
-        defaults.set(Date(), forKey: Self.refreshedKey)
+        let now = Date()
+        defaults.set(now, forKey: Self.refreshedKey)
+        lastRefresh = now
     }
 
     // Adds posts loaded after a refresh, so the next refresh doesn't call them new.

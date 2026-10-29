@@ -60,14 +60,21 @@ struct FeedListView<Trailing: View>: View {
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                 }
-                // The All feed puts posts new since the previous refresh above a divider.
-                let split = keys == FeedKey.combined && !savedOnly ? store.splitByRefresh(posts) : nil
+                // The All feed opens with the time of its latest refresh, and puts posts
+                // new since the previous refresh above a divider.
+                let isAll = keys == FeedKey.combined && !savedOnly
+                let split = isAll ? store.splitByRefresh(posts) : nil
+                if isAll, let refresh = store.lastRefresh, !posts.isEmpty {
+                    RefreshDivider(prefix: "Last refresh", date: refresh)
+                }
                 // Reaching any of the last rows fetches the next page.
                 let shown = split.map { $0.new + $0.seen } ?? posts
                 let endIDs = Set(shown.suffix(8).map(\.id))
                 if let split, let refresh = store.previousRefresh {
                     ForEach(split.new) { postRow($0, nearEnd: endIDs.contains($0.id)) }
-                    RefreshDivider(date: refresh, newCount: split.new.count)
+                    if !split.new.isEmpty && !split.seen.isEmpty {
+                        RefreshDivider(prefix: "Previous refresh", date: refresh)
+                    }
                     ForEach(split.seen) { postRow($0, nearEnd: endIDs.contains($0.id)) }
                 } else {
                     ForEach(posts) { postRow($0, nearEnd: endIDs.contains($0.id)) }
@@ -320,10 +327,10 @@ struct SafariView: UIViewControllerRepresentable {
     }
 }
 
-// Marks where the previous refresh's posts begin in the All feed.
+// Shows a refresh time in the All feed: atop it, and where the previous refresh's posts begin.
 struct RefreshDivider: View {
+    let prefix: String
     let date: Date
-    let newCount: Int
 
     var body: some View {
         HStack(spacing: 10) {
@@ -350,7 +357,7 @@ struct RefreshDivider: View {
     private var label: String {
         let time = date.formatted(date: Calendar.current.isDateInToday(date) ? .omitted : .abbreviated,
                                   time: .shortened)
-        return newCount == 0 ? "No new posts since \(time)" : "Last refresh · \(time)"
+        return "\(prefix) · \(time)"
     }
 }
 
