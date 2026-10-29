@@ -5,11 +5,7 @@
         "linear-gradient" : [
           "srgb:0.31373,0.34118,0.38431,1.00000",
           "srgb:0.06667,0.09020,0.13333,1.00000"
-        ],
-        "orientation" : {
-          "start" : { "x" : 0, "y" : 0 },
-          "stop" : { "x" : 1, "y" : 1 }
-        }
+        ]
       }
     },
     {
@@ -18,11 +14,7 @@
         "linear-gradient" : [
           "srgb:0.18039,0.19608,0.23529,1.00000",
           "srgb:0.00784,0.01569,0.03137,1.00000"
-        ],
-        "orientation" : {
-          "start" : { "x" : 0, "y" : 0 },
-          "stop" : { "x" : 1, "y" : 1 }
-        }
+        ]
       }
     }
   ],
@@ -43,6 +35,55 @@
       "translucency" : {
         "enabled" : true,
         "value" : 0.2
+      }
+    },
+    {
+      "layers" : [
+        {
+          "glass" : false,
+          "hidden-specializations" : [
+            {
+              "value" : true
+            },
+            {
+              "appearance" : "dark",
+              "value" : false
+            },
+            {
+              "appearance" : "tinted",
+              "value" : true
+            }
+          ],
+          "image-name" : "background-dark.png",
+          "name" : "background-dark"
+        },
+        {
+          "glass" : false,
+          "hidden-specializations" : [
+            {
+              "value" : false
+            },
+            {
+              "appearance" : "dark",
+              "value" : true
+            },
+            {
+              "appearance" : "tinted",
+              "value" : true
+            }
+          ],
+          "image-name" : "background.png",
+          "name" : "background"
+        }
+      ],
+      "shadow" : {
+        "kind" : "none",
+        "opacity" : 0.5
+      },
+      "specular" : false,
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.5
       }
     }
   ],
