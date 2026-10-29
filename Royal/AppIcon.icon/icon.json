@@ -1,0 +1,54 @@
+{
+  "fill-specializations" : [
+    {
+      "value" : {
+        "linear-gradient" : [
+          "srgb:0.31373,0.34118,0.38431,1.00000",
+          "srgb:0.06667,0.09020,0.13333,1.00000"
+        ],
+        "orientation" : {
+          "start" : { "x" : 0, "y" : 0 },
+          "stop" : { "x" : 1, "y" : 1 }
+        }
+      }
+    },
+    {
+      "appearance" : "dark",
+      "value" : {
+        "linear-gradient" : [
+          "srgb:0.18039,0.19608,0.23529,1.00000",
+          "srgb:0.00784,0.01569,0.03137,1.00000"
+        ],
+        "orientation" : {
+          "start" : { "x" : 0, "y" : 0 },
+          "stop" : { "x" : 1, "y" : 1 }
+        }
+      }
+    }
+  ],
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "glass" : true,
+          "image-name" : "crown.png",
+          "name" : "crown"
+        }
+      ],
+      "shadow" : {
+        "kind" : "layer-color",
+        "opacity" : 0.5
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.2
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : [
+      "iOS"
+    ]
+  }
+}
