@@ -79,7 +79,8 @@ struct YouTubePlayer: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let config = WebProfile.configuration()
         config.allowsInlineMediaPlayback = true
-        config.allowsPictureInPictureMediaPlayback = true
+        // No picture-in-picture: video plays only while the app is on screen.
+        config.allowsPictureInPictureMediaPlayback = false
         config.mediaTypesRequiringUserActionForPlayback = []
         // YouTube's fullscreen button needs element fullscreen.
         config.preferences.isElementFullscreenEnabled = true
