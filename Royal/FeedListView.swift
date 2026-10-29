@@ -34,12 +34,22 @@ struct FeedListView<Trailing: View>: View {
         NavigationStack {
             List {
                 if !loggedOut.isEmpty {
-                    LoginCard(sources: loggedOut, combined: keys == FeedKey.combined) {
-                        Task { await store.load(keys, force: true) }
-                    }
+                    LoginCard(sources: loggedOut, keys: keys)
                 }
                 ForEach(savedOnly ? [] : keys, id: \.self) { key in
-                    if let error = store.state(key).error, !loggedOut.contains(key.source) {
+                    // A feed reloading after an error, such as just after logging in, shows
+                    // that it's refreshing rather than the error it's about to replace.
+                    if store.state(key).error != nil, store.state(key).loading, !loggedOut.contains(key.source) {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Refreshing \(key.source.title)…")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                    } else if let error = store.state(key).error, !loggedOut.contains(key.source) {
                         Section {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("\(key.source.title): \(error)")
@@ -63,7 +73,7 @@ struct FeedListView<Trailing: View>: View {
                         .padding(.vertical, 40)
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
-                } else if posts.isEmpty && keys.contains(where: { store.state($0).loading }) {
+                } else if posts.isEmpty && keys.contains(where: { store.state($0).loading && store.state($0).error == nil }) {
                     ProgressView()
                         .frame(maxWidth: .infinity)
                         .listRowSeparator(.hidden)
@@ -341,9 +351,10 @@ struct LoginCard: View {
     @EnvironmentObject private var store: FeedStore
     @State private var loggingIn: FeedSource?
     let sources: [FeedSource]
+    // The feeds to reload once logged in.
+    let keys: [FeedKey]
     // The All feed, which mixes in Hacker News.
-    var combined = false
-    let loggedIn: () -> Void
+    private var combined: Bool { keys == FeedKey.combined }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -402,10 +413,7 @@ struct LoginCard: View {
     }
 
     private func checkLogin() {
-        Task {
-            await store.refreshLoginStatus()
-            if sources.contains(where: { store.loggedIn[$0] == true }) { loggedIn() }
-        }
+        Task { await store.finishLogin(sources, reloading: keys) }
     }
 }
 

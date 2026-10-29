@@ -76,22 +76,28 @@ final class FeedStore: ObservableObject {
     }
 
     func load(_ keys: [FeedKey], force: Bool = false) async {
-        let fetched = await withTaskGroup(of: Bool.self) { group in
-            for key in keys {
-                group.addTask { await self.load(key, force: force) }
+        // Marks the feeds loading before the first suspension, so a caller that just
+        // changed what's shown never draws a frame with the old state.
+        let started = keys.filter { begin($0, force: force) }
+        await withTaskGroup(of: Void.self) { group in
+            for key in started {
+                group.addTask { await self.fetch(key) }
             }
-            return await group.contains(true)
         }
-        if fetched && keys == FeedKey.combined { recordRefresh() }
+        if !started.isEmpty && keys == FeedKey.combined { recordRefresh() }
     }
 
-    // Returns whether the feed was fetched (successfully or not) rather than skipped.
-    @discardableResult
-    private func load(_ key: FeedKey, force: Bool) async -> Bool {
+    // Marks the feed loading, or returns false to skip it.
+    private func begin(_ key: FeedKey, force: Bool) -> Bool {
         var state = state(key)
         if state.loading || (state.loaded && !force) { return false }
         state.loading = true
         feeds[key] = state
+        return true
+    }
+
+    private func fetch(_ key: FeedKey) async {
+        let state = state(key)
         do {
             let page = try await session.posts(key)
             feeds[key] = FeedState(posts: page.posts, loaded: true, next: page.next)
@@ -100,7 +106,20 @@ final class FeedStore: ObservableObject {
             feeds[key] = FeedState(posts: state.posts, error: error.localizedDescription, loaded: true)
         }
         loggedIn[key.source] = await session.isLoggedIn(key.source)
-        return true
+    }
+
+    // After a login page closes: reloads `keys` if any of `sources` is now logged in.
+    // The login status and the loading feeds change together, so the login card isn't
+    // replaced by the feeds' old logged-out errors while they reload.
+    func finishLogin(_ sources: [FeedSource], reloading keys: [FeedKey]) async {
+        var status: [FeedSource: Bool] = [:]
+        for source in FeedSource.allCases {
+            status[source] = await session.isLoggedIn(source)
+        }
+        loggedIn = status
+        if sources.contains(where: { status[$0] == true }) {
+            await load(keys, force: true)
+        }
     }
 
     // Fetches the next page of each feed that has more; called near the end of a list.
