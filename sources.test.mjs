@@ -40,12 +40,12 @@ test("Reddit sort uses personalized Best, score-ranked Top with timeframe, and c
   }
 });
 
-test("Reddit images: previews, galleries, crossposts, fallbacks, and missing images", async () => {
+test("Reddit images: previews, galleries, crossposts, fallbacks, missing images, and aspect ratios", async () => {
   const cases = [
     [{ preview: { images: [{ resolutions: [
       { width: 108, url: "https://preview.redd.it/small.jpg" },
       { width: 320, url: "https://preview.redd.it/medium.jpg" },
-      { width: 640, url: "https://preview.redd.it/image.jpg?a=1&amp;b=2" },
+      { width: 640, height: 480, url: "https://preview.redd.it/image.jpg?a=1&amp;b=2" },
       { width: 960, url: "https://preview.redd.it/large.jpg" },
     ] }] } }, "https://preview.redd.it/image.jpg?a=1&b=2"],
     [{ preview: { images: [{ source: { url: "https://i.redd.it/source.jpg" } }] } }, "https://i.redd.it/source.jpg"],
@@ -75,6 +75,21 @@ test("Reddit images: previews, galleries, crossposts, fallbacks, and missing ima
       const [post] = await fetchReddit(1);
       assert.equal(post.image, expected);
     }
+    globalThis.fetch = async (url) => ({
+      ok: true,
+      json: async () => url.includes("/subreddits/mine/")
+        ? { data: { children: [{ data: { display_name: "test" } }], after: null } }
+        : { data: { children: [
+          { data: { name: "t3_a", subreddit: "a", permalink: "/r/a", ...cases[0][0] } },
+          { data: { name: "t3_b", subreddit: "b", permalink: "/r/b", media_metadata: { m: { s: { u: "https://i.redd.it/g.png", x: 500, y: 1000 } } },
+            gallery_data: { items: [{ media_id: "m" }] } } },
+          { data: { name: "t3_c", subreddit: "c", permalink: "/r/c", url: "https://i.redd.it/direct.webp" } },
+        ] } },
+    });
+    const [preview, gallery, direct] = await fetchReddit(3);
+    assert.equal(preview.imageAspect, 640 / 480);
+    assert.equal(gallery.imageAspect, 0.5);
+    assert.equal(direct.imageAspect, null);
   } finally {
     globalThis.fetch = originalFetch;
   }

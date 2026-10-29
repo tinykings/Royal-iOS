@@ -1,6 +1,6 @@
 // Fetching and normalizing posts from Reddit, Hacker News, and YouTube.
 // Every post is normalized to:
-//   { source, id, title, url, commentsUrl, score, comments, created, label, image? }
+//   { source, id, title, url, commentsUrl, score, comments, created, label, image?, imageAspect? }
 // markSeen() adds `seen: true|false`.
 
 export const CONFIG = {
@@ -52,6 +52,16 @@ function imageUrl(value) {
   }
 }
 
+// Width over height, when Reddit reports both, so the app can size an image before it loads.
+function aspect(width, height) {
+  return width > 0 && height > 0 ? width / height : null;
+}
+
+function sizedImage(url, width, height) {
+  const href = imageUrl(url);
+  return href ? { url: href, aspect: aspect(width, height) } : null;
+}
+
 function redditImage(post) {
   const preview = post.preview?.images?.[0];
   const galleryId = post.gallery_data?.items?.[0]?.media_id;
@@ -60,12 +70,12 @@ function redditImage(post) {
   const sized = resolutions.find((image) => image.width >= 640 || image.x >= 640)
     ?? resolutions[resolutions.length - 1];
   const direct = post.url_overridden_by_dest ?? post.url;
-  return imageUrl(sized?.url ?? sized?.u)
-    ?? imageUrl(preview?.source?.url)
-    ?? imageUrl(gallery?.s?.u)
-    ?? (/\.(?:jpe?g|png|gif|webp)(?:[?#]|$)/i.test(direct ?? "") ? imageUrl(direct) : null)
+  return sizedImage(sized?.url ?? sized?.u, sized?.width ?? sized?.x, sized?.height ?? sized?.y)
+    ?? sizedImage(preview?.source?.url, preview?.source?.width, preview?.source?.height)
+    ?? sizedImage(gallery?.s?.u, gallery?.s?.x, gallery?.s?.y)
+    ?? (/\.(?:jpe?g|png|gif|webp)(?:[?#]|$)/i.test(direct ?? "") ? sizedImage(direct) : null)
     ?? (post.crosspost_parent_list?.[0] ? redditImage(post.crosspost_parent_list[0]) : null)
-    ?? imageUrl(post.thumbnail);
+    ?? sizedImage(post.thumbnail, post.thumbnail_width, post.thumbnail_height);
 }
 
 export async function fetchReddit(limit, { sort = "best", timeframe = CONFIG.redditTimeWindow } = {}) {
@@ -93,6 +103,7 @@ export async function fetchReddit(limit, { sort = "best", timeframe = CONFIG.red
     if (n >= CONFIG.maxPerSubreddit) continue;
     perSub.set(p.subreddit, n + 1);
     const commentsUrl = REDDIT + p.permalink;
+    const image = redditImage(p);
     picked.push({
       source: "reddit",
       id: p.name,
@@ -103,7 +114,8 @@ export async function fetchReddit(limit, { sort = "best", timeframe = CONFIG.red
       comments: p.num_comments,
       created: p.created_utc,
       label: `r/${p.subreddit}`,
-      image: redditImage(p),
+      image: image?.url ?? null,
+      imageAspect: image?.aspect ?? null,
     });
     if (picked.length >= limit) break;
   }

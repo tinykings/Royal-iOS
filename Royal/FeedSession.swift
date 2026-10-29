@@ -27,6 +27,8 @@ struct FeedPost: Codable, Identifiable {
     let comments: Int?
     let created: Double?
     let image: String?
+    // Reddit only: the image's width over height, when Reddit reports it.
+    let imageAspect: Double?
     let videoId: String?
     let published: String?
     // YouTube only: latest time the video could have been published, from its age text.

@@ -251,8 +251,9 @@ extension View {
                                insetTop: geometry.contentInsets.top)
             } action: { old, new in
                 let delta = new.offset - old.offset
-                if new.insetTop != old.insetTop {
-                    // The header itself appeared or disappeared; that isn't the user scrolling.
+                if new.insetTop != old.insetTop || new.maxOffset != old.maxOffset {
+                    // The header appeared or disappeared, or rows resized and the list moved
+                    // to keep its place; neither is the user scrolling.
                 } else if new.offset <= 0 {
                     hidden.wrappedValue = false
                 } else if new.offset >= new.maxOffset {
@@ -362,6 +363,8 @@ struct PostRow: View {
 
     static let cornerRadius: CGFloat = 14
     private static let inset: CGFloat = 12
+    // Taller images are letterboxed to this shape so one image can't fill the screen.
+    private static let tallestImageAspect = 0.85
 
     var body: some View {
         Group {
@@ -428,17 +431,18 @@ struct PostRow: View {
                         .clipped()
                 } else {
                     // Reddit images keep their own shape, capped so tall ones don't fill the
-                    // screen; narrow ones sit on a faint backdrop across the tile.
-                    CachedImage(url: thumbnail) { image in
-                        if let image {
-                            image.resizable().scaledToFit()
-                                .frame(maxWidth: .infinity, maxHeight: 420)
-                                .background(Color.secondary.opacity(0.08))
-                        } else {
-                            Color.secondary.opacity(0.1)
-                                .frame(height: 200)
+                    // screen; narrow ones sit on a faint backdrop across the tile. The frame
+                    // comes from Reddit's reported size, not the loaded image, so the tile
+                    // doesn't change height when the image arrives; a list that resizes rows
+                    // as you scroll back up jumps around.
+                    Color.secondary.opacity(0.08)
+                        .aspectRatio(max(post.imageAspect ?? 4 / 3, Self.tallestImageAspect), contentMode: .fit)
+                        .overlay {
+                            CachedImage(url: thumbnail) { image in
+                                image?.resizable().scaledToFit()
+                            }
                         }
-                    }
+                        .clipped()
                 }
             }
             details
