@@ -41,6 +41,7 @@ struct FeedListView<Trailing: View>: View {
                                         .font(.footnote)
                                 }
                             }
+                            .listRowBackground(Color.clear)
                         }
                     }
                 }
@@ -52,9 +53,12 @@ struct FeedListView<Trailing: View>: View {
                         .multilineTextAlignment(.center)
                         .padding(.vertical, 40)
                         .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                 } else if posts.isEmpty && keys.contains(where: { store.state($0).loading }) {
                     ProgressView()
                         .frame(maxWidth: .infinity)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                 }
                 // The All feed puts posts new since the previous refresh above a divider.
                 let split = keys == FeedKey.combined && !savedOnly ? store.splitByRefresh(posts) : nil
@@ -70,6 +74,9 @@ struct FeedListView<Trailing: View>: View {
                 }
             }
             .listStyle(.plain)
+            // Posts sit on tiles over the grouped background.
+            .scrollContentBackground(.hidden)
+            .background(Color(.systemGroupedBackground))
             .hidesHeaderOnScroll($scrolledAway)
             .toolbar(headerHidden ? .hidden : .visible, for: .navigationBar)
             .animation(.easeInOut(duration: 0.2), value: headerHidden)
@@ -107,7 +114,11 @@ struct FeedListView<Trailing: View>: View {
     private func postRow(_ post: FeedPost, nearEnd: Bool) -> some View {
         let isSaved = store.isSaved(post)
         return PostRow(post: post, showsSource: showsSource, layout: layout(for: post), saved: isSaved)
-            .contentShape(Rectangle())
+            .contentShape(RoundedRectangle(cornerRadius: PostRow.cornerRadius))
+            .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: PostRow.cornerRadius))
+            .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
             .onTapGesture { open(post) }
             .onAppear {
                 if nearEnd && !savedOnly { Task { await store.loadMore(keys) } }
@@ -323,7 +334,9 @@ struct RefreshDivider: View {
             line
         }
         .padding(.vertical, 4)
+        .listRowInsets(EdgeInsets(top: 5, leading: 20, bottom: 5, trailing: 20))
         .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
         .accessibilityElement(children: .combine)
     }
 
@@ -347,26 +360,33 @@ struct PostRow: View {
     var saved = false
     @AppStorage(Preference.feedTextSize) private var textSize = FeedTextSize.standard
 
+    static let cornerRadius: CGFloat = 14
+    private static let inset: CGFloat = 12
+
     var body: some View {
         Group {
             if layout == .cards {
                 card
             } else {
                 row
+                    // Room below a list thumbnail so the heart doesn't sit on it.
+                    .padding(.bottom, saved && thumbnail != nil ? 16 : 0)
+                    .padding(Self.inset)
             }
         }
         .dynamicTypeSize(textSize.dynamicTypeSize)
-        // Room below a list thumbnail so the heart doesn't sit on it.
-        .padding(.bottom, saved && layout == .list && thumbnail != nil ? 20 : 0)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .bottomTrailing) {
             if saved {
                 Image(systemName: "heart.fill")
                     .font(.caption)
                     .foregroundStyle(.pink)
-                    .padding(.bottom, layout == .cards ? 10 : 4)
+                    .padding(Self.inset)
                     .accessibilityLabel("Saved")
             }
         }
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
     }
 
     // Text with a small thumbnail on the right.
@@ -384,12 +404,11 @@ struct PostRow: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6))
             }
         }
-        .padding(.vertical, 2)
     }
 
-    // A large centered image with the text below.
+    // A large image across the top of the tile with the text below.
     private var card: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 0) {
             if let thumbnail {
                 if post.videoId != nil {
                     // Video thumbnails are letterboxed 4:3; crop them to the 16:9 frame.
@@ -402,25 +421,25 @@ struct PostRow: View {
                                 Color.secondary.opacity(0.1)
                             }
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .clipped()
                 } else {
-                    // Reddit images keep their own shape, capped so tall ones don't fill the screen.
+                    // Reddit images keep their own shape, capped so tall ones don't fill the
+                    // screen; narrow ones sit on a faint backdrop across the tile.
                     AsyncImage(url: thumbnail) { phase in
                         if let image = phase.image {
                             image.resizable().scaledToFit()
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
                                 .frame(maxWidth: .infinity, maxHeight: 420)
+                                .background(Color.secondary.opacity(0.08))
                         } else {
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.secondary.opacity(0.1))
+                            Color.secondary.opacity(0.1)
                                 .frame(height: 200)
                         }
                     }
                 }
             }
             details
+                .padding(Self.inset)
         }
-        .padding(.vertical, 8)
     }
 
     private var details: some View {
