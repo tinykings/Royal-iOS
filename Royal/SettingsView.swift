@@ -63,7 +63,7 @@ struct SettingsView: View {
                 } header: {
                     Text("YouTube")
                 } footer: {
-                    Text("Cards show a large thumbnail with the title below. With the in-app player, every section can switch to List view while a video plays.")
+                    Text("Cards show a large thumbnail with the title below. With the in-app player, every section can switch to List view while a video plays. YouTube feeds rely on undocumented page data and may break when YouTube changes its site.")
                 }
                 Section {
                     NavigationLink {
@@ -89,6 +89,16 @@ struct SettingsView: View {
                     }
                 } header: {
                     Text("Hacker News")
+                }
+                Section {
+                    LabeledContent("Version", value: appVersion)
+                    Link(destination: URL(string: "https://github.com/tinykings/Royal-iOS")!) {
+                        Label("Source Code", systemImage: "chevron.left.forwardslash.chevron.right")
+                    }
+                } header: {
+                    Text("About")
+                } footer: {
+                    Text("Royal has no server. It talks directly to Reddit, Hacker News, and YouTube with your logins, and collects nothing.")
                 }
                 #if DEBUG
                 Section("Diagnostics") {
@@ -131,6 +141,14 @@ struct SettingsView: View {
         } set: {
             feedTextSize = FeedTextSize(rawValue: Int($0.rounded())) ?? .standard
         }
+    }
+
+    // "0.1 (1)": marketing version and build number.
+    private var appVersion: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "\(version) (\(build))"
     }
 
     @ViewBuilder
