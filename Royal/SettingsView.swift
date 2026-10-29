@@ -4,6 +4,7 @@ import WebKit
 struct SettingsView: View {
     @EnvironmentObject private var store: FeedStore
     @State private var diagnostics = ""
+    @State private var confirmingLogOut: FeedSource?
     @AppStorage(Preference.youtubeLayout) private var youtubeLayout = FeedLayout.cards
     @AppStorage(Preference.youtubePlayback) private var youtubePlayback = VideoPlayback.inApp
     @AppStorage(Preference.listWhilePlaying) private var listWhilePlaying = true
@@ -31,7 +32,7 @@ struct SettingsView: View {
                         // Live sample at the chosen size.
                         Text("The quick brown fox jumps over the lazy dog")
                             .font(.body)
-                            .dynamicTypeSize(feedTextSize.dynamicTypeSize)
+                            .feedTextSize(feedTextSize)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .padding(.vertical, 4)
@@ -42,7 +43,7 @@ struct SettingsView: View {
                         Text(feedTextSize.title)
                     }
                 } footer: {
-                    Text("Sets the size of post text in every feed.")
+                    Text("Sets the size of post text in every feed. Default follows the text size in the Settings app.")
                 }
                 Section {
                     NavigationLink {
@@ -50,6 +51,7 @@ struct SettingsView: View {
                     } label: {
                         LabeledContent("Account", value: status(.youtube))
                     }
+                    logOutButton(.youtube)
                     Picker("View", selection: $youtubeLayout) {
                         ForEach(FeedLayout.allCases) { Text($0.title).tag($0) }
                     }
@@ -69,6 +71,7 @@ struct SettingsView: View {
                     } label: {
                         LabeledContent("Account", value: status(.reddit))
                     }
+                    logOutButton(.reddit)
                     Picker("View", selection: $redditLayout) {
                         ForEach(FeedLayout.allCases) { Text($0.title).tag($0) }
                     }
@@ -87,6 +90,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Hacker News")
                 }
+                #if DEBUG
                 Section("Diagnostics") {
                     Button("Run diagnostics") {
                         Task {
@@ -100,13 +104,23 @@ struct SettingsView: View {
                             .textSelection(.enabled)
                     }
                 }
+                #endif
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
-            // Matches the feeds: no header while the docked video player is showing.
-            .toolbar(store.playingVideo != nil ? .hidden : .visible, for: .navigationBar)
             // Runs again when returning from a login page.
             .onAppear { Task { await store.refreshLoginStatus() } }
+            .confirmationDialog(confirmingLogOut.map { "Log out of \($0.title)?" } ?? "",
+                                isPresented: Binding { confirmingLogOut != nil } set: { if !$0 { confirmingLogOut = nil } },
+                                titleVisibility: .visible, presenting: confirmingLogOut) { source in
+                Button("Log Out", role: .destructive) {
+                    Task { await store.logOut(source) }
+                }
+            } message: { source in
+                Text(source == .youtube
+                     ? "Your \(source.title) feed will be empty until you log in again. This also signs out of Google in the app."
+                     : "Your \(source.title) feed will be empty until you log in again.")
+            }
         }
     }
 
@@ -116,6 +130,13 @@ struct SettingsView: View {
             Double(feedTextSize.rawValue)
         } set: {
             feedTextSize = FeedTextSize(rawValue: Int($0.rounded())) ?? .standard
+        }
+    }
+
+    @ViewBuilder
+    private func logOutButton(_ source: FeedSource) -> some View {
+        if store.loggedIn[source] == true {
+            Button("Log Out", role: .destructive) { confirmingLogOut = source }
         }
     }
 

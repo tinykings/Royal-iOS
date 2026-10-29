@@ -3,16 +3,22 @@ import SwiftUI
 // Tab bar icons the system tab bar can't make from a plain SF Symbol name.
 @MainActor
 enum TabIcons {
-    // The tab bar tints template images itself, so the crown is drawn with its
-    // own colors baked in: always filled gold, with a black outline in light
-    // mode where gold alone washes out against the pale bar.
+    // The tab bar tints template images itself, so the selected crown is drawn with
+    // its own colors baked in: filled gold, with a black outline in light mode where
+    // gold alone washes out against the pale bar. Unselected, it's a template like the
+    // other tabs, so it doesn't look selected too.
     // Drawn at twice the symbol's default size so it stands out from the other tabs.
-    static func crown(outlined: Bool) -> UIImage {
-        let fill = (UIImage(systemName: "crown.fill") ?? UIImage())
-            .withTintColor(UIColor(Color.royalGold), renderingMode: .alwaysOriginal)
-        let rect = CGRect(origin: .zero, size: CGSize(width: fill.size.width * 2, height: fill.size.height * 2))
+    static func crown(selected: Bool, outlined: Bool) -> UIImage {
+        let symbol = UIImage(systemName: "crown.fill") ?? UIImage()
+        let rect = CGRect(origin: .zero, size: CGSize(width: symbol.size.width * 2, height: symbol.size.height * 2))
+        guard selected else {
+            let image = UIGraphicsImageRenderer(size: rect.size).image { _ in
+                symbol.withTintColor(.black, renderingMode: .alwaysOriginal).draw(in: rect)
+            }
+            return image.withRenderingMode(.alwaysTemplate)
+        }
         let image = UIGraphicsImageRenderer(size: rect.size).image { _ in
-            fill.draw(in: rect)
+            symbol.withTintColor(UIColor(Color.royalGold), renderingMode: .alwaysOriginal).draw(in: rect)
             if outlined, let outline = UIImage(systemName: "crown") {
                 outline.withTintColor(.black, renderingMode: .alwaysOriginal).draw(in: rect)
             }
@@ -67,4 +73,11 @@ struct RedditGlyph: View {
 
 extension Color {
     static let royalGold = Color(red: 0.85, green: 0.65, blue: 0.13)
+    // The app's tint: royal gold, darkened in light mode so buttons and text in it
+    // stay readable on white.
+    static let royalAccent = Color(UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 0.85, green: 0.65, blue: 0.13, alpha: 1)
+            : UIColor(red: 0.60, green: 0.43, blue: 0, alpha: 1)
+    })
 }

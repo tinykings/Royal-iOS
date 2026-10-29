@@ -1,11 +1,15 @@
 import SafariServices
 import SwiftUI
+import WebKit
 
 struct FeedListView<Trailing: View>: View {
     @EnvironmentObject private var store: FeedStore
     @Environment(\.openURL) private var openURL
     @State private var browserURL: BrowserURL?
     @State private var scrolledAway = false
+    @State private var atTop = true
+    // Refreshing because the tab was tapped again; there's no pull-to-refresh spinner then.
+    @State private var tabRefreshing = false
     @AppStorage(Preference.redditLayout) private var redditLayout = FeedLayout.cards
     @AppStorage(Preference.youtubeLayout) private var youtubeLayout = FeedLayout.cards
     @AppStorage(Preference.redditOpen) private var redditOpen = OpenTarget.link
@@ -13,6 +17,8 @@ struct FeedListView<Trailing: View>: View {
     @AppStorage(Preference.youtubePlayback) private var youtubePlayback = VideoPlayback.inApp
     @AppStorage(Preference.listWhilePlaying) private var listWhilePlaying = true
     let title: String
+    // The tab showing this feed; tapping it again scrolls to the top.
+    let tab: AppTab
     let keys: [FeedKey]
     var showsSource = false
     // Shows the saved posts instead of the feeds in `keys`.
@@ -24,122 +30,194 @@ struct FeedListView<Trailing: View>: View {
 
     var body: some View {
         let posts = savedOnly ? store.savedPosts : store.posts(keys)
-        // The header slides away while scrolling down, and stays hidden while the
-        // docked video player is showing, to leave more room for the feed.
-        let headerHidden = scrolledAway || store.playingVideo != nil
+        // The header slides away while scrolling down, leaving more room for the feed,
+        // and comes back on scrolling up, so its controls stay in reach during a video.
+        let headerHidden = scrolledAway
         // Feeds needing an account start with a card for logging in, in place of their errors.
         let loggedOut = savedOnly ? [] : [FeedSource.reddit, .youtube].filter { source in
             keys.contains { $0.source == source } && store.loggedIn[source] == false
         }
         NavigationStack {
-            List {
-                if !loggedOut.isEmpty {
-                    LoginCard(sources: loggedOut, keys: keys)
-                }
-                ForEach(savedOnly ? [] : keys, id: \.self) { key in
-                    // A feed reloading after an error, such as just after logging in, shows
-                    // that it's refreshing rather than the error it's about to replace.
-                    if store.state(key).error != nil, store.state(key).loading, !loggedOut.contains(key.source) {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Refreshing \(key.source.title)…")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
+            ScrollViewReader { proxy in
+                List {
+                    // Where tapping the tab again scrolls to.
+                    Color.clear
+                        .frame(height: 0)
+                        .id(Self.topID)
+                        .listRowInsets(EdgeInsets())
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
-                    } else if let error = store.state(key).error, !loggedOut.contains(key.source) {
-                        Section {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("\(key.source.title): \(error)")
+                    if !loggedOut.isEmpty {
+                        LoginCard(sources: loggedOut, keys: keys)
+                    }
+                    ForEach(savedOnly ? [] : keys, id: \.self) { key in
+                        // A feed reloading after an error, such as just after logging in, shows
+                        // that it's refreshing rather than the error it's about to replace.
+                        if store.state(key).error != nil, store.state(key).loading, !loggedOut.contains(key.source) {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Refreshing \(key.source.title)…")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
-                                if key.source != .hn {
-                                    Button("Settings") { store.selectedTab = .settings }
+                            }
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                        } else if let error = store.state(key).error, !loggedOut.contains(key.source) {
+                            Section {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("\(key.source.title): \(error)")
                                         .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                    if key.source != .hn {
+                                        Button("Settings") { store.selectedTab = .settings }
+                                            .font(.footnote)
+                                    }
+                                }
+                                .listRowBackground(Color.clear)
+                            }
+                        }
+                    }
+                    if savedOnly && posts.isEmpty {
+                        Text("No saved posts yet. Swipe left on a post, or press and hold it, to save it.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .multilineTextAlignment(.center)
+                            .padding(.vertical, 40)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                    } else if posts.isEmpty && keys.contains(where: { store.state($0).loading && store.state($0).error == nil }) {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                    }
+                    // The All feed opens with the time of its latest refresh, and puts posts
+                    // new since the previous refresh above a divider.
+                    let isAll = keys == FeedKey.combined && !savedOnly
+                    let split = isAll ? store.splitByRefresh(posts) : nil
+                    if isAll, let refresh = store.lastRefresh, !posts.isEmpty {
+                        RefreshDivider(prefix: "Last refresh", date: refresh)
+                    }
+                    // Reaching any of the last rows fetches the next page.
+                    let shown = split.map { $0.new + $0.seen } ?? posts
+                    let endIDs = Set(shown.suffix(8).map(\.id))
+                    if let split, let refresh = store.previousRefresh {
+                        ForEach(split.new) { postRow($0, nearEnd: endIDs.contains($0.id)) }
+                        if !split.new.isEmpty && !split.seen.isEmpty {
+                            RefreshDivider(prefix: "Previous refresh", date: refresh)
+                        }
+                        ForEach(split.seen) { postRow($0, nearEnd: endIDs.contains($0.id)) }
+                    } else {
+                        ForEach(posts) { postRow($0, nearEnd: endIDs.contains($0.id)) }
+                    }
+                    if !savedOnly && !posts.isEmpty {
+                        moreStatus
+                    }
+                }
+                .listStyle(.plain)
+                // Floats over the list; a row inserted at the top would sit just out of view.
+                .overlay(alignment: .top) {
+                    if tabRefreshing {
+                        ProgressView()
+                            .padding(10)
+                            .background(.regularMaterial, in: Circle())
+                            .padding(.top, 8)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.2), value: tabRefreshing)
+                // Lets the top anchor take no space; posts are taller than the default minimum.
+                .environment(\.defaultMinListRowHeight, 0)
+                // Posts sit on tiles over the grouped background.
+                .scrollContentBackground(.hidden)
+                .background(Color(.systemGroupedBackground))
+                .hidesHeaderOnScroll($scrolledAway, atTop: $atTop)
+                // Tapping the tab again scrolls to the top, or refreshes when already there.
+                .onChange(of: store.reselected?.count) {
+                    guard store.reselected?.tab == tab else { return }
+                    if atTop {
+                        guard !tabRefreshing else { return }
+                        Task {
+                            tabRefreshing = true
+                            await store.load(keys, force: true)
+                            tabRefreshing = false
+                        }
+                    } else {
+                        withAnimation { proxy.scrollTo(Self.topID, anchor: .top) }
+                        scrolledAway = false
+                    }
+                }
+                .toolbar(headerHidden ? .hidden : .visible, for: .navigationBar)
+                .animation(.easeInOut(duration: 0.2), value: headerHidden)
+                .navigationTitle(Trailing.self == EmptyView.self ? title : "")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    if Trailing.self != EmptyView.self {
+                        PlainToolbarItem(placement: .topBarLeading) {
+                            HStack(spacing: 8) {
+                                Text(title)
+                                    .font(.headline)
+                                    .accessibilityAddTraits(.isHeader)
+                                if let subtitle {
+                                    Text(subtitle)
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundStyle(.secondary)
                                 }
                             }
-                            .listRowBackground(Color.clear)
+                            .fixedSize()
+                        }
+                        PlainToolbarItem(placement: .topBarTrailing) {
+                            trailing
                         }
                     }
                 }
-                if savedOnly && posts.isEmpty {
-                    Text("No saved posts yet. Swipe left on a post, or press and hold it, to save it.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .multilineTextAlignment(.center)
-                        .padding(.vertical, 40)
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                } else if posts.isEmpty && keys.contains(where: { store.state($0).loading && store.state($0).error == nil }) {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                }
-                // The All feed opens with the time of its latest refresh, and puts posts
-                // new since the previous refresh above a divider.
-                let isAll = keys == FeedKey.combined && !savedOnly
-                let split = isAll ? store.splitByRefresh(posts) : nil
-                if isAll, let refresh = store.lastRefresh, !posts.isEmpty {
-                    RefreshDivider(prefix: "Last refresh", date: refresh)
-                }
-                // Reaching any of the last rows fetches the next page.
-                let shown = split.map { $0.new + $0.seen } ?? posts
-                let endIDs = Set(shown.suffix(8).map(\.id))
-                if let split, let refresh = store.previousRefresh {
-                    ForEach(split.new) { postRow($0, nearEnd: endIDs.contains($0.id)) }
-                    if !split.new.isEmpty && !split.seen.isEmpty {
-                        RefreshDivider(prefix: "Previous refresh", date: refresh)
-                    }
-                    ForEach(split.seen) { postRow($0, nearEnd: endIDs.contains($0.id)) }
-                } else {
-                    ForEach(posts) { postRow($0, nearEnd: endIDs.contains($0.id)) }
-                }
-            }
-            .listStyle(.plain)
-            // Posts sit on tiles over the grouped background.
-            .scrollContentBackground(.hidden)
-            .background(Color(.systemGroupedBackground))
-            .hidesHeaderOnScroll($scrolledAway)
-            .toolbar(headerHidden ? .hidden : .visible, for: .navigationBar)
-            .animation(.easeInOut(duration: 0.2), value: headerHidden)
-            .navigationTitle(Trailing.self == EmptyView.self ? title : "")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if Trailing.self != EmptyView.self {
-                    PlainToolbarItem(placement: .topBarLeading) {
-                        HStack(spacing: 8) {
-                            Text(title)
-                                .font(.headline)
-                                .accessibilityAddTraits(.isHeader)
-                            if let subtitle {
-                                Text(subtitle)
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .fixedSize()
-                    }
-                    PlainToolbarItem(placement: .topBarTrailing) {
-                        trailing
+                .refreshable { await store.load(keys, force: true) }
+                .task(id: keys) { await store.load(keys) }
+                .fullScreenCover(item: $browserURL) { item in
+                    if item.loggedIn {
+                        AppBrowser(url: item.url)
+                    } else {
+                        SafariView(url: item.url)
+                            .ignoresSafeArea()
                     }
                 }
             }
-            .refreshable { await store.load(keys, force: true) }
-            .task(id: keys) { await store.load(keys) }
-            .fullScreenCover(item: $browserURL) { item in
-                SafariView(url: item.url)
-                    .ignoresSafeArea()
+        }
+    }
+
+    private static var topID: String { "top" }
+
+    // At the end of the list: a spinner while the next page loads, or a retry button
+    // when it failed.
+    @ViewBuilder
+    private var moreStatus: some View {
+        let states = keys.map { store.state($0) }
+        if states.contains(where: \.loadingMore) {
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+        } else if states.contains(where: { $0.moreError != nil }) {
+            Button {
+                Task { await store.loadMore(keys, retry: true) }
+            } label: {
+                Label("Couldn't load more. Try Again", systemImage: "arrow.clockwise")
+                    .font(.footnote)
+                    .frame(maxWidth: .infinity)
             }
+            .padding(.vertical, 8)
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
         }
     }
 
     private func postRow(_ post: FeedPost, nearEnd: Bool) -> some View {
         let isSaved = store.isSaved(post)
-        return PostRow(post: post, showsSource: showsSource, layout: layout(for: post), saved: isSaved)
+        return PostRow(post: post, showsSource: showsSource, layout: layout(for: post), saved: isSaved,
+                       playing: store.playingVideo?.id == post.id)
             .contentShape(RoundedRectangle(cornerRadius: PostRow.cornerRadius))
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: PostRow.cornerRadius))
             .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
@@ -247,14 +325,19 @@ struct FeedListView<Trailing: View>: View {
         if !["http", "https"].contains(url.scheme ?? "") {
             openURL(url)
         } else {
-            browserURL = BrowserURL(url: url)
+            // Reddit pages open with the app's login, so voting and replying work; the
+            // Safari view has Safari's own logins. Other sites get Safari's reader and blockers.
+            // Reddit's media links (v.redd.it, i.redd.it) redirect to the post on reddit.com.
+            let host = url.host ?? ""
+            let reddit = ["reddit.com", "redd.it"].contains { host == $0 || host.hasSuffix("." + $0) }
+            browserURL = BrowserURL(url: url, loggedIn: reddit)
         }
     }
 }
 
 extension FeedListView where Trailing == EmptyView {
-    init(title: String, keys: [FeedKey], showsSource: Bool = false) {
-        self.init(title: title, keys: keys, showsSource: showsSource, savedOnly: false) { EmptyView() }
+    init(title: String, tab: AppTab, keys: [FeedKey], showsSource: Bool = false) {
+        self.init(title: title, tab: tab, keys: keys, showsSource: showsSource, savedOnly: false) { EmptyView() }
     }
 }
 
@@ -266,9 +349,10 @@ private struct ScrollPosition: Equatable {
 
 extension View {
     // Sets `hidden` while scrolling down and clears it when scrolling up or reaching
-    // the top. Needs iOS 18 scroll geometry; earlier versions keep the header.
+    // the top; `atTop` says whether the list is scrolled to the top. Needs iOS 18 scroll
+    // geometry; earlier versions keep the header and report not being at the top.
     @ViewBuilder
-    func hidesHeaderOnScroll(_ hidden: Binding<Bool>) -> some View {
+    func hidesHeaderOnScroll(_ hidden: Binding<Bool>, atTop: Binding<Bool>) -> some View {
         if #available(iOS 18, *) {
             onScrollGeometryChange(for: ScrollPosition.self) { geometry in
                 ScrollPosition(offset: geometry.contentOffset.y + geometry.contentInsets.top,
@@ -276,6 +360,7 @@ extension View {
                                    + geometry.contentInsets.top + geometry.contentInsets.bottom,
                                insetTop: geometry.contentInsets.top)
             } action: { old, new in
+                atTop.wrappedValue = new.offset <= 1
                 let delta = new.offset - old.offset
                 if new.insetTop != old.insetTop || new.maxOffset != old.maxOffset {
                     // The header appeared or disappeared, or rows resized and the list moved
@@ -291,7 +376,7 @@ extension View {
                 }
             }
         } else {
-            self
+            onAppear { atTop.wrappedValue = false }
         }
     }
 }
@@ -314,7 +399,87 @@ struct PlainToolbarItem<Content: View>: ToolbarContent {
 
 struct BrowserURL: Identifiable {
     let url: URL
+    // Open in AppBrowser, which shares the app's logins, instead of the Safari view.
+    var loggedIn = false
     var id: String { url.absoluteString }
+}
+
+// A browser on the app's web profile, so pages see the logins made in the app.
+struct AppBrowser: View {
+    let url: URL
+    @StateObject private var page = BrowserPage()
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        let current = page.url ?? url
+        NavigationStack {
+            BrowserWebView(url: url, page: page)
+                .ignoresSafeArea(edges: .bottom)
+                .navigationTitle(current.host.map { $0.replacingOccurrences(of: "www.", with: "") } ?? "")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { dismiss() }
+                    }
+                    ToolbarItemGroup(placement: .bottomBar) {
+                        Button("Back", systemImage: "chevron.backward") { page.webView?.goBack() }
+                            .disabled(!page.canGoBack)
+                        Button("Forward", systemImage: "chevron.forward") { page.webView?.goForward() }
+                            .disabled(!page.canGoForward)
+                        Spacer()
+                        ShareLink(item: current)
+                        Button("Open in Safari", systemImage: "safari") {
+                            // x-safari-https opens Safari rather than handing the link to an app.
+                            let safari = URL(string: "x-safari-" + current.absoluteString) ?? current
+                            openURL(safari) { accepted in
+                                if !accepted { openURL(current) }
+                            }
+                        }
+                    }
+                }
+        }
+    }
+}
+
+// Tracks the browser's page so the toolbar can follow it.
+@MainActor
+final class BrowserPage: ObservableObject {
+    @Published var url: URL?
+    @Published var canGoBack = false
+    @Published var canGoForward = false
+    private(set) weak var webView: WKWebView?
+    private var observations: [NSKeyValueObservation] = []
+
+    func attach(_ webView: WKWebView) {
+        self.webView = webView
+        observations = [
+            webView.observe(\.url) { [weak self] view, _ in
+                MainActor.assumeIsolated { self?.url = view.url }
+            },
+            webView.observe(\.canGoBack) { [weak self] view, _ in
+                MainActor.assumeIsolated { self?.canGoBack = view.canGoBack }
+            },
+            webView.observe(\.canGoForward) { [weak self] view, _ in
+                MainActor.assumeIsolated { self?.canGoForward = view.canGoForward }
+            },
+        ]
+    }
+}
+
+private struct BrowserWebView: UIViewRepresentable {
+    let url: URL
+    let page: BrowserPage
+
+    func makeUIView(context: Context) -> WKWebView {
+        let webView = WKWebView(frame: .zero, configuration: WebProfile.configuration())
+        webView.allowsBackForwardNavigationGestures = true
+        page.attach(webView)
+        webView.load(URLRequest(url: url))
+        return webView
+    }
+
+    func updateUIView(_ webView: WKWebView, context: Context) {}
 }
 
 struct SafariView: UIViewControllerRepresentable {
@@ -442,7 +607,7 @@ struct RefreshDivider: View {
 
     private var line: some View {
         Rectangle()
-            .fill(Color.accentColor.opacity(0.6))
+            .fill(.tint.opacity(0.6))
             .frame(height: 1)
     }
 
@@ -458,12 +623,14 @@ struct PostRow: View {
     var showsSource = false
     var layout = FeedLayout.list
     var saved = false
+    // The video in the docked player; outlined so it's easy to find in the list.
+    var playing = false
     @AppStorage(Preference.feedTextSize) private var textSize = FeedTextSize.standard
 
     static let cornerRadius: CGFloat = 14
     private static let inset: CGFloat = 12
-    // Taller images are letterboxed to this shape so one image can't fill the screen.
-    private static let tallestImageAspect = 0.85
+    // Taller images are letterboxed to a square so one image can't fill the screen.
+    private static let tallestImageAspect = 1.0
 
     var body: some View {
         Group {
@@ -476,7 +643,7 @@ struct PostRow: View {
                     .padding(Self.inset)
             }
         }
-        .dynamicTypeSize(textSize.dynamicTypeSize)
+        .feedTextSize(textSize)
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .bottomTrailing) {
             if saved {
@@ -489,6 +656,13 @@ struct PostRow: View {
         }
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
+        .overlay {
+            if playing {
+                RoundedRectangle(cornerRadius: Self.cornerRadius)
+                    .strokeBorder(.tint, lineWidth: 2)
+            }
+        }
+        .accessibilityValue(playing ? "Playing" : "")
     }
 
     // Text with a small thumbnail on the right.
@@ -553,8 +727,12 @@ struct PostRow: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(post.title)
                 .font(layout == .cards ? .headline : .body)
-            HStack(spacing: 4) {
-                if showsSource {
+            // Baseline-aligned so the icon stays on the first line when the details wrap.
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                if playing {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .foregroundStyle(.tint)
+                } else if showsSource {
                     Image(systemName: icon)
                         .foregroundStyle(color)
                 }
@@ -591,18 +769,44 @@ struct PostRow: View {
 
     private var meta: String {
         var parts = [post.label]
-        if let score = post.score { parts.append("\(score) pts") }
-        if let comments = post.comments { parts.append("\(comments) comments") }
-        if let created = post.created { parts.append(age(created)) }
-        if let published = post.published, !published.isEmpty { parts.append(published) }
+        if let score = post.score { parts.append(Self.count(score, "pt")) }
+        if let comments = post.comments { parts.append(Self.count(comments, "comment")) }
+        if let created = post.created { parts.append(Self.age(Date().timeIntervalSince1970 - created)) }
+        if let published = post.published, !published.isEmpty { parts.append(Self.shortAge(published)) }
         return parts.joined(separator: " · ")
     }
 
-    private func age(_ created: Double) -> String {
-        let seconds = max(0, Date().timeIntervalSince1970 - created)
-        if seconds < 3600 { return "\(Int(seconds / 60))m" }
-        if seconds < 86400 { return "\(Int(seconds / 3600))h" }
-        return "\(Int(seconds / 86400))d"
+    // "1 comment", "12 comments", "1.2K comments".
+    private static func count(_ value: Int, _ noun: String) -> String {
+        let number = value.formatted(.number.notation(.compactName).precision(.fractionLength(0...1)))
+        return "\(number) \(noun)\(value == 1 ? "" : "s")"
+    }
+
+    private static let ageUnits: [(seconds: Double, suffix: String)] = [
+        (31_536_000, "y"), (2_592_000, "mo"), (604_800, "w"), (86_400, "d"), (3_600, "h"), (60, "m"),
+    ]
+
+    // Ages in the largest whole unit: "now", "5m", "3h", "2d", "4w", "3mo", "1y".
+    private static func age(_ seconds: Double) -> String {
+        for unit in ageUnits where seconds >= unit.seconds {
+            return "\(Int(seconds / unit.seconds))\(unit.suffix)"
+        }
+        return "now"
+    }
+
+    private static let ageSeconds: [String: Double] = [
+        "second": 1, "sec": 1, "s": 1, "minute": 60, "min": 60, "m": 60, "hour": 3_600, "hr": 3_600, "h": 3_600,
+        "day": 86_400, "d": 86_400, "week": 604_800, "wk": 604_800, "w": 604_800,
+        "month": 2_592_000, "mo": 2_592_000, "year": 31_536_000, "yr": 31_536_000, "y": 31_536_000,
+    ]
+
+    // YouTube writes "6 minutes ago", "23h ago" or "Streamed 2 hours ago"; shorten those to match the
+    // other sources' "6m". Other text, like "Live" or "Scheduled for…", stays as it is.
+    private static func shortAge(_ published: String) -> String {
+        let pattern = /^(?<prefix>Streamed |Premiered )?(?<count>\d+)\s?(?<unit>second|sec|minute|min|hour|hr|day|week|wk|month|mo|year|yr|[smhdwy])s? ago$/
+        guard let match = try? pattern.ignoresCase().wholeMatch(in: published.replacingOccurrences(of: "\u{a0}", with: " ")),
+              let count = Double(match.count), let seconds = ageSeconds[match.unit.lowercased()] else { return published }
+        return (match.prefix.map { "\($0)" } ?? "") + age(count * seconds)
     }
 }
 

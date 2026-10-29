@@ -5,11 +5,11 @@ iOS app combining Reddit, Hacker News, and your YouTube subscriptions in one fee
 ## Features
 
 - Tabs for Hacker News, Reddit, a combined **All** feed, YouTube, and settings. Posts can be saved for later.
-- Reddit sort: **Best**, **Top** with timeframe, or **New**. Hacker News: **Top** or **New**.
-- Uses your Reddit and YouTube logins from in-app sign-in pages—no API keys or OAuth setup.
+- Reddit sort: **Best**, **Top** (today), or **New**, from the subreddits you follow only. Hacker News: **Top** or **New**.
+- Uses your Reddit and YouTube logins from in-app sign-in pages—no API keys or OAuth setup. Reddit links open with that login, so you can vote and reply.
 - Plays YouTube videos in-app, with background audio.
 - Caps Reddit posts at five per subreddit; excludes pinned and NSFW posts.
-- Remembers posts shown by earlier refreshes and marks repeats as seen.
+- The All feed puts posts new since the previous refresh above a divider. Feeds refresh on their own after 15 minutes away; tap the current tab to jump to the top, and again to refresh.
 
 ## Build
 
@@ -36,16 +36,15 @@ Edit `CONFIG` in `sources.js`:
 | Setting | Default | Purpose |
 | --- | --- | --- |
 | `totalItems` | `100` | Maximum items per feed |
-| `redditTimeWindow` | `"day"` | Default Reddit Top window: `hour`, `day`, `week`, `month`, `year`, or `all` |
+| `redditTimeWindow` | `"day"` | Reddit Top window when none is given (the app always asks for `day`) |
 | `maxPerSubreddit` | `5` | Maximum posts selected per subreddit |
-| `seenHistory` | `2000` | Post ids remembered per source for marking repeats |
 
 ## Tests
 
 `sources.js` has Node tests that mock network requests. Run with Node.js 22 or later:
 
 ```sh
-node --experimental-default-type=module --test *.test.mjs
+node --test
 ```
 
 ## Project files

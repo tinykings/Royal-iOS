@@ -1,13 +1,11 @@
 // Fetching and normalizing posts from Reddit, Hacker News, and YouTube.
 // Every post is normalized to:
 //   { source, id, title, url, commentsUrl, score, comments, created, label, image?, imageAspect? }
-// markSeen() adds `seen: true|false`.
 
 export const CONFIG = {
   totalItems: 100,
   redditTimeWindow: "day", // hour | day | week | month | year | all
   maxPerSubreddit: 5, // keeps huge subs from crowding out small ones
-  seenHistory: 2000, // post ids remembered per source for marking repeats
 };
 
 const REDDIT = "https://www.reddit.com";
@@ -25,20 +23,13 @@ async function getJson(url) {
   return res.json();
 }
 
-async function getSubscriptions() {
-  const subs = [];
-  let after = null;
-  do {
-    const params = new URLSearchParams({ limit: "100", raw_json: "1" });
-    if (after) params.set("after", after);
-    const data = await getJson(`${REDDIT}/subreddits/mine/subscriber.json?${params}`);
-    for (const child of data.data.children) subs.push(child.data.display_name);
-    after = data.data.after;
-  } while (after && subs.length < 1000);
-
-  // Reddit answers anonymous requests with an empty listing rather than an error.
-  if (subs.length === 0) throw new NotLoggedInError("no subscriptions returned");
-  return subs;
+// The feed is meant to hold only followed subreddits. Reddit answers anonymous requests,
+// and accounts that follow nothing, with an empty list, and their home listings fall back
+// to posts from all of Reddit; so require at least one followed subreddit. One is enough
+// to know, so this asks for a single entry rather than the whole list.
+async function requireSubscriptions() {
+  const data = await getJson(`${REDDIT}/subreddits/mine/subscriber.json?limit=1&raw_json=1`);
+  if (data.data.children.length === 0) throw new NotLoggedInError("no followed subreddits");
 }
 
 function imageUrl(value) {
@@ -81,8 +72,7 @@ function redditImage(post) {
 export async function fetchReddit(limit, { sort = "best", timeframe = CONFIG.redditTimeWindow } = {}) {
   if (!["best", "top", "new"].includes(sort)) throw new Error("Invalid Reddit sort");
   if (!["hour", "day", "week", "month", "year", "all"].includes(timeframe)) throw new Error("Invalid Reddit timeframe");
-  // Confirms login: anonymous sessions get an empty subscription list.
-  await getSubscriptions();
+  await requireSubscriptions();
 
   const params = new URLSearchParams({ limit: "100", raw_json: "1" });
   if (sort === "top") params.set("t", timeframe);
@@ -266,40 +256,4 @@ export async function fetchYouTube(limit) {
     throw new Error("Open YouTube and finish login or consent, then refresh.");
   }
   return parseYouTubeSubscriptions(await response.text(), limit);
-}
-
-// Alternates reddit, hn, reddit, hn... If one source runs short, the other fills the rest.
-// Links that appear on both sites are kept once.
-export function interleave(reddit, hn, total) {
-  const out = [];
-  const seenUrls = new Set();
-  let r = 0;
-  let h = 0;
-  let turn = "reddit";
-  while (out.length < total && (r < reddit.length || h < hn.length)) {
-    const takeReddit = (turn === "reddit" && r < reddit.length) || h >= hn.length;
-    const post = takeReddit ? reddit[r++] : hn[h++];
-    if (seenUrls.has(post.url)) continue; // same source tries again with its next post
-    seenUrls.add(post.url);
-    turn = takeReddit ? "hn" : "reddit";
-    out.push(post);
-  }
-  return out;
-}
-
-// Flags posts already shown by an earlier fetch, then records this fetch's ids.
-// `seen` maps each source to its ids, oldest first, capped at `max` per source.
-export function markSeen(posts, seen = {}, max = CONFIG.seenHistory) {
-  const updated = {};
-  for (const [source, ids] of Object.entries(seen ?? {})) {
-    if (Array.isArray(ids)) updated[source] = ids;
-  }
-  const previous = Object.fromEntries(Object.entries(updated).map(([source, ids]) => [source, new Set(ids)]));
-  const marked = posts.map((p) => ({ ...p, seen: previous[p.source]?.has(p.id) ?? false }));
-  for (const source of new Set(posts.map((p) => p.source))) {
-    const current = posts.filter((p) => p.source === source).map((p) => p.id);
-    const currentSet = new Set(current);
-    updated[source] = [...(updated[source] ?? []).filter((id) => !currentSet.has(id)), ...current].slice(-max);
-  }
-  return { posts: marked, seen: updated };
 }

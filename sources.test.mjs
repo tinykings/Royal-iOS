@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fetchHackerNews, fetchHackerNewsPage, fetchReddit, markSeen } from "./sources.js";
+import { fetchHackerNews, fetchHackerNewsPage, fetchReddit, NotLoggedInError } from "./sources.js";
 
 test("Reddit sort uses personalized Best, score-ranked Top with timeframe, and chronological New", async () => {
   const originalFetch = globalThis.fetch;
@@ -95,17 +95,21 @@ test("Reddit images: previews, galleries, crossposts, fallbacks, missing images,
   }
 });
 
-test("markSeen flags repeats per source and keeps a capped history", () => {
-  const post = (source, id) => ({ source, id });
-  const first = markSeen([post("reddit", "a"), post("hn", "a")], undefined, 3);
-  assert.deepEqual(first.posts.map((p) => p.seen), [false, false]);
-  const second = markSeen([post("reddit", "b"), post("reddit", "a"), post("hn", "c")], first.seen, 3);
-  assert.deepEqual(second.posts.map((p) => p.seen), [false, true, false]);
-  assert.deepEqual(second.seen, { reddit: ["b", "a"], hn: ["a", "c"] });
-  const third = markSeen([post("reddit", "c"), post("reddit", "d")], second.seen, 3);
-  assert.deepEqual(third.seen.reddit, ["a", "c", "d"]);
-  assert.deepEqual(third.seen.hn, ["a", "c"]);
-  assert.deepEqual(markSeen([post("hn", "x")], { hn: "corrupt" }).posts[0].seen, false);
+test("Reddit requires a followed subreddit instead of falling back to all of Reddit", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url) => {
+    requests.push(new URL(url));
+    return { ok: true, json: async () => ({ data: { children: [], after: null } }) };
+  };
+  try {
+    await assert.rejects(fetchReddit(3), NotLoggedInError);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].pathname, "/subreddits/mine/subscriber.json");
+    assert.equal(requests[0].searchParams.get("limit"), "1");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("Hacker News list picks top or new stories", async () => {

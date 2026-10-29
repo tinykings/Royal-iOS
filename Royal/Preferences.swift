@@ -11,35 +11,49 @@ enum Preference {
     static let feedTextSize = "feedTextSize"
 }
 
-// Text size for feed posts, a step on the Settings slider. Applied as a Dynamic
-// Type size so titles, details and icons all scale together.
+// Text size for feed posts, a step on the Settings slider. Default follows the
+// system text size; the other steps go that many sizes smaller or larger, reaching
+// into the accessibility sizes. Applied as a Dynamic Type size so titles, details
+// and icons all scale together.
 enum FeedTextSize: Int, CaseIterable {
-    case xSmall, small, medium, large, xLarge, xxLarge, xxxLarge
+    case smaller3, smaller2, smaller1, system, larger1, larger2, larger3
 
-    static let standard = FeedTextSize.large
+    static let standard = FeedTextSize.system
 
-    var dynamicTypeSize: DynamicTypeSize {
-        switch self {
-        case .xSmall: .xSmall
-        case .small: .small
-        case .medium: .medium
-        case .large: .large
-        case .xLarge: .xLarge
-        case .xxLarge: .xxLarge
-        case .xxxLarge: .xxxLarge
-        }
+    // The size to show text at when the system is set to `base`.
+    func dynamicTypeSize(from base: DynamicTypeSize) -> DynamicTypeSize {
+        let sizes = DynamicTypeSize.allCases
+        let index = sizes.firstIndex(of: base) ?? sizes.firstIndex(of: .large)!
+        let shifted = min(max(index + rawValue - Self.system.rawValue, 0), sizes.count - 1)
+        return sizes[shifted]
     }
 
     var title: String {
         switch self {
-        case .xSmall: "Extra Small"
-        case .small: "Small"
-        case .medium: "Medium"
-        case .large: "Default"
-        case .xLarge: "Large"
-        case .xxLarge: "Extra Large"
-        case .xxxLarge: "Huge"
+        case .smaller3: "Much Smaller"
+        case .smaller2: "Smaller"
+        case .smaller1: "Slightly Smaller"
+        case .system: "Default"
+        case .larger1: "Slightly Larger"
+        case .larger2: "Larger"
+        case .larger3: "Much Larger"
         }
+    }
+}
+
+extension View {
+    // Shows feed text at the Settings size, relative to the system text size.
+    func feedTextSize(_ size: FeedTextSize) -> some View {
+        modifier(FeedTextSizeModifier(size: size))
+    }
+}
+
+private struct FeedTextSizeModifier: ViewModifier {
+    let size: FeedTextSize
+    @Environment(\.dynamicTypeSize) private var base
+
+    func body(content: Content) -> some View {
+        content.dynamicTypeSize(size.dynamicTypeSize(from: base))
     }
 }
 

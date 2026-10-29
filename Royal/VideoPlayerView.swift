@@ -1,33 +1,65 @@
 import SwiftUI
 import WebKit
 
-// Docked player above the tabs: the video at 16:9 with a close button. In landscape
-// it fills the screen. YouTube's own controls (tap the video) handle fullscreen and
-// the rest. The web view stays alive across both, so playback continues while feeds
-// scroll and tabs switch.
+// Docked player above the tabs: the video at 16:9 with a bar below naming it and
+// closing it. In landscape it fills the screen, with the close button in the margin
+// beside the video. Both keep clear of YouTube's own controls (tap the video), which
+// handle fullscreen and the rest. The web view stays alive across both, so playback
+// continues while feeds scroll and tabs switch.
 struct VideoPanel: View {
     @EnvironmentObject private var store: FeedStore
     let post: FeedPost
     let expanded: Bool
-    let collapsedHeight: CGFloat
 
     var body: some View {
-        YouTubePlayer(videoId: post.videoId ?? "")
-            .frame(height: expanded ? nil : collapsedHeight)
-            .frame(maxHeight: expanded ? .infinity : nil)
-            .overlay(alignment: .topTrailing) {
-                Button("Close", systemImage: "xmark") {
-                    store.playingVideo = nil
+        VStack(spacing: 0) {
+            YouTubePlayer(videoId: post.videoId ?? "")
+                .aspectRatio(16 / 9, contentMode: .fit)
+                .frame(maxWidth: .infinity, maxHeight: expanded ? .infinity : nil)
+            if !expanded {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(post.title)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+                        Text(post.label)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Playing \(post.title), \(post.label)")
+                    Spacer(minLength: 0)
+                    closeButton
                 }
-                .labelStyle(.iconOnly)
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.white)
-                .frame(width: 32, height: 32)
-                .background(.black.opacity(0.55), in: Circle())
-                .padding(8)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Color(.secondarySystemGroupedBackground))
             }
-            .background(Color.black.ignoresSafeArea())
-            .statusBarHidden(expanded)
+        }
+        // The video centers across the whole width, leaving margins for the close button.
+        .ignoresSafeArea(edges: expanded ? .horizontal : [])
+        .overlay(alignment: .topTrailing) {
+            if expanded {
+                closeButton
+                    .foregroundStyle(.white)
+                    .padding(12)
+                    .ignoresSafeArea()
+            }
+        }
+        .background(Color.black.ignoresSafeArea())
+        .statusBarHidden(expanded)
+    }
+
+    private var closeButton: some View {
+        Button("Close", systemImage: "xmark") {
+            store.playingVideo = nil
+        }
+        .labelStyle(.iconOnly)
+        .font(.body.weight(.semibold))
+        .frame(width: 32, height: 32)
+        .background(Color.secondary.opacity(0.25), in: Circle())
+        .contentShape(Circle())
     }
 }
 

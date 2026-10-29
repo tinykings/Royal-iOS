@@ -25,6 +25,10 @@ struct FeedState {
     // Offset of the next page, for sources that load in pages.
     var next: Int?
     var loadingMore = false
+    // Why the last next-page fetch failed; paging waits for a retry instead of trying again
+    // every time a row near the end appears.
+    var moreError: String?
+    var loadedAt: Date?
 }
 
 enum AppTab: Hashable {
@@ -40,6 +44,8 @@ final class FeedStore: ObservableObject {
     @Published var selectedTab: AppTab = .all
     // The video in the docked player.
     @Published var playingVideo: FeedPost?
+    // Bumped when the showing tab's icon is tapped again; that tab scrolls to the top.
+    @Published private(set) var reselected: (tab: AppTab, count: Int)?
     // Newest first. Synced through iCloud; see SavedPostsStorage.
     @Published private(set) var saved = SavedPostsStorage.load()
     private var cloudObserver: NSObjectProtocol?
@@ -52,6 +58,10 @@ final class FeedStore: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in self?.saved = SavedPostsStorage.load() }
         }
+    }
+
+    func reselect(_ tab: AppTab) {
+        reselected = (tab, (reselected?.count ?? 0) + 1)
     }
 
     var savedPosts: [FeedPost] {
@@ -100,10 +110,10 @@ final class FeedStore: ObservableObject {
         let state = state(key)
         do {
             let page = try await session.posts(key)
-            feeds[key] = FeedState(posts: page.posts, loaded: true, next: page.next)
+            feeds[key] = FeedState(posts: page.posts, loaded: true, next: page.next, loadedAt: Date())
         } catch {
             // Keep earlier posts visible when a refresh fails.
-            feeds[key] = FeedState(posts: state.posts, error: error.localizedDescription, loaded: true)
+            feeds[key] = FeedState(posts: state.posts, error: error.localizedDescription, loaded: true, loadedAt: state.loadedAt)
         }
         loggedIn[key.source] = await session.isLoggedIn(key.source)
     }
@@ -123,26 +133,64 @@ final class FeedStore: ObservableObject {
     }
 
     // Fetches the next page of each feed that has more; called near the end of a list.
-    func loadMore(_ keys: [FeedKey]) async {
+    // After a failure it waits for `retry`, which the list's retry button passes.
+    func loadMore(_ keys: [FeedKey], retry: Bool = false) async {
         for key in keys {
             var state = state(key)
-            guard let offset = state.next, !state.loading, !state.loadingMore else { continue }
+            guard let offset = state.next, !state.loading, !state.loadingMore,
+                  retry || state.moreError == nil else { continue }
+            let loadedAt = state.loadedAt
             state.loadingMore = true
+            state.moreError = nil
             feeds[key] = state
             do {
                 let page = try await session.posts(key, offset: offset)
                 state = self.state(key)
+                // A refresh replaced the feed while this page loaded; it no longer follows on.
+                guard state.loadedAt == loadedAt else { continue }
                 // The story list can shift between pages; skip repeats.
                 let known = Set(state.posts.map(\.id))
                 state.posts += page.posts.filter { !known.contains($0.id) }
                 state.next = page.next
-                if keys == FeedKey.combined { rememberSeen(page.posts) }
+                if FeedKey.combined.contains(key) {
+                    pagedSinceRefresh.formUnion(page.posts.map(\.id))
+                    rememberSeen(page.posts)
+                }
             } catch {
                 state = self.state(key)
+                guard state.loadedAt == loadedAt else { continue }
+                state.moreError = error.localizedDescription
             }
             state.loadingMore = false
             feeds[key] = state
         }
+    }
+
+    // MARK: Refresh on return
+
+    private static let staleAfter: TimeInterval = 15 * 60
+
+    // Reloads feeds last loaded long ago, as when the app returns after a while away.
+    // The All feed's feeds reload together so the refresh is recorded for its divider.
+    func refreshStale() async {
+        let cutoff = Date().addingTimeInterval(-Self.staleAfter)
+        let stale = feeds.filter { $0.value.loaded && ($0.value.loadedAt ?? .distantPast) < cutoff }.map(\.key)
+        guard !stale.isEmpty else { return }
+        async let combined: Void = stale.contains(where: FeedKey.combined.contains)
+            ? load(FeedKey.combined, force: true) : ()
+        await load(stale.filter { !FeedKey.combined.contains($0) }, force: true)
+        await combined
+    }
+
+    // MARK: Accounts
+
+    // Clears the source's login and drops its loaded posts.
+    func logOut(_ source: FeedSource) async {
+        await session.logOut(source)
+        for key in feeds.keys where key.source == source {
+            feeds[key] = FeedState()
+        }
+        loggedIn[source] = false
     }
 
     // MARK: New since last refresh (All feed)
@@ -161,6 +209,9 @@ final class FeedStore: ObservableObject {
     // Sources that had posts in some earlier refresh. A source just logged into has
     // none, and its posts aren't called new, or they'd all sit above the divider.
     private var previousSources: Set<FeedSource> = []
+    // Posts that arrived by scrolling to the end since the latest refresh. They stay with
+    // the seen posts at the bottom rather than jumping up above the divider.
+    private var pagedSinceRefresh: Set<String> = []
 
     // Remembers what this refresh shows, so the next refresh can tell what's new.
     // Posts from feeds that failed this time stay remembered from earlier refreshes.
@@ -180,6 +231,7 @@ final class FeedStore: ObservableObject {
         let now = Date()
         defaults.set(now, forKey: Self.refreshedKey)
         lastRefresh = now
+        pagedSinceRefresh = []
     }
 
     // Adds posts loaded after a refresh, so the next refresh doesn't call them new.
@@ -199,7 +251,8 @@ final class FeedStore: ObservableObject {
         guard let previousRefresh, !previouslySeen.isEmpty else { return nil }
         let cutoff = previousRefresh.timeIntervalSince1970
         func isNew(_ post: FeedPost) -> Bool {
-            if previouslySeen.contains(post.id) || !previousSources.contains(post.source) { return false }
+            if previouslySeen.contains(post.id) || pagedSinceRefresh.contains(post.id)
+                || !previousSources.contains(post.source) { return false }
             if post.source == .youtube, let publishedAt = post.publishedAt { return publishedAt > cutoff }
             return true
         }

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fetchYouTube, parseYouTubeSubscriptions, NotLoggedInError, markSeen, youTubePublishedAt } from "./sources.js";
+import { fetchYouTube, parseYouTubeSubscriptions, NotLoggedInError, youTubePublishedAt } from "./sources.js";
 
 const video = (id = "abcdefghijk") => ({ videoRenderer: {
   videoId: id, title: { runs: [{ text: 'Video "title" } \\ test' }] },
@@ -23,7 +23,6 @@ test("YouTube parses subscriptions, escaped titles, deduplication, selected tab,
   assert.equal(posts[0].image, "https://i.ytimg.com/vi/abcdefghijk/maxresdefault.jpg");
   assert.equal(posts[0].url, "https://www.youtube.com/watch?v=abcdefghijk");
   assert.equal(parseYouTubeSubscriptions(html, 1).length, 1);
-  assert.equal(markSeen(posts, { youtube: [posts[0].id] }).posts[0].seen, true);
 });
 
 test("YouTube ignores ranked shelves without consuming limits or hiding chronological duplicates", () => {

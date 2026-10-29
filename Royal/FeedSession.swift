@@ -241,6 +241,27 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         }
     }
 
+    // Removes the site data holding the source's login. YouTube signs in through Google,
+    // whose own cookies would sign it straight back in, so those go too.
+    func logOut(_ source: FeedSource) async {
+        let domains: Set<String> = switch source {
+        case .reddit: ["reddit.com"]
+        case .youtube: ["youtube.com", "google.com"]
+        case .hn: []
+        }
+        let store = webView.configuration.websiteDataStore
+        let types = WKWebsiteDataStore.allWebsiteDataTypes()
+        let records = await store.dataRecords(ofTypes: types).filter { domains.contains($0.displayName) }
+        await store.removeData(ofTypes: types, for: records)
+        // Cookies set natively from fetch responses can outlive the records; clear them directly.
+        for cookie in await cookieStore.allCookies() {
+            let domain = cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain
+            if domains.contains(where: { domain == $0 || domain.hasSuffix("." + $0) }) {
+                await cookieStore.deleteCookie(cookie)
+            }
+        }
+    }
+
     // Debug readout: which session cookies exist, and how each endpoint answers.
     func diagnostics() async -> String {
         var lines: [String] = []
