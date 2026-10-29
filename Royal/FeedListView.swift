@@ -12,7 +12,6 @@ struct FeedListView<Trailing: View>: View {
     @AppStorage(Preference.hnOpen) private var hnOpen = OpenTarget.link
     @AppStorage(Preference.youtubePlayback) private var youtubePlayback = VideoPlayback.inApp
     @AppStorage(Preference.listWhilePlaying) private var listWhilePlaying = true
-    @AppStorage(Preference.setupComplete) private var setupComplete = false
     let title: String
     let keys: [FeedKey]
     var showsSource = false
@@ -28,18 +27,19 @@ struct FeedListView<Trailing: View>: View {
         // The header slides away while scrolling down, and stays hidden while the
         // docked video player is showing, to leave more room for the feed.
         let headerHidden = scrolledAway || store.playingVideo != nil
-        // On first open the All feed starts with a card for logging in, in place of login errors.
-        let showsSetup = keys == FeedKey.combined && !savedOnly && !setupComplete
+        // Feeds needing an account start with a card for logging in, in place of their errors.
+        let loggedOut = savedOnly ? [] : [FeedSource.reddit, .youtube].filter { source in
+            keys.contains { $0.source == source } && store.loggedIn[source] == false
+        }
         NavigationStack {
             List {
-                if showsSetup {
-                    SetupCard {
-                        setupComplete = true
+                if !loggedOut.isEmpty {
+                    LoginCard(sources: loggedOut, combined: keys == FeedKey.combined) {
                         Task { await store.load(keys, force: true) }
                     }
                 }
-                ForEach(savedOnly || showsSetup ? [] : keys, id: \.self) { key in
-                    if let error = store.state(key).error {
+                ForEach(savedOnly ? [] : keys, id: \.self) { key in
+                    if let error = store.state(key).error, !loggedOut.contains(key.source) {
                         Section {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("\(key.source.title): \(error)")
@@ -336,28 +336,29 @@ struct SafariView: UIViewControllerRepresentable {
     }
 }
 
-// The All feed's first-open card: log in to Reddit and YouTube, then load the feed.
-struct SetupCard: View {
+// Login buttons for logged-out feeds; the feed reloads once a login sticks.
+struct LoginCard: View {
     @EnvironmentObject private var store: FeedStore
     @State private var loggingIn: FeedSource?
-    let complete: () -> Void
+    let sources: [FeedSource]
+    // The All feed, which mixes in Hacker News.
+    var combined = false
+    let loggedIn: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Welcome to Royal")
+            Text(combined ? "Log in to see your feeds" : "Log in to \(sources[0].title)")
                 .font(.title3.bold())
-            Text("Log in to Reddit and YouTube to see your subscriptions here alongside Hacker News. Close each login page when you're done. You can log in later from Settings.")
+            Text(message)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-            ForEach([FeedSource.reddit, .youtube]) { source in
-                let loggedIn = store.loggedIn[source] == true
+            ForEach(sources) { source in
                 Button {
                     loggingIn = source
                 } label: {
                     HStack {
-                        Image(systemName: loggedIn ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(loggedIn ? .green : .secondary)
-                        Text(loggedIn ? "Logged in to \(source.title)" : "Log in to \(source.title)")
+                        Image(systemName: "person.crop.circle")
+                        Text("Log in to \(source.title)")
                         Spacer()
                         Image(systemName: "chevron.right")
                             .font(.footnote.weight(.semibold))
@@ -368,21 +369,15 @@ struct SetupCard: View {
                 }
                 .buttonStyle(.plain)
             }
-            Button(action: complete) {
-                Text("Complete Setup")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
         }
         .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: PostRow.cornerRadius))
         .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
-        .task { await store.refreshLoginStatus() }
         // Check the login cookies once the page is closed.
-        .sheet(item: $loggingIn, onDismiss: { Task { await store.refreshLoginStatus() } }) { source in
+        .sheet(item: $loggingIn, onDismiss: checkLogin) { source in
             NavigationStack {
                 LoginPage(title: source.title, url: source.loginURL!)
                     .toolbar {
@@ -391,6 +386,25 @@ struct SetupCard: View {
                         }
                     }
             }
+        }
+    }
+
+    private var message: String {
+        let reddit = "For Reddit, use a username and password; \"Continue with Google\" is blocked inside apps."
+        if combined {
+            let names = sources.map(\.title).joined(separator: " and ")
+            return "Log in to \(names) to see your subscriptions here alongside Hacker News. "
+                + (sources.contains(.reddit) ? reddit : "")
+        }
+        return sources[0] == .reddit
+            ? "Log in to see your Reddit home feed. " + reddit
+            : "Log in to see videos from your YouTube subscriptions."
+    }
+
+    private func checkLogin() {
+        Task {
+            await store.refreshLoginStatus()
+            if sources.contains(where: { store.loggedIn[$0] == true }) { loggedIn() }
         }
     }
 }
