@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct ContentView: View {
     @StateObject private var store = FeedStore()
@@ -40,6 +41,7 @@ struct ContentView: View {
                 .onChange(of: store.selectedTab) { oldTab, _ in
                     if oldTab == .settings { Task { await store.reloadFailed() } }
                 }
+                .background(IgnoreTabReselect())
                 .frame(maxHeight: tabsHidden ? 0 : .infinity)
                 .opacity(tabsHidden ? 0 : 1)
                 .allowsHitTesting(!tabsHidden)
@@ -88,6 +90,67 @@ struct HackerNewsFeedView: View {
                 HeaderOption(value: "top", icon: "trophy", title: "Top"),
                 HeaderOption(value: "new", icon: "clock", title: "New"),
             ])
+        }
+    }
+}
+
+// Tapping the tab that's already showing would nudge its feed toward the top. SwiftUI has
+// no setting for this, so wrap the tab bar controller's delegate to turn those taps down,
+// passing everything else on to SwiftUI's own delegate.
+private struct IgnoreTabReselect: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+    func updateUIViewController(_ controller: Controller, context: Context) {}
+
+    final class Controller: UIViewController {
+        private let filter = ReselectFilter()
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            install()
+        }
+
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            // SwiftUI can set its delegate again after an update; put the filter back in front.
+            install()
+        }
+
+        private func install() {
+            guard let tabs = view.window?.rootViewController.flatMap(Self.tabBarController(in:)),
+                  tabs.delegate !== filter else { return }
+            filter.original = tabs.delegate
+            tabs.delegate = filter
+        }
+
+        private static func tabBarController(in controller: UIViewController) -> UITabBarController? {
+            if let tabs = controller as? UITabBarController { return tabs }
+            for child in controller.children + [controller.presentedViewController].compactMap({ $0 }) {
+                if let tabs = tabBarController(in: child) { return tabs }
+            }
+            return nil
+        }
+    }
+
+    final class ReselectFilter: NSObject, UITabBarControllerDelegate {
+        weak var original: UITabBarControllerDelegate?
+
+        func tabBarController(_ tabBarController: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
+            if viewController === tabBarController.selectedViewController { return false }
+            return original?.tabBarController?(tabBarController, shouldSelect: viewController) ?? true
+        }
+
+        @available(iOS 18, *)
+        func tabBarController(_ tabBarController: UITabBarController, shouldSelectTab tab: UITab) -> Bool {
+            if tab === tabBarController.selectedTab { return false }
+            return original?.tabBarController?(tabBarController, shouldSelectTab: tab) ?? true
+        }
+
+        override func responds(to selector: Selector!) -> Bool {
+            super.responds(to: selector) || original?.responds(to: selector) == true
+        }
+
+        override func forwardingTarget(for selector: Selector!) -> Any? {
+            original?.responds(to: selector) == true ? original : nil
         }
     }
 }
