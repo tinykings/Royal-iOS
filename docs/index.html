@@ -213,5 +213,14 @@
     Royal is open source. Reddit, Hacker News, and YouTube are trademarks of their respective owners; Royal is not affiliated with or endorsed by them.
   </div>
 </footer>
+<script>
+  // Land on the linked section (e.g. #privacy) on load, even when the browser would
+  // otherwise restore an earlier scroll position.
+  if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+  window.addEventListener("load", () => {
+    const target = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1)));
+    if (target) target.scrollIntoView({ behavior: "instant" });
+  });
+</script>
 </body>
 </html>
