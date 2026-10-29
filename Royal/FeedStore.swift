@@ -130,6 +130,7 @@ final class FeedStore: ObservableObject {
 
     private static let seenKey = "allFeedSeenIDs"
     private static let refreshedKey = "allFeedRefreshedAt"
+    private static let sourcesKey = "allFeedSources"
     private static let seenLimit = 3000
 
     // When the All feed was last refreshed; shown atop the feed.
@@ -138,6 +139,9 @@ final class FeedStore: ObservableObject {
     @Published private(set) var previousRefresh: Date?
     // Post ids the All feed had shown as of that earlier refresh.
     private var previouslySeen: Set<String> = []
+    // Sources that had posts in some earlier refresh. A source just logged into has
+    // none, and its posts aren't called new, or they'd all sit above the divider.
+    private var previousSources: Set<FeedSource> = []
 
     // Remembers what this refresh shows, so the next refresh can tell what's new.
     // Posts from feeds that failed this time stay remembered from earlier refreshes.
@@ -146,7 +150,11 @@ final class FeedStore: ObservableObject {
         let stored = defaults.stringArray(forKey: Self.seenKey) ?? []
         previouslySeen = Set(stored)
         previousRefresh = defaults.object(forKey: Self.refreshedKey) as? Date
-        let current = posts(FeedKey.combined).map(\.id)
+        let storedSources = Set(defaults.stringArray(forKey: Self.sourcesKey) ?? [])
+        previousSources = Set(storedSources.compactMap(FeedSource.init(rawValue:)))
+        let currentPosts = posts(FeedKey.combined)
+        defaults.set(Array(storedSources.union(currentPosts.map(\.source.rawValue))), forKey: Self.sourcesKey)
+        let current = currentPosts.map(\.id)
         let currentSet = Set(current)
         let updated = stored.filter { !currentSet.contains($0) } + current
         defaults.set(Array(updated.suffix(Self.seenLimit)), forKey: Self.seenKey)
@@ -167,11 +175,12 @@ final class FeedStore: ObservableObject {
     // Splits the All feed into posts new since the previous refresh and those already seen.
     // Reddit and HN rank posts, so an older post can be new to the feed; YouTube is
     // chronological, so its videos are new only if posted after the previous refresh.
+    // A source new to the feed has nothing new yet, so it mixes in with the rest.
     func splitByRefresh(_ posts: [FeedPost]) -> (new: [FeedPost], seen: [FeedPost])? {
         guard let previousRefresh, !previouslySeen.isEmpty else { return nil }
         let cutoff = previousRefresh.timeIntervalSince1970
         func isNew(_ post: FeedPost) -> Bool {
-            if previouslySeen.contains(post.id) { return false }
+            if previouslySeen.contains(post.id) || !previousSources.contains(post.source) { return false }
             if post.source == .youtube, let publishedAt = post.publishedAt { return publishedAt > cutoff }
             return true
         }
