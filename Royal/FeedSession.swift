@@ -29,6 +29,8 @@ struct FeedPost: Codable, Identifiable {
     let image: String?
     let videoId: String?
     let published: String?
+    // YouTube only: latest time the video could have been published, from its age text.
+    let publishedAt: Double?
 }
 
 enum FeedError: LocalizedError {

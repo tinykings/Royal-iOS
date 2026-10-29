@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fetchYouTube, parseYouTubeSubscriptions, NotLoggedInError, markSeen } from "./sources.js";
+import { fetchYouTube, parseYouTubeSubscriptions, NotLoggedInError, markSeen, youTubePublishedAt } from "./sources.js";
 
 const video = (id = "abcdefghijk") => ({ videoRenderer: {
   videoId: id, title: { runs: [{ text: 'Video "title" } \\ test' }] },
@@ -98,4 +98,16 @@ test("YouTube uses browser credentials and handles network/login/consent errors"
     globalThis.fetch = async () => ({ ok: true, url: "https://consent.youtube.com/" });
     await assert.rejects(fetchYouTube(10), /consent/);
   } finally { globalThis.fetch = original; }
+});
+
+test("YouTube ages become the latest possible publish time", () => {
+  assert.equal(youTubePublishedAt("2 hours ago", 10000), 10000 - 7200);
+  assert.equal(youTubePublishedAt("1 day ago", 100000), 100000 - 86400);
+  assert.equal(youTubePublishedAt("Streamed 5 minutes ago", 1000), 700);
+  assert.equal(youTubePublishedAt("Live", 1000), null);
+  assert.equal(youTubePublishedAt("", 1000), null);
+  const html = page({ items: [video()] });
+  const before = Date.now() / 1000;
+  const at = parseYouTubeSubscriptions(html)[0].publishedAt;
+  assert.ok(at >= before - 7200 && at <= Date.now() / 1000 - 7200);
 });

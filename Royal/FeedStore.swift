@@ -161,10 +161,17 @@ final class FeedStore: ObservableObject {
     }
 
     // Splits the All feed into posts new since the previous refresh and those already seen.
+    // Reddit and HN rank posts, so an older post can be new to the feed; YouTube is
+    // chronological, so its videos are new only if posted after the previous refresh.
     func splitByRefresh(_ posts: [FeedPost]) -> (new: [FeedPost], seen: [FeedPost])? {
-        guard previousRefresh != nil, !previouslySeen.isEmpty else { return nil }
-        let seen = posts.filter { previouslySeen.contains($0.id) }
-        return (posts.filter { !previouslySeen.contains($0.id) }, seen)
+        guard let previousRefresh, !previouslySeen.isEmpty else { return nil }
+        let cutoff = previousRefresh.timeIntervalSince1970
+        func isNew(_ post: FeedPost) -> Bool {
+            if previouslySeen.contains(post.id) { return false }
+            if post.source == .youtube, let publishedAt = post.publishedAt { return publishedAt > cutoff }
+            return true
+        }
+        return (posts.filter(isNew), posts.filter { !isNew($0) })
     }
 
     // After logging in, retry feeds that failed.

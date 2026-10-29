@@ -150,6 +150,14 @@ export async function fetchHackerNewsPage(count, { list = "top", offset = 0 } = 
   return { posts: await hackerNewsItems(ids.slice(offset, end)), next: end < ids.length ? end : null };
 }
 
+// YouTube only shows ages like "3 hours ago", rounded down. Returns the latest time
+// (epoch seconds) the video could have been published, or null when there's no age.
+const AGE_UNITS = { second: 1, minute: 60, hour: 3600, day: 86400, week: 604800, month: 2592000, year: 31536000 };
+export function youTubePublishedAt(published, now = Date.now() / 1000) {
+  const match = /^(?:Streamed |Premiered )?(\d+) (second|minute|hour|day|week|month|year)s? ago$/i.exec(published ?? "");
+  return match ? now - Number(match[1]) * AGE_UNITS[match[2].toLowerCase()] : null;
+}
+
 // YouTube exposes subscriptions in page data, not a supported public session API.
 // Parse JSON only: never execute scripts from the fetched page.
 export function parseYouTubeSubscriptions(html, limit = CONFIG.totalItems) {
@@ -228,6 +236,8 @@ export function parseYouTubeSubscriptions(html, limit = CONFIG.totalItems) {
   const selected = tabs?.find((tab) => tab.tabRenderer?.selected)?.tabRenderer;
   if (!data.contents) throw new Error("YouTube subscriptions unavailable. Check login and consent on YouTube.");
   visit(selected?.content ?? data.contents);
+  const now = Date.now() / 1000;
+  for (const post of posts) post.publishedAt = youTubePublishedAt(post.published, now);
   return posts;
 }
 
