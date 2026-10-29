@@ -3,8 +3,8 @@
     {
       "value" : {
         "linear-gradient" : [
-          "srgb:0.31373,0.34118,0.38431,1.00000",
-          "srgb:0.06667,0.09020,0.13333,1.00000"
+          "srgb:0.98824,0.92157,0.46667,1.00000",
+          "srgb:0.99608,0.85490,0.33333,1.00000"
         ]
       }
     },
@@ -23,8 +23,39 @@
       "layers" : [
         {
           "glass" : true,
+          "hidden-specializations" : [
+            {
+              "value" : false
+            },
+            {
+              "appearance" : "dark",
+              "value" : true
+            },
+            {
+              "appearance" : "tinted",
+              "value" : true
+            }
+          ],
+          "image-name" : "crown-dark.png",
+          "name" : "crown-dark"
+        },
+        {
+          "glass" : true,
           "image-name" : "crown.png",
-          "name" : "crown"
+          "name" : "crown",
+          "hidden-specializations" : [
+            {
+              "value" : true
+            },
+            {
+              "appearance" : "dark",
+              "value" : false
+            },
+            {
+              "appearance" : "tinted",
+              "value" : false
+            }
+          ]
         }
       ],
       "shadow" : {
@@ -72,8 +103,8 @@
               "value" : true
             }
           ],
-          "image-name" : "background.png",
-          "name" : "background"
+          "image-name" : "background-light.png",
+          "name" : "background-light"
         }
       ],
       "shadow" : {
