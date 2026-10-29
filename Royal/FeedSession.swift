@@ -80,6 +80,8 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
     private var cookieStore: WKHTTPCookieStore { webView.configuration.websiteDataStore.httpCookieStore }
     private var userAgent: String?
     private var loaded = false
+    // Bumped whenever the page is reloaded, so concurrent failures reload it only once.
+    private var generation = 0
     private var waiters: [CheckedContinuation<Void, Error>] = []
 
     private lazy var sourcesScript: String = {
@@ -127,6 +129,18 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         for waiter in pending {
             if let error { waiter.resume(throwing: error) } else { waiter.resume() }
         }
+    }
+
+    // iOS can kill the hidden page's process, typically while the app is in the background.
+    // Scripts then fail until the page is loaded again.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        discardPage()
+    }
+
+    private func discardPage() {
+        guard waiters.isEmpty else { return }
+        loaded = false
+        generation += 1
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -189,9 +203,21 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         return (http?.statusCode ?? 0, String(decoding: data, as: UTF8.self), http?.url?.absoluteString ?? url.absoluteString)
     }
 
-    private func run(_ body: String, _ arguments: [String: Any] = [:]) async throws -> Any? {
+    private func run(_ body: String, _ arguments: [String: Any] = [:], retry: Bool = true) async throws -> Any? {
         try await ensureLoaded()
-        return try await webView.callAsyncJavaScript(body, arguments: arguments, in: nil, contentWorld: .defaultClient)
+        let started = generation
+        do {
+            return try await webView.callAsyncJavaScript(body, arguments: arguments, in: nil, contentWorld: .defaultClient)
+        } catch let error as WKError where retry && Self.pageLost(error) {
+            // The page's process went away under us (it reports this as an unsupported
+            // result type); load a fresh page and try once more.
+            if generation == started { discardPage() }
+            return try await run(body, arguments, retry: false)
+        }
+    }
+
+    private static func pageLost(_ error: WKError) -> Bool {
+        [.javaScriptResultTypeIsUnsupported, .webContentProcessTerminated, .webViewInvalidated].contains(error.code)
     }
 
     func isLoggedIn(_ source: FeedSource) async -> Bool {

@@ -395,10 +395,12 @@ struct PostRow: View {
             details
             Spacer(minLength: 0)
             if let thumbnail {
-                AsyncImage(url: thumbnail) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    Color.secondary.opacity(0.1)
+                CachedImage(url: thumbnail) { image in
+                    if let image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        Color.secondary.opacity(0.1)
+                    }
                 }
                 .frame(width: 96, height: 54)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -415,18 +417,20 @@ struct PostRow: View {
                     Color.clear
                         .aspectRatio(16 / 9, contentMode: .fit)
                         .overlay {
-                            AsyncImage(url: thumbnail) { image in
-                                image.resizable().scaledToFill()
-                            } placeholder: {
-                                Color.secondary.opacity(0.1)
+                            CachedImage(url: thumbnail) { image in
+                                if let image {
+                                    image.resizable().scaledToFill()
+                                } else {
+                                    Color.secondary.opacity(0.1)
+                                }
                             }
                         }
                         .clipped()
                 } else {
                     // Reddit images keep their own shape, capped so tall ones don't fill the
                     // screen; narrow ones sit on a faint backdrop across the tile.
-                    AsyncImage(url: thumbnail) { phase in
-                        if let image = phase.image {
+                    CachedImage(url: thumbnail) { image in
+                        if let image {
                             image.resizable().scaledToFit()
                                 .frame(maxWidth: .infinity, maxHeight: 420)
                                 .background(Color.secondary.opacity(0.08))
@@ -496,5 +500,47 @@ struct PostRow: View {
         if seconds < 3600 { return "\(Int(seconds / 60))m" }
         if seconds < 86400 { return "\(Int(seconds / 3600))h" }
         return "\(Int(seconds / 86400))d"
+    }
+}
+
+// AsyncImage forgets an image once its row scrolls away, so scrolling back shows the
+// placeholder, refetches, and the row resizes when the image lands, jolting the list.
+// This keeps decoded images in memory so returning rows draw at their final size at once.
+@MainActor
+enum ImageCache {
+    static let images: NSCache<NSURL, UIImage> = {
+        let cache = NSCache<NSURL, UIImage>()
+        cache.totalCostLimit = 200 * 1024 * 1024
+        return cache
+    }()
+
+    static func image(for url: URL) -> UIImage? {
+        images.object(forKey: url as NSURL)
+    }
+
+    static func load(_ url: URL) async -> UIImage? {
+        if let image = image(for: url) { return image }
+        guard let (data, _) = try? await URLSession.shared.data(from: url),
+              let decoded = UIImage(data: data) else { return nil }
+        // Decode off the main thread so the first display doesn't hitch the scroll.
+        let image = await decoded.byPreparingForDisplay() ?? decoded
+        let pixels = image.size.width * image.scale * image.size.height * image.scale
+        images.setObject(image, forKey: url as NSURL, cost: Int(pixels) * 4)
+        return image
+    }
+}
+
+struct CachedImage<Content: View>: View {
+    let url: URL
+    @ViewBuilder let content: (Image?) -> Content
+    @State private var loaded: (url: URL, image: UIImage)?
+
+    var body: some View {
+        let image = loaded?.url == url ? loaded?.image : ImageCache.image(for: url)
+        content(image.map { Image(uiImage: $0) })
+            .task(id: url) {
+                guard image == nil, let fetched = await ImageCache.load(url) else { return }
+                loaded = (url, fetched)
+            }
     }
 }
