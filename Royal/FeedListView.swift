@@ -871,7 +871,7 @@ struct EarlierPostsButton: View {
                     .foregroundStyle(.secondary)
             }
             if pullable {
-                Label("Pull up for earlier posts", systemImage: "chevron.up")
+                Text("Pull up for earlier posts")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.tint)
                     .accessibilityLabel("Show Earlier Posts")
@@ -896,8 +896,8 @@ struct EarlierPostsButton: View {
     }
 }
 
-// Rises from the bottom as the feed is pulled up past its end: the crown fills with gold
-// from the bottom, and once full, letting go shows the earlier posts.
+// Rises from the bottom as the feed is pulled up past its end: the horse fills with gold
+// from the hooves up, and once full, letting go shows the earlier posts.
 struct PullUpIndicator: View {
     let distance: CGFloat
     let threshold: CGFloat
@@ -908,26 +908,38 @@ struct PullUpIndicator: View {
     var body: some View {
         VStack(spacing: 6) {
             ZStack {
-                RoyalCrown()
-                    .fill(.tertiary)
-                RoyalCrown()
-                    .fill(.tint)
+                horse
+                    .opacity(0.8)
+                // The art is light gray, so multiplying keeps its shading and lines in gold.
+                horse
+                    .colorMultiply(.royalAccent)
                     .mask(alignment: .bottom) {
-                        Rectangle().frame(height: 26 / RoyalCrown.aspectRatio * progress)
+                        Rectangle().frame(height: Self.height * progress)
                     }
             }
-            .frame(width: 26, height: 26 / RoyalCrown.aspectRatio)
+            .frame(width: Self.width, height: Self.height)
             .scaleEffect(armed ? 1.15 : 0.7 + 0.3 * progress)
             Text(armed ? "Release for earlier posts" : "Pull up for earlier posts")
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
         }
-        .padding(.bottom, 12)
+        // Clears the floating tab bar, which the list runs under.
+        .padding(.bottom, 44)
         .opacity(Double(progress))
         // Comes up with the gap the pull opens below the list, rather than ahead of it.
         .offset(y: max(0, threshold - distance) * 0.6)
         .animation(.spring(duration: 0.25), value: armed)
         .sensoryFeedback(.impact(weight: .medium), trigger: armed) { _, armed in armed }
+    }
+
+    private static let width: CGFloat = 80
+    // The art's aspect ratio.
+    private static let height = width * 315 / 360
+
+    private var horse: some View {
+        Image("PullHorse")
+            .resizable()
+            .scaledToFit()
     }
 }
 
