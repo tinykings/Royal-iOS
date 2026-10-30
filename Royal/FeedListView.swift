@@ -13,10 +13,7 @@ struct FeedListView<Trailing: View>: View {
     @State private var refresh: RefreshRun?
     // The All feed shows just what's new since the previous refresh until this is set.
     @State private var showEarlier = false
-    // How many posts the feed shows (past the All feed's new ones); pulling up past the
-    // end shows a page more, so the list only grows when asked to.
-    @State private var shownCount = Self.pageSize
-    // How far past the end the feed is pulled up, for earlier posts or the next page.
+    // How far past the end the feed is pulled up while earlier posts are tucked away.
     @State private var pullUp: CGFloat = 0
     // How far past the top the feed is pulled down, to refresh.
     @State private var pullDown: CGFloat = 0
@@ -49,15 +46,10 @@ struct FeedListView<Trailing: View>: View {
         }
         // The All feed opens with the time of its latest refresh, and puts posts
         // new since the previous refresh first.
+        let isAll = keys == FeedKey.combined && !savedOnly
         let split = isAll ? store.splitByRefresh(posts) : nil
         // Posts seen before stay tucked away behind a button until asked for.
         let collapsed = !showEarlier && split.map { !$0.seen.isEmpty } == true
-        // The feed shows a page at a time, rather than loading more as the end comes into
-        // view; the All feed's new posts all show, and its earlier ones a page at a time.
-        let paged = savedOnly ? posts : Array(posts.prefix(shownCount))
-        let pagedSeen = split.map { Array($0.seen.prefix(shownCount)) } ?? []
-        let canShowMore = !savedOnly && !collapsed && !posts.isEmpty
-            && ((split?.seen.count ?? posts.count) > shownCount || keys.contains { store.state($0).next != nil })
         NavigationStack {
             ScrollViewReader { proxy in
                 List {
@@ -117,8 +109,12 @@ struct FeedListView<Trailing: View>: View {
                     if isAll, let refresh = store.lastRefresh, !posts.isEmpty {
                         RefreshDivider(prefix: "Last refresh", date: refresh, hintAfter: 60 * 60)
                     }
+                    // Reaching any of the last rows fetches the next page; while earlier
+                    // posts are tucked away, the feed ends at the new ones and doesn't page.
+                    let shown = split.map { $0.new + $0.seen } ?? posts
+                    let endIDs = collapsed ? [] : Set(shown.suffix(8).map(\.id))
                     if let split, let previous = store.previousRefresh {
-                        ForEach(split.new) { postRow($0) }
+                        ForEach(split.new) { postRow($0, nearEnd: endIDs.contains($0.id)) }
                         if collapsed {
                             EarlierPostsButton(date: previous, nothingNew: split.new.isEmpty,
                                                pullable: Self.canPull) {
@@ -136,13 +132,13 @@ struct FeedListView<Trailing: View>: View {
                                     .listRowSeparator(.hidden)
                                     .listRowBackground(Color.clear)
                             }
-                            ForEach(pagedSeen) { postRow($0) }
+                            ForEach(split.seen) { postRow($0, nearEnd: endIDs.contains($0.id)) }
                         }
                     } else {
-                        ForEach(paged) { postRow($0) }
+                        ForEach(posts) { postRow($0, nearEnd: endIDs.contains($0.id)) }
                     }
                     if !savedOnly && !posts.isEmpty && !collapsed {
-                        moreStatus(canShowMore: canShowMore, proxy: proxy)
+                        moreStatus
                     }
                 }
                 .listStyle(.plain)
@@ -170,26 +166,15 @@ struct FeedListView<Trailing: View>: View {
                 .scrollContentBackground(.hidden)
                 .background(Color(.systemGroupedBackground))
                 .hidesHeaderOnScroll($scrolledAway, atTop: $atTop)
-                // Pulling up past the new posts shows the earlier ones, like pulling down
-                // refreshes; past the end of a page, it shows the next page.
-                .pullPast(.bottom, enabled: collapsed || (canShowMore && !loadingMore), distance: $pullUp,
-                          threshold: Self.pullThreshold, settleFirst: true) {
-                    if collapsed {
-                        revealEarlier(proxy)
-                    } else {
-                        Task { await showMore(proxy) }
-                    }
+                // Pulling up past the new posts shows the earlier ones, like pulling down refreshes.
+                .pullPast(.bottom, enabled: collapsed, distance: $pullUp, threshold: Self.pullThreshold,
+                          settleFirst: true) {
+                    revealEarlier(proxy)
                 }
                 .overlay(alignment: .bottom) {
-                    if pullUp > 0 {
-                        Group {
-                            if collapsed {
-                                PullIndicator.earlier(distance: pullUp, threshold: Self.pullThreshold)
-                            } else {
-                                PullIndicator.more(distance: pullUp, threshold: Self.pullThreshold)
-                            }
-                        }
-                        .allowsHitTesting(false)
+                    if collapsed && pullUp > 0 {
+                        PullIndicator.earlier(distance: pullUp, threshold: Self.pullThreshold)
+                            .allowsHitTesting(false)
                     }
                 }
                 // Pulling down past the top refreshes, with the fleur-de-lis in place of the
@@ -241,9 +226,6 @@ struct FeedListView<Trailing: View>: View {
                 }
                 // Each refresh starts with just the new posts again.
                 .onChange(of: store.lastRefresh) { showEarlier = false }
-                // And with just the first page, as does picking another sort or list.
-                .onChange(of: keys.map { store.state($0).loadedAt }) { shownCount = Self.pageSize }
-                .onChange(of: keys) { shownCount = Self.pageSize }
                 .task(id: keys) { await store.load(keys) }
                 .fullScreenCover(item: $browserURL) { item in
                     AppBrowser(url: item.url)
@@ -256,36 +238,6 @@ struct FeedListView<Trailing: View>: View {
 
     private static var topID: String { "top" }
     private static var pullThreshold: CGFloat { 90 }
-    private static var pageSize: Int { 20 }
-
-    private var isAll: Bool { keys == FeedKey.combined && !savedOnly }
-    private var loadingMore: Bool { keys.contains { store.state($0).loadingMore } }
-
-    // The posts the feed lists, in order.
-    private func shownPosts() -> [FeedPost] {
-        let posts = store.posts(keys)
-        if let split = isAll ? store.splitByRefresh(posts) : nil {
-            return split.new + split.seen.prefix(shownCount)
-        }
-        return Array(posts.prefix(shownCount))
-    }
-
-    // Shows the next page, loading it first when fewer than a page are loaded but not
-    // yet shown, and starts at its first post.
-    private func showMore(_ proxy: ScrollViewProxy, retry: Bool = false) async {
-        pullUp = 0
-        let before = shownPosts()
-        if store.posts(keys).count - before.count < Self.pageSize {
-            await store.loadMore(keys, retry: retry)
-        }
-        shownCount += Self.pageSize
-        DispatchQueue.main.async {
-            let after = shownPosts()
-            if after.count > before.count {
-                proxy.scrollTo(after[before.count].id, anchor: .top)
-            }
-        }
-    }
     // Pulling past the ends needs iOS 18's scroll geometry; earlier versions keep the
     // button for earlier posts and the system's pull to refresh.
     private static var canPull: Bool {
@@ -333,10 +285,10 @@ struct FeedListView<Trailing: View>: View {
         }
     }
 
-    // At the end of the list: a spinner while the next page loads, a retry button when
-    // it failed, or how to see the next page.
+    // At the end of the list: a spinner while the next page loads, or a retry button
+    // when it failed.
     @ViewBuilder
-    private func moreStatus(canShowMore: Bool, proxy: ScrollViewProxy) -> some View {
+    private var moreStatus: some View {
         let states = keys.map { store.state($0) }
         if states.contains(where: \.loadingMore) {
             ProgressView()
@@ -346,7 +298,7 @@ struct FeedListView<Trailing: View>: View {
                 .listRowBackground(Color.clear)
         } else if states.contains(where: { $0.moreError != nil }) {
             Button {
-                Task { await showMore(proxy, retry: true) }
+                Task { await store.loadMore(keys, retry: true) }
             } label: {
                 Label("Couldn't load more. Try Again", systemImage: "arrow.clockwise")
                     .font(.footnote)
@@ -355,14 +307,10 @@ struct FeedListView<Trailing: View>: View {
             .padding(.vertical, 8)
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
-        } else if canShowMore {
-            MorePostsButton(pullable: Self.canPull) {
-                Task { await showMore(proxy) }
-            }
         }
     }
 
-    private func postRow(_ post: FeedPost) -> some View {
+    private func postRow(_ post: FeedPost, nearEnd: Bool) -> some View {
         let isSaved = store.isSaved(post)
         return PostRow(post: post, showsSource: showsSource, layout: layout(for: post), saved: isSaved,
                        playing: store.playingVideo?.id == post.id)
@@ -372,6 +320,9 @@ struct FeedListView<Trailing: View>: View {
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
             .onTapGesture { open(post) }
+            .onAppear {
+                if nearEnd && !savedOnly { Task { await store.loadMore(keys) } }
+            }
             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                 saveButton(for: post, isSaved: isSaved)
                     .tint(.pink)
@@ -987,41 +938,9 @@ struct EarlierPostsButton: View {
     }
 }
 
-// Ends a page of the feed; pulling up past it, or tapping it, shows the next page.
-struct MorePostsButton: View {
-    // The feed shows the next page when pulled up past here, so this is just a hint;
-    // VoiceOver still offers it as a button.
-    var pullable = false
-    let action: () -> Void
-
-    var body: some View {
-        Group {
-            if pullable {
-                Text("Pull up for more posts")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.tint)
-                    .accessibilityLabel("Show More Posts")
-                    .accessibilityAddTraits(.isButton)
-                    .accessibilityAction { action() }
-            } else {
-                Button(action: action) {
-                    Label("Show More Posts", systemImage: "chevron.down")
-                        .font(.subheadline.weight(.medium))
-                }
-                .buttonStyle(.bordered)
-                .buttonBorderShape(.capsule)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
-    }
-}
-
 // Comes in from the edge the feed is pulled past: the art fills with gold from the
 // bottom up, and once full, letting go does what the caption says. The fleur-de-lis
-// pulls down to refresh, and the horse pulls up for earlier posts or the next page.
+// pulls down to refresh, and the horse pulls up for earlier posts.
 struct PullIndicator: View {
     let image: String
     // The art's width over its height.
@@ -1042,11 +961,6 @@ struct PullIndicator: View {
     static func earlier(distance: CGFloat, threshold: CGFloat) -> PullIndicator {
         PullIndicator(image: "PullHorse", aspect: 360 / 315, edge: .bottom, prompt: "Pull up for earlier posts",
                       release: "Release for earlier posts", distance: distance, threshold: threshold)
-    }
-
-    static func more(distance: CGFloat, threshold: CGFloat) -> PullIndicator {
-        PullIndicator(image: "PullHorse", aspect: 360 / 315, edge: .bottom, prompt: "Pull up for more posts",
-                      release: "Release for more posts", distance: distance, threshold: threshold)
     }
 
     // How tall the art is while its refresh runs, so the status card can sit below it.
