@@ -1036,6 +1036,11 @@ struct PostRow: View {
             if playing {
                 RoundedRectangle(cornerRadius: Self.cornerRadius)
                     .strokeBorder(.tint, lineWidth: 2)
+            } else {
+                // Keeps the tile's edge in sight when an image runs dark to its edges, as a
+                // screenshot of a dark app does; in dark mode it would blend into the page.
+                RoundedRectangle(cornerRadius: Self.cornerRadius)
+                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
             }
         }
         .accessibilityValue(playing ? "Playing" : "")
