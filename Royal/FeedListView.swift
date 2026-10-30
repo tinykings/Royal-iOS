@@ -103,7 +103,7 @@ struct FeedListView<Trailing: View>: View {
                             .listRowBackground(Color.clear)
                     }
                     if isAll, let refresh = store.lastRefresh, !posts.isEmpty {
-                        RefreshDivider(prefix: "Last refresh", date: refresh)
+                        RefreshDivider(prefix: "Last refresh", date: refresh, hintAfter: 60 * 60)
                     }
                     // Reaching any of the last rows fetches the next page; while earlier
                     // posts are tucked away, the feed ends at the new ones and doesn't page.
@@ -815,15 +815,29 @@ struct EarlierPostsButton: View {
 struct RefreshDivider: View {
     let prefix: String
     let date: Date
+    // Feeds only refresh when asked, so once this old the divider says how.
+    var hintAfter: TimeInterval? = nil
 
     var body: some View {
-        HStack(spacing: 10) {
-            line
-            Text(label)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-                .fixedSize()
-            line
+        // Checks the age each minute, so the hint appears while the feed sits open.
+        TimelineView(.everyMinute) { context in
+            VStack(spacing: 4) {
+                HStack(spacing: 10) {
+                    line
+                    Text(label)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                    line
+                }
+                if let hintAfter, context.date.timeIntervalSince(date) >= hintAfter {
+                    Text("Pull down to refresh")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.25), value: date)
         }
         .padding(.vertical, 4)
         .listRowInsets(EdgeInsets(top: 5, leading: 20, bottom: 5, trailing: 20))
