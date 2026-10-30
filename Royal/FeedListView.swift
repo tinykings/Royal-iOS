@@ -8,8 +8,11 @@ struct FeedListView<Trailing: View>: View {
     @State private var browserURL: BrowserURL?
     @State private var scrolledAway = false
     @State private var atTop = true
-    // Refreshing because the tab was tapped again; there's no pull-to-refresh spinner then.
-    @State private var tabRefreshing = false
+    // A refresh asked for by pulling the feed down or tapping its tab again; its status
+    // shows atop the feed until a moment after it's done.
+    @State private var refresh: RefreshRun?
+    // The All feed shows just what's new since the previous refresh until this is set.
+    @State private var showEarlier = false
     @AppStorage(Preference.redditLayout) private var redditLayout = FeedLayout.cards
     @AppStorage(Preference.youtubeLayout) private var youtubeLayout = FeedLayout.cards
     @AppStorage(Preference.redditOpen) private var redditOpen = OpenTarget.link
@@ -37,6 +40,12 @@ struct FeedListView<Trailing: View>: View {
         let loggedOut = savedOnly ? [] : [FeedSource.reddit, .youtube].filter { source in
             keys.contains { $0.source == source } && store.loggedIn[source] == false
         }
+        // The All feed opens with the time of its latest refresh, and puts posts
+        // new since the previous refresh first.
+        let isAll = keys == FeedKey.combined && !savedOnly
+        let split = isAll ? store.splitByRefresh(posts) : nil
+        // Posts seen before stay tucked away behind a button until asked for.
+        let collapsed = !showEarlier && split.map { !$0.seen.isEmpty } == true
         NavigationStack {
             ScrollViewReader { proxy in
                 List {
@@ -93,41 +102,43 @@ struct FeedListView<Trailing: View>: View {
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
                     }
-                    // The All feed opens with the time of its latest refresh, and puts posts
-                    // new since the previous refresh above a divider.
-                    let isAll = keys == FeedKey.combined && !savedOnly
-                    let split = isAll ? store.splitByRefresh(posts) : nil
                     if isAll, let refresh = store.lastRefresh, !posts.isEmpty {
                         RefreshDivider(prefix: "Last refresh", date: refresh)
                     }
-                    // Reaching any of the last rows fetches the next page.
+                    // Reaching any of the last rows fetches the next page; while earlier
+                    // posts are tucked away, the feed ends at the new ones and doesn't page.
                     let shown = split.map { $0.new + $0.seen } ?? posts
-                    let endIDs = Set(shown.suffix(8).map(\.id))
-                    if let split, let refresh = store.previousRefresh {
+                    let endIDs = collapsed ? [] : Set(shown.suffix(8).map(\.id))
+                    if let split, let previous = store.previousRefresh {
                         ForEach(split.new) { postRow($0, nearEnd: endIDs.contains($0.id)) }
-                        if !split.new.isEmpty && !split.seen.isEmpty {
-                            RefreshDivider(prefix: "Previous refresh", date: refresh)
+                        if collapsed {
+                            EarlierPostsButton(date: previous, nothingNew: split.new.isEmpty) {
+                                withAnimation { showEarlier = true }
+                            }
+                        } else {
+                            if !split.new.isEmpty && !split.seen.isEmpty {
+                                RefreshDivider(prefix: "Previous refresh", date: previous)
+                            }
+                            ForEach(split.seen) { postRow($0, nearEnd: endIDs.contains($0.id)) }
                         }
-                        ForEach(split.seen) { postRow($0, nearEnd: endIDs.contains($0.id)) }
                     } else {
                         ForEach(posts) { postRow($0, nearEnd: endIDs.contains($0.id)) }
                     }
-                    if !savedOnly && !posts.isEmpty {
+                    if !savedOnly && !posts.isEmpty && !collapsed {
                         moreStatus
                     }
                 }
                 .listStyle(.plain)
                 // Floats over the list; a row inserted at the top would sit just out of view.
                 .overlay(alignment: .top) {
-                    if tabRefreshing {
-                        ProgressView()
-                            .padding(10)
-                            .background(.regularMaterial, in: Circle())
-                            .padding(.top, 8)
-                            .transition(.opacity)
+                    if let refresh, !savedOnly {
+                        RefreshStatus(items: statusItems(finished: refresh.finished, split: split, loggedOut: loggedOut))
+                            // Below the pull-to-refresh spinner while it shows.
+                            .padding(.top, refresh.pulled && !refresh.finished ? 64 : 8)
+                            .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
-                .animation(.easeInOut(duration: 0.2), value: tabRefreshing)
+                .animation(.easeInOut(duration: 0.25), value: refresh)
                 // Lets the top anchor take no space; posts are taller than the default minimum.
                 .environment(\.defaultMinListRowHeight, 0)
                 // Posts sit on tiles over the grouped background.
@@ -138,12 +149,8 @@ struct FeedListView<Trailing: View>: View {
                 .onChange(of: store.reselected?.count) {
                     guard store.reselected?.tab == tab else { return }
                     if atTop {
-                        guard !tabRefreshing else { return }
-                        Task {
-                            tabRefreshing = true
-                            await store.load(keys, force: true)
-                            tabRefreshing = false
-                        }
+                        guard refresh?.finished != false else { return }
+                        Task { await refreshFeeds(pulled: false) }
                     } else {
                         withAnimation { proxy.scrollTo(Self.topID, anchor: .top) }
                         scrolledAway = false
@@ -173,21 +180,55 @@ struct FeedListView<Trailing: View>: View {
                         }
                     }
                 }
-                .refreshable { await store.load(keys, force: true) }
+                .refreshable { await refreshFeeds(pulled: true) }
+                // Back to the top once refreshed, where new posts land; the list otherwise
+                // keeps the rows that were showing in view, leaving new ones above them.
+                .onChange(of: refresh?.finished) { _, finished in
+                    if finished == true { proxy.scrollTo(Self.topID, anchor: .top) }
+                }
+                // Each refresh starts with just the new posts again.
+                .onChange(of: store.lastRefresh) { showEarlier = false }
                 .task(id: keys) { await store.load(keys) }
                 .fullScreenCover(item: $browserURL) { item in
-                    if item.loggedIn {
-                        AppBrowser(url: item.url)
-                    } else {
-                        SafariView(url: item.url)
-                            .ignoresSafeArea()
-                    }
+                    AppBrowser(url: item.url)
+                        // Clear so the feed shows behind while swiping the browser away.
+                        .presentationBackground(.clear)
                 }
             }
         }
     }
 
     private static var topID: String { "top" }
+
+    private func refreshFeeds(pulled: Bool) async {
+        let run = RefreshRun(id: (refresh?.id ?? 0) + 1, pulled: pulled)
+        refresh = run
+        await store.load(keys, force: true)
+        guard refresh?.id == run.id else { return }
+        refresh?.finished = true
+        // Leaves the results up a moment, unless another refresh has begun since.
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            if refresh?.id == run.id { refresh = nil }
+        }
+    }
+
+    // Each feed's progress; once done, the All feed counts what's new from each.
+    private func statusItems(finished: Bool, split: (new: [FeedPost], seen: [FeedPost])?,
+                             loggedOut: [FeedSource]) -> [RefreshStatus.Item] {
+        keys.filter { !loggedOut.contains($0.source) }.map { key in
+            let state = store.state(key)
+            let phase: RefreshStatus.Phase
+            if state.loading {
+                phase = .loading
+            } else if state.error != nil {
+                phase = .failed
+            } else {
+                phase = .done(new: finished ? split?.new.filter { $0.source == key.source }.count : nil)
+            }
+            return RefreshStatus.Item(source: key.source, phase: phase)
+        }
+    }
 
     // At the end of the list: a spinner while the next page loads, or a retry button
     // when it failed.
@@ -330,7 +371,11 @@ struct FeedListView<Trailing: View>: View {
             // Reddit's media links (v.redd.it, i.redd.it) redirect to the post on reddit.com.
             let host = url.host ?? ""
             let reddit = ["reddit.com", "redd.it"].contains { host == $0 || host.hasSuffix("." + $0) }
-            browserURL = BrowserURL(url: url, loggedIn: reddit)
+            if reddit {
+                browserURL = BrowserURL(url: url)
+            } else {
+                SafariView.present(url)
+            }
         }
     }
 }
@@ -397,24 +442,57 @@ struct PlainToolbarItem<Content: View>: ToolbarContent {
     }
 }
 
+// A page for AppBrowser, which shares the app's logins.
 struct BrowserURL: Identifiable {
     let url: URL
-    // Open in AppBrowser, which shares the app's logins, instead of the Safari view.
-    var loggedIn = false
     var id: String { url.absoluteString }
 }
 
 // A browser on the app's web profile, so pages see the logins made in the app.
+// Swiping in from the left edge goes back a page, or on the first page closes the
+// browser, sliding it off to show the feed behind.
 struct AppBrowser: View {
     let url: URL
     @StateObject private var page = BrowserPage()
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    // How far the edge swipe has pulled the browser to the right.
+    @State private var swipeOffset: CGFloat = 0
 
     var body: some View {
         let current = page.url ?? url
+        GeometryReader { geometry in
+            let width = geometry.size.width + geometry.safeAreaInsets.leading + geometry.safeAreaInsets.trailing
+            browser(current, width: width)
+                .background(Color(.systemBackground), ignoresSafeAreaEdges: .all)
+                .shadow(color: .black.opacity(swipeOffset > 0 ? 0.25 : 0), radius: 10)
+                .offset(x: swipeOffset)
+        }
+    }
+
+    // Follows the swipe, then either slides the browser away or springs it back.
+    private func edgeSwipe(width: CGFloat) -> EdgeSwipe {
+        EdgeSwipe(
+            changed: { swipeOffset = max($0, 0) },
+            ended: { translation, velocity in
+                if translation > width / 3 || velocity > 600 {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        swipeOffset = width
+                    } completion: {
+                        // Already off screen; the cover's own slide down would bring it back into view.
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) { dismiss() }
+                    }
+                } else {
+                    withAnimation(.spring(duration: 0.25)) { swipeOffset = 0 }
+                }
+            })
+    }
+
+    private func browser(_ current: URL, width: CGFloat) -> some View {
         NavigationStack {
-            BrowserWebView(url: url, page: page)
+            BrowserWebView(url: url, page: page, edgeSwipe: edgeSwipe(width: width))
                 .ignoresSafeArea(edges: .bottom)
                 .navigationTitle(current.host.map { $0.replacingOccurrences(of: "www.", with: "") } ?? "")
                 .navigationBarTitleDisplayMode(.inline)
@@ -467,47 +545,80 @@ final class BrowserPage: ObservableObject {
     }
 }
 
+// Reports a swipe in from the left edge, which the browser uses to close.
+struct EdgeSwipe {
+    // The swipe's distance so far.
+    let changed: (CGFloat) -> Void
+    // Its final distance and speed.
+    let ended: (CGFloat, CGFloat) -> Void
+}
+
 private struct BrowserWebView: UIViewRepresentable {
     let url: URL
     let page: BrowserPage
+    let edgeSwipe: EdgeSwipe
 
     func makeUIView(context: Context) -> WKWebView {
         let webView = WKWebView(frame: .zero, configuration: WebProfile.configuration())
+        // Swiping from the left edge goes back while there's a page to go back to.
         webView.allowsBackForwardNavigationGestures = true
+        // On the first page it closes the browser instead.
+        let pan = UIScreenEdgePanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pan(_:)))
+        pan.edges = .left
+        pan.delegate = context.coordinator
+        webView.addGestureRecognizer(pan)
         page.attach(webView)
         webView.load(URLRequest(url: url))
         return webView
     }
 
-    func updateUIView(_ webView: WKWebView, context: Context) {}
-}
-
-struct SafariView: UIViewControllerRepresentable {
-    let url: URL
-    @Environment(\.dismiss) private var dismiss
-
-    func makeUIViewController(context: Context) -> SFSafariViewController {
-        let controller = SFSafariViewController(url: url)
-        controller.delegate = context.coordinator
-        return controller
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        context.coordinator.edgeSwipe = edgeSwipe
     }
-
-    func updateUIViewController(_ controller: SFSafariViewController, context: Context) {}
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(dismiss: dismiss)
+        Coordinator(edgeSwipe: edgeSwipe)
     }
 
-    final class Coordinator: NSObject, SFSafariViewControllerDelegate {
-        let dismiss: DismissAction
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var edgeSwipe: EdgeSwipe
 
-        init(dismiss: DismissAction) {
-            self.dismiss = dismiss
+        init(edgeSwipe: EdgeSwipe) {
+            self.edgeSwipe = edgeSwipe
         }
 
-        func safariViewControllerDidFinish(_ controller: SFSafariViewController) {
-            dismiss()
+        @objc func pan(_ recognizer: UIScreenEdgePanGestureRecognizer) {
+            guard let view = recognizer.view else { return }
+            let translation = recognizer.translation(in: view.window).x
+            switch recognizer.state {
+            case .changed:
+                edgeSwipe.changed(translation)
+            case .ended:
+                edgeSwipe.ended(translation, recognizer.velocity(in: view.window).x)
+            case .cancelled, .failed:
+                edgeSwipe.ended(0, 0)
+            default:
+                break
+            }
         }
+
+        // The web view's own back swipe handles the edge while it can go back.
+        func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+            !((recognizer.view as? WKWebView)?.canGoBack ?? false)
+        }
+    }
+}
+
+// Pages outside Reddit open in a Safari view, presented by UIKit rather than as a
+// SwiftUI cover so it keeps its own swipe in from the left edge to close.
+@MainActor
+enum SafariView {
+    static func present(_ url: URL) {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        guard var top = scene?.keyWindow?.rootViewController else { return }
+        while let presented = top.presentedViewController { top = presented }
+        top.present(SFSafariViewController(url: url), animated: true)
     }
 }
 
@@ -584,6 +695,108 @@ struct LoginCard: View {
     }
 }
 
+struct RefreshRun: Equatable {
+    let id: Int
+    // Started by pulling the feed down, so the pull-to-refresh spinner shows too.
+    let pulled: Bool
+    var finished = false
+}
+
+// Floats atop a refreshing feed: each source's progress, then how it went.
+struct RefreshStatus: View {
+    enum Phase: Equatable {
+        case loading
+        // How many posts are new, where the feed tells new from seen.
+        case done(new: Int?)
+        case failed
+    }
+
+    struct Item: Identifiable {
+        let source: FeedSource
+        let phase: Phase
+        var id: FeedSource { source }
+    }
+
+    let items: [Item]
+
+    var body: some View {
+        Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+            ForEach(items) { item in
+                GridRow {
+                    icon(item.phase)
+                        .frame(width: 16)
+                    Text(item.source.title)
+                        .fontWeight(.medium)
+                    Text(detail(item.phase))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .font(.footnote)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private func icon(_ phase: Phase) -> some View {
+        switch phase {
+        case .loading:
+            ProgressView()
+                .controlSize(.mini)
+        case .done:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+        case .failed:
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+        }
+    }
+
+    private func detail(_ phase: Phase) -> String {
+        switch phase {
+        case .loading: "Refreshing…"
+        case .done(nil): "Updated"
+        case .done(0): "Nothing new"
+        case .done(let new?): "\(new) new"
+        case .failed: "Couldn't refresh"
+        }
+    }
+}
+
+// Ends the All feed's new posts; tapping it shows the posts from earlier refreshes below.
+struct EarlierPostsButton: View {
+    // When the previous refresh was.
+    let date: Date
+    let nothingNew: Bool
+    let action: () -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            if nothingNew {
+                Text("Nothing new since the previous refresh.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Button(action: action) {
+                Label("Show Earlier Posts", systemImage: "chevron.down")
+                    .font(.subheadline.weight(.medium))
+            }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            Text("From \(RefreshDivider.time(date)) and before")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, nothingNew ? 32 : 12)
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+    }
+}
+
 // Shows a refresh time in the All feed: atop it, and where the previous refresh's posts begin.
 struct RefreshDivider: View {
     let prefix: String
@@ -612,9 +825,12 @@ struct RefreshDivider: View {
     }
 
     private var label: String {
-        let time = date.formatted(date: Calendar.current.isDateInToday(date) ? .omitted : .abbreviated,
-                                  time: .shortened)
-        return "\(prefix) · \(time)"
+        "\(prefix) · \(Self.time(date))"
+    }
+
+    // Just the time for today, with the date before that.
+    static func time(_ date: Date) -> String {
+        date.formatted(date: Calendar.current.isDateInToday(date) ? .omitted : .abbreviated, time: .shortened)
     }
 }
 

@@ -13,8 +13,8 @@ enum FeedKey: Hashable {
         }
     }
 
-    // The combined page: Reddit Best, Hacker News top stories, YouTube subscriptions.
-    static let combined: [FeedKey] = [.reddit(sort: "best", timeframe: "day"), .hn(list: "top"), .youtube]
+    // The combined page: Reddit's top posts today, Hacker News top stories, YouTube subscriptions.
+    static let combined: [FeedKey] = [.reddit(sort: "top", timeframe: "day"), .hn(list: "top"), .youtube]
 }
 
 struct FeedState {
@@ -85,25 +85,35 @@ final class FeedStore: ObservableObject {
         feeds[key] ?? FeedState()
     }
 
+    // Fetches in progress. They run apart from the caller's task, so a refresh finishes
+    // even if SwiftUI cancels the pull-to-refresh task, and a refresh that finds a feed
+    // already loading waits for that fetch instead of returning before it lands.
+    private var fetches: [FeedKey: Task<Void, Never>] = [:]
+
     func load(_ keys: [FeedKey], force: Bool = false) async {
         // Marks the feeds loading before the first suspension, so a caller that just
         // changed what's shown never draws a frame with the old state.
-        let started = keys.filter { begin($0, force: force) }
-        await withTaskGroup(of: Void.self) { group in
-            for key in started {
-                group.addTask { await self.fetch(key) }
+        var started: [FeedKey] = []
+        var waiting: [Task<Void, Never>] = []
+        for key in keys {
+            if let running = fetches[key] {
+                waiting.append(running)
+                continue
             }
+            var state = state(key)
+            if state.loaded && !force { continue }
+            state.loading = true
+            feeds[key] = state
+            let task = Task {
+                await self.fetch(key)
+                self.fetches[key] = nil
+            }
+            fetches[key] = task
+            started.append(key)
+            waiting.append(task)
         }
+        for task in waiting { await task.value }
         if !started.isEmpty && keys == FeedKey.combined { recordRefresh() }
-    }
-
-    // Marks the feed loading, or returns false to skip it.
-    private func begin(_ key: FeedKey, force: Bool) -> Bool {
-        var state = state(key)
-        if state.loading || (state.loaded && !force) { return false }
-        state.loading = true
-        feeds[key] = state
-        return true
     }
 
     private func fetch(_ key: FeedKey) async {
@@ -244,16 +254,25 @@ final class FeedStore: ObservableObject {
     }
 
     // Splits the All feed into posts new since the previous refresh and those already seen.
-    // Reddit and HN rank posts, so an older post can be new to the feed; YouTube is
-    // chronological, so its videos are new only if posted after the previous refresh.
+    // Reddit and HN rank posts, so an older post can be new to the feed. YouTube is
+    // chronological, so its new videos are the ones above the newest video already seen.
+    // YouTube can add a video to the feed a while after it went up, so its age alone
+    // can't say whether it arrived since the previous refresh; that's the fallback only
+    // when none of the videos were seen before.
     // A source new to the feed has nothing new yet, so it mixes in with the rest.
     func splitByRefresh(_ posts: [FeedPost]) -> (new: [FeedPost], seen: [FeedPost])? {
         guard let previousRefresh, !previouslySeen.isEmpty else { return nil }
         let cutoff = previousRefresh.timeIntervalSince1970
+        let videos = state(.youtube).posts
+        let newestSeenVideo = videos.firstIndex { previouslySeen.contains($0.id) }
+        let videosAboveSeen = Set(videos.prefix(newestSeenVideo ?? 0).map(\.id))
         func isNew(_ post: FeedPost) -> Bool {
             if previouslySeen.contains(post.id) || pagedSinceRefresh.contains(post.id)
                 || !previousSources.contains(post.source) { return false }
-            if post.source == .youtube, let publishedAt = post.publishedAt { return publishedAt > cutoff }
+            if post.source == .youtube {
+                if newestSeenVideo != nil { return videosAboveSeen.contains(post.id) }
+                if let publishedAt = post.publishedAt { return publishedAt > cutoff }
+            }
             return true
         }
         return (posts.filter(isNew), posts.filter { !isNew($0) })

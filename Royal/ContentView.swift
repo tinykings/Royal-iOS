@@ -75,11 +75,13 @@ struct CombinedFeedView: View {
 }
 
 struct RedditFeedView: View {
-    @State private var sort = "best"
+    // Starts on Top and stays on whichever sort was picked last.
+    @AppStorage(Preference.redditSort) private var sort = "top"
 
     var body: some View {
-        // Top is always today's, so Best uses the same feed as the All page.
-        FeedListView(title: "Reddit", tab: .reddit, keys: [.reddit(sort: sort, timeframe: "day")], subtitle: sort.capitalized) {
+        // Top is always today's, so it uses the same feed as the All page.
+        FeedListView(title: "Reddit", tab: .reddit, keys: [.reddit(sort: sort, timeframe: "day")],
+                     subtitle: sort == "top" ? "Top Today" : sort.capitalized) {
             HeaderPicker(title: "Sort", selection: $sort, options: [
                 HeaderOption(value: "best", icon: "rosette", title: "Best"),
                 HeaderOption(value: "top", icon: "trophy", title: "Top"),
