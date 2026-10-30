@@ -106,9 +106,6 @@ struct FeedListView<Trailing: View>: View {
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
                     }
-                    if isAll, let refresh = store.lastRefresh, !posts.isEmpty {
-                        RefreshDivider(prefix: "Last refresh", date: refresh, hintAfter: 60 * 60)
-                    }
                     // Reaching any of the last rows fetches the next page; while earlier
                     // posts are tucked away, the feed ends at the new ones and doesn't page.
                     let shown = split.map { $0.new + $0.seen } ?? posts
@@ -209,6 +206,13 @@ struct FeedListView<Trailing: View>: View {
                                     Text(subtitle)
                                         .font(.subheadline.weight(.medium))
                                         .foregroundStyle(.secondary)
+                                }
+                                // The All feed's latest refresh.
+                                if isAll, let refresh = store.lastRefresh, !posts.isEmpty {
+                                    Text(RefreshDivider.time(refresh))
+                                        .font(.subheadline)
+                                        .foregroundStyle(.tertiary)
+                                        .accessibilityLabel("Last refresh \(RefreshDivider.time(refresh))")
                                 }
                             }
                             .fixedSize()
@@ -1018,33 +1022,19 @@ struct PullIndicator: View {
     }
 }
 
-// Shows a refresh time in the All feed: atop it, and where the previous refresh's posts begin.
+// Marks where the All feed's posts from the previous refresh begin.
 struct RefreshDivider: View {
     let prefix: String
     let date: Date
-    // Feeds only refresh when asked, so once this old the divider says how.
-    var hintAfter: TimeInterval? = nil
 
     var body: some View {
-        // Checks the age each minute, so the hint appears while the feed sits open.
-        TimelineView(.everyMinute) { context in
-            VStack(spacing: 4) {
-                HStack(spacing: 10) {
-                    line
-                    Text(label)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .fixedSize()
-                    line
-                }
-                if let hintAfter, context.date.timeIntervalSince(date) >= hintAfter {
-                    Text("Pull down to refresh")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .transition(.opacity)
-                }
-            }
-            .animation(.easeInOut(duration: 0.25), value: date)
+        HStack(spacing: 10) {
+            line
+            Text(label)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .fixedSize()
+            line
         }
         .padding(.vertical, 4)
         .listRowInsets(EdgeInsets(top: 5, leading: 20, bottom: 5, trailing: 20))
