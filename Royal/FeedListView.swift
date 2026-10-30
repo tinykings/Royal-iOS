@@ -1080,15 +1080,25 @@ struct PostRow: View {
                         .clipped()
                 } else {
                     // Reddit images keep their own shape, capped so tall ones don't fill the
-                    // screen; narrow ones sit on a faint backdrop across the tile. The frame
-                    // comes from Reddit's reported size, not the loaded image, so the tile
-                    // doesn't change height when the image arrives; a list that resizes rows
-                    // as you scroll back up jumps around.
+                    // screen; narrow ones sit on a blurred copy of themselves across the tile,
+                    // so the sides match the image in light and dark mode rather than leaving
+                    // bars that read as a gap in the tile. The frame comes from Reddit's
+                    // reported size, not the loaded image, so the tile doesn't change height
+                    // when the image arrives; a list that resizes rows as you scroll back up
+                    // jumps around.
                     Color.secondary.opacity(0.08)
                         .aspectRatio(max(post.imageAspect ?? 4 / 3, Self.tallestImageAspect), contentMode: .fit)
                         .overlay {
                             CachedImage(url: thumbnail) { image in
-                                image?.resizable().scaledToFit()
+                                if let image {
+                                    image.resizable().scaledToFit()
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                        .background {
+                                            image.resizable().scaledToFill()
+                                                .blur(radius: 24, opaque: true)
+                                                .overlay(Color.black.opacity(0.15))
+                                        }
+                                }
                             }
                         }
                         .clipped()
