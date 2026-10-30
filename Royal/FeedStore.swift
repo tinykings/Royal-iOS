@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum FeedKey: Hashable {
+enum FeedKey: Hashable, Codable {
     case reddit(sort: String, timeframe: String)
     case hn(list: String)
     case youtube
@@ -58,6 +58,7 @@ final class FeedStore: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in self?.saved = SavedPostsStorage.load() }
         }
+        restoreCache()
     }
 
     func reselect(_ tab: AppTab) {
@@ -114,6 +115,7 @@ final class FeedStore: ObservableObject {
         }
         for task in waiting { await task.value }
         if !started.isEmpty && keys == FeedKey.combined { recordRefresh() }
+        if !started.isEmpty { saveCache() }
     }
 
     private func fetch(_ key: FeedKey) async {
@@ -174,22 +176,55 @@ final class FeedStore: ObservableObject {
             state.loadingMore = false
             feeds[key] = state
         }
+        saveCache()
     }
 
-    // MARK: Refresh on return
+    // MARK: Kept between launches
 
-    private static let staleAfter: TimeInterval = 15 * 60
+    // Feeds only reload when asked, by pulling down or tapping the tab again. Opening the
+    // app shows the posts it had when last closed, so posts not yet looked at stay new
+    // rather than joining the earlier ones under a refresh nobody asked for.
+    private struct Cache: Codable {
+        struct Feed: Codable {
+            let key: FeedKey
+            let posts: [FeedPost]
+            let next: Int?
+            let loadedAt: Date?
+        }
+        let feeds: [Feed]
+        let lastRefresh: Date?
+        let previousRefresh: Date?
+        let previouslySeen: Set<String>
+        let previousSources: Set<FeedSource>
+        let pagedSinceRefresh: Set<String>
+    }
 
-    // Reloads feeds last loaded long ago, as when the app returns after a while away.
-    // The All feed's feeds reload together so the refresh is recorded for its divider.
-    func refreshStale() async {
-        let cutoff = Date().addingTimeInterval(-Self.staleAfter)
-        let stale = feeds.filter { $0.value.loaded && ($0.value.loadedAt ?? .distantPast) < cutoff }.map(\.key)
-        guard !stale.isEmpty else { return }
-        async let combined: Void = stale.contains(where: FeedKey.combined.contains)
-            ? load(FeedKey.combined, force: true) : ()
-        await load(stale.filter { !FeedKey.combined.contains($0) }, force: true)
-        await combined
+    private static let cacheURL = URL.applicationSupportDirectory.appending(path: "feeds.json")
+
+    private func saveCache() {
+        let cache = Cache(
+            feeds: feeds.compactMap { key, state in
+                state.posts.isEmpty ? nil
+                    : Cache.Feed(key: key, posts: state.posts, next: state.next, loadedAt: state.loadedAt)
+            },
+            lastRefresh: lastRefresh, previousRefresh: previousRefresh, previouslySeen: previouslySeen,
+            previousSources: previousSources, pagedSinceRefresh: pagedSinceRefresh)
+        guard let data = try? JSONEncoder().encode(cache) else { return }
+        try? FileManager.default.createDirectory(at: .applicationSupportDirectory, withIntermediateDirectories: true)
+        try? data.write(to: Self.cacheURL, options: .atomic)
+    }
+
+    private func restoreCache() {
+        guard let data = try? Data(contentsOf: Self.cacheURL),
+              let cache = try? JSONDecoder().decode(Cache.self, from: data) else { return }
+        for feed in cache.feeds {
+            feeds[feed.key] = FeedState(posts: feed.posts, loaded: true, next: feed.next, loadedAt: feed.loadedAt)
+        }
+        lastRefresh = cache.lastRefresh
+        previousRefresh = cache.previousRefresh
+        previouslySeen = cache.previouslySeen
+        previousSources = cache.previousSources
+        pagedSinceRefresh = cache.pagedSinceRefresh
     }
 
     // MARK: Accounts
@@ -201,6 +236,7 @@ final class FeedStore: ObservableObject {
             feeds[key] = FeedState()
         }
         loggedIn[source] = false
+        saveCache()
     }
 
     // MARK: New since last refresh (All feed)

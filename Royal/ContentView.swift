@@ -4,7 +4,6 @@ import UIKit
 struct ContentView: View {
     @StateObject private var store = FeedStore()
     @Environment(\.verticalSizeClass) private var verticalSizeClass
-    @Environment(\.scenePhase) private var scenePhase
     // The tabs in the order TabView lays them out, for mapping tab bar indexes back.
     private static let tabOrder: [AppTab] = [.reddit, .hn, .all, .youtube, .settings]
 
@@ -50,10 +49,8 @@ struct ContentView: View {
             .opacity(tabsHidden ? 0 : 1)
             .allowsHitTesting(!tabsHidden)
         }
-        // Coming back after a while away brings feeds up to date.
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await store.refreshStale() } }
-        }
+        // Feeds open as they were left, so check logins apart from loading them.
+        .task { await store.refreshLoginStatus() }
         .tint(.royalAccent)
         .environmentObject(store)
     }

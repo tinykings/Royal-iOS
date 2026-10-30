@@ -113,11 +113,23 @@ struct FeedListView<Trailing: View>: View {
                         ForEach(split.new) { postRow($0, nearEnd: endIDs.contains($0.id)) }
                         if collapsed {
                             EarlierPostsButton(date: previous, nothingNew: split.new.isEmpty) {
-                                withAnimation { showEarlier = true }
+                                showEarlier = true
+                                // Starts at the first of the posts just shown, where the button was.
+                                DispatchQueue.main.async {
+                                    proxy.scrollTo(Self.earlierID, anchor: .top)
+                                }
                             }
                         } else {
                             if !split.new.isEmpty && !split.seen.isEmpty {
                                 RefreshDivider(prefix: "Previous refresh", date: previous)
+                                    .id(Self.earlierID)
+                            } else {
+                                Color.clear
+                                    .frame(height: 0)
+                                    .id(Self.earlierID)
+                                    .listRowInsets(EdgeInsets())
+                                    .listRowSeparator(.hidden)
+                                    .listRowBackground(Color.clear)
                             }
                             ForEach(split.seen) { postRow($0, nearEnd: endIDs.contains($0.id)) }
                         }
@@ -199,6 +211,8 @@ struct FeedListView<Trailing: View>: View {
     }
 
     private static var topID: String { "top" }
+    // Where the earlier posts begin once shown.
+    private static var earlierID: String { "earlier" }
 
     private func refreshFeeds(pulled: Bool) async {
         let run = RefreshRun(id: (refresh?.id ?? 0) + 1, pulled: pulled)
