@@ -13,6 +13,8 @@ struct FeedListView<Trailing: View>: View {
     @State private var refresh: RefreshRun?
     // The All feed shows just what's new since the previous refresh until this is set.
     @State private var showEarlier = false
+    // How far past the end the feed is pulled up while earlier posts are tucked away.
+    @State private var pullUp: CGFloat = 0
     @AppStorage(Preference.redditLayout) private var redditLayout = FeedLayout.cards
     @AppStorage(Preference.youtubeLayout) private var youtubeLayout = FeedLayout.cards
     @AppStorage(Preference.redditOpen) private var redditOpen = OpenTarget.link
@@ -112,12 +114,9 @@ struct FeedListView<Trailing: View>: View {
                     if let split, let previous = store.previousRefresh {
                         ForEach(split.new) { postRow($0, nearEnd: endIDs.contains($0.id)) }
                         if collapsed {
-                            EarlierPostsButton(date: previous, nothingNew: split.new.isEmpty) {
-                                showEarlier = true
-                                // Starts at the first of the posts just shown, where the button was.
-                                DispatchQueue.main.async {
-                                    proxy.scrollTo(Self.earlierID, anchor: .top)
-                                }
+                            EarlierPostsButton(date: previous, nothingNew: split.new.isEmpty,
+                                               pullable: Self.canPullUp) {
+                                revealEarlier(proxy)
                             }
                         } else {
                             if !split.new.isEmpty && !split.seen.isEmpty {
@@ -157,6 +156,16 @@ struct FeedListView<Trailing: View>: View {
                 .scrollContentBackground(.hidden)
                 .background(Color(.systemGroupedBackground))
                 .hidesHeaderOnScroll($scrolledAway, atTop: $atTop)
+                // Pulling up past the new posts shows the earlier ones, like pulling down refreshes.
+                .pullUpAtEnd(enabled: collapsed, distance: $pullUp, threshold: Self.pullUpThreshold) {
+                    revealEarlier(proxy)
+                }
+                .overlay(alignment: .bottom) {
+                    if collapsed && pullUp > 0 {
+                        PullUpIndicator(distance: pullUp, threshold: Self.pullUpThreshold)
+                            .allowsHitTesting(false)
+                    }
+                }
                 // Tapping the tab again scrolls to the top, or refreshes when already there.
                 .onChange(of: store.reselected?.count) {
                     guard store.reselected?.tab == tab else { return }
@@ -211,6 +220,20 @@ struct FeedListView<Trailing: View>: View {
     }
 
     private static var topID: String { "top" }
+    private static var pullUpThreshold: CGFloat { 90 }
+    // Pulling up needs iOS 18's scroll geometry; earlier versions keep the button.
+    private static var canPullUp: Bool {
+        if #available(iOS 18, *) { true } else { false }
+    }
+
+    // Shows the posts from earlier refreshes and starts at the first of them.
+    private func revealEarlier(_ proxy: ScrollViewProxy) {
+        showEarlier = true
+        pullUp = 0
+        DispatchQueue.main.async {
+            proxy.scrollTo(Self.earlierID, anchor: .top)
+        }
+    }
     // Where the earlier posts begin once shown.
     private static var earlierID: String { "earlier" }
 
@@ -437,6 +460,56 @@ extension View {
         } else {
             onAppear { atTop.wrappedValue = false }
         }
+    }
+}
+
+extension View {
+    // Sets `distance` to how far the list is dragged up past its end, and calls `action`
+    // when let go past `threshold`, the way pulling down past the top refreshes. The
+    // list's own bounce gives the pull its resistance. Needs iOS 18 scroll geometry.
+    @ViewBuilder
+    func pullUpAtEnd(enabled: Bool, distance: Binding<CGFloat>, threshold: CGFloat,
+                     action: @escaping () -> Void) -> some View {
+        if #available(iOS 18, *) {
+            modifier(PullUpAtEnd(enabled: enabled, distance: distance, threshold: threshold, action: action))
+        } else {
+            self
+        }
+    }
+}
+
+@available(iOS 18, *)
+private struct PullUpAtEnd: ViewModifier {
+    let enabled: Bool
+    @Binding var distance: CGFloat
+    let threshold: CGFloat
+    let action: () -> Void
+    // Let go past the threshold; the action waits for the bounce back to settle, which
+    // would otherwise carry the list on past where the action scrolls it to.
+    @State private var released = false
+
+    func body(content: Content) -> some View {
+        content
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                // A list shorter than the screen ends at its top.
+                let end = max(0, geometry.contentSize.height + geometry.contentInsets.top
+                    + geometry.contentInsets.bottom - geometry.containerSize.height)
+                return max(0, geometry.contentOffset.y + geometry.contentInsets.top - end)
+            } action: { _, new in
+                distance = enabled ? new : 0
+            }
+            .onScrollPhaseChange { old, new in
+                // Counts on letting go, so pulling back down before then calls it off.
+                if old == .interacting && new != .interacting && enabled && distance >= threshold {
+                    released = true
+                }
+                if new == .idle && released {
+                    released = false
+                    action()
+                } else if new == .interacting {
+                    released = false
+                }
+            }
     }
 }
 
@@ -785,6 +858,9 @@ struct EarlierPostsButton: View {
     // When the previous refresh was.
     let date: Date
     let nothingNew: Bool
+    // The feed shows the earlier posts when pulled up past here, so this is just a hint;
+    // VoiceOver still offers it as a button.
+    var pullable = false
     let action: () -> Void
 
     var body: some View {
@@ -794,12 +870,21 @@ struct EarlierPostsButton: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            Button(action: action) {
-                Label("Show Earlier Posts", systemImage: "chevron.down")
+            if pullable {
+                Label("Pull up for earlier posts", systemImage: "chevron.up")
                     .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.tint)
+                    .accessibilityLabel("Show Earlier Posts")
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction { action() }
+            } else {
+                Button(action: action) {
+                    Label("Show Earlier Posts", systemImage: "chevron.down")
+                        .font(.subheadline.weight(.medium))
+                }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
             }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
             Text("From \(RefreshDivider.time(date)) and before")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -808,6 +893,41 @@ struct EarlierPostsButton: View {
         .padding(.vertical, nothingNew ? 32 : 12)
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
+    }
+}
+
+// Rises from the bottom as the feed is pulled up past its end: the crown fills with gold
+// from the bottom, and once full, letting go shows the earlier posts.
+struct PullUpIndicator: View {
+    let distance: CGFloat
+    let threshold: CGFloat
+
+    private var progress: CGFloat { min(distance / threshold, 1) }
+    private var armed: Bool { distance >= threshold }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ZStack {
+                RoyalCrown()
+                    .fill(.tertiary)
+                RoyalCrown()
+                    .fill(.tint)
+                    .mask(alignment: .bottom) {
+                        Rectangle().frame(height: 26 / RoyalCrown.aspectRatio * progress)
+                    }
+            }
+            .frame(width: 26, height: 26 / RoyalCrown.aspectRatio)
+            .scaleEffect(armed ? 1.15 : 0.7 + 0.3 * progress)
+            Text(armed ? "Release for earlier posts" : "Pull up for earlier posts")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.bottom, 12)
+        .opacity(Double(progress))
+        // Comes up with the gap the pull opens below the list, rather than ahead of it.
+        .offset(y: max(0, threshold - distance) * 0.6)
+        .animation(.spring(duration: 0.25), value: armed)
+        .sensoryFeedback(.impact(weight: .medium), trigger: armed) { _, armed in armed }
     }
 }
 
