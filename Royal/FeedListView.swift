@@ -15,6 +15,8 @@ struct FeedListView<Trailing: View>: View {
     @State private var showEarlier = false
     // How far past the end the feed is pulled up while earlier posts are tucked away.
     @State private var pullUp: CGFloat = 0
+    // How far past the top the feed is pulled down, to refresh.
+    @State private var pullDown: CGFloat = 0
     @AppStorage(Preference.redditLayout) private var redditLayout = FeedLayout.cards
     @AppStorage(Preference.youtubeLayout) private var youtubeLayout = FeedLayout.cards
     @AppStorage(Preference.redditOpen) private var redditOpen = OpenTarget.link
@@ -115,7 +117,7 @@ struct FeedListView<Trailing: View>: View {
                         ForEach(split.new) { postRow($0, nearEnd: endIDs.contains($0.id)) }
                         if collapsed {
                             EarlierPostsButton(date: previous, nothingNew: split.new.isEmpty,
-                                               pullable: Self.canPullUp) {
+                                               pullable: Self.canPull) {
                                 revealEarlier(proxy)
                             }
                         } else {
@@ -142,11 +144,19 @@ struct FeedListView<Trailing: View>: View {
                 .listStyle(.plain)
                 // Floats over the list; a row inserted at the top would sit just out of view.
                 .overlay(alignment: .top) {
-                    if let refresh, !savedOnly {
-                        RefreshStatus(items: statusItems(finished: refresh.finished, split: split, loggedOut: loggedOut))
-                            // Below the pull-to-refresh spinner while it shows.
-                            .padding(.top, refresh.pulled && !refresh.finished ? 64 : 8)
-                            .transition(.move(edge: .top).combined(with: .opacity))
+                    let pulledRefreshing = refresh.map { $0.pulled && !$0.finished } == true
+                    ZStack(alignment: .top) {
+                        if pulledRefreshing || pullDown > 0 {
+                            PullIndicator.refresh(distance: pullDown, threshold: Self.pullThreshold,
+                                                  working: pulledRefreshing)
+                                .allowsHitTesting(false)
+                        }
+                        if let refresh, !savedOnly {
+                            RefreshStatus(items: statusItems(finished: refresh.finished, split: split, loggedOut: loggedOut))
+                                // Below the pull-to-refresh indicator while it shows.
+                                .padding(.top, pulledRefreshing ? PullIndicator.workingHeight + 16 : 8)
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                        }
                     }
                 }
                 .animation(.easeInOut(duration: 0.25), value: refresh)
@@ -157,14 +167,21 @@ struct FeedListView<Trailing: View>: View {
                 .background(Color(.systemGroupedBackground))
                 .hidesHeaderOnScroll($scrolledAway, atTop: $atTop)
                 // Pulling up past the new posts shows the earlier ones, like pulling down refreshes.
-                .pullUpAtEnd(enabled: collapsed, distance: $pullUp, threshold: Self.pullUpThreshold) {
+                .pullPast(.bottom, enabled: collapsed, distance: $pullUp, threshold: Self.pullThreshold,
+                          settleFirst: true) {
                     revealEarlier(proxy)
                 }
                 .overlay(alignment: .bottom) {
                     if collapsed && pullUp > 0 {
-                        PullUpIndicator(distance: pullUp, threshold: Self.pullUpThreshold)
+                        PullIndicator.earlier(distance: pullUp, threshold: Self.pullThreshold)
                             .allowsHitTesting(false)
                     }
+                }
+                // Pulling down past the top refreshes, with the fleur-de-lis in place of the
+                // system spinner.
+                .pullPast(.top, enabled: refresh?.finished != false, distance: $pullDown,
+                          threshold: Self.pullThreshold) {
+                    Task { await refreshFeeds(pulled: true) }
                 }
                 // Tapping the tab again scrolls to the top, or refreshes when already there.
                 .onChange(of: store.reselected?.count) {
@@ -201,7 +218,7 @@ struct FeedListView<Trailing: View>: View {
                         }
                     }
                 }
-                .refreshable { await refreshFeeds(pulled: true) }
+                .systemRefreshable(!Self.canPull) { await refreshFeeds(pulled: true) }
                 // Back to the top once refreshed, where new posts land; the list otherwise
                 // keeps the rows that were showing in view, leaving new ones above them.
                 .onChange(of: refresh?.finished) { _, finished in
@@ -220,9 +237,10 @@ struct FeedListView<Trailing: View>: View {
     }
 
     private static var topID: String { "top" }
-    private static var pullUpThreshold: CGFloat { 90 }
-    // Pulling up needs iOS 18's scroll geometry; earlier versions keep the button.
-    private static var canPullUp: Bool {
+    private static var pullThreshold: CGFloat { 90 }
+    // Pulling past the ends needs iOS 18's scroll geometry; earlier versions keep the
+    // button for earlier posts and the system's pull to refresh.
+    private static var canPull: Bool {
         if #available(iOS 18, *) { true } else { false }
     }
 
@@ -464,14 +482,27 @@ extension View {
 }
 
 extension View {
-    // Sets `distance` to how far the list is dragged up past its end, and calls `action`
-    // when let go past `threshold`, the way pulling down past the top refreshes. The
-    // list's own bounce gives the pull its resistance. Needs iOS 18 scroll geometry.
+    // Sets `distance` to how far the list is dragged past its top or end, and calls
+    // `action` when let go past `threshold`. The list's own bounce gives the pull its
+    // resistance. With `settleFirst` the action waits for the bounce back to settle, which
+    // would otherwise carry the list on past where the action scrolls it to. Needs iOS 18
+    // scroll geometry.
     @ViewBuilder
-    func pullUpAtEnd(enabled: Bool, distance: Binding<CGFloat>, threshold: CGFloat,
-                     action: @escaping () -> Void) -> some View {
+    func pullPast(_ edge: VerticalEdge, enabled: Bool, distance: Binding<CGFloat>, threshold: CGFloat,
+                  settleFirst: Bool = false, action: @escaping () -> Void) -> some View {
         if #available(iOS 18, *) {
-            modifier(PullUpAtEnd(enabled: enabled, distance: distance, threshold: threshold, action: action))
+            modifier(PullPastEdge(edge: edge, enabled: enabled, distance: distance, threshold: threshold,
+                                  settleFirst: settleFirst, action: action))
+        } else {
+            self
+        }
+    }
+
+    // The system's pull to refresh, where the app's own pull isn't available.
+    @ViewBuilder
+    func systemRefreshable(_ enabled: Bool, action: @escaping @Sendable () async -> Void) -> some View {
+        if enabled {
+            refreshable(action: action)
         } else {
             self
         }
@@ -479,29 +510,40 @@ extension View {
 }
 
 @available(iOS 18, *)
-private struct PullUpAtEnd: ViewModifier {
+private struct PullPastEdge: ViewModifier {
+    let edge: VerticalEdge
     let enabled: Bool
     @Binding var distance: CGFloat
     let threshold: CGFloat
+    let settleFirst: Bool
     let action: () -> Void
-    // Let go past the threshold; the action waits for the bounce back to settle, which
-    // would otherwise carry the list on past where the action scrolls it to.
+    // Let go past the threshold, waiting for the list to settle.
     @State private var released = false
 
     func body(content: Content) -> some View {
         content
             .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                // A list shorter than the screen ends at its top.
-                let end = max(0, geometry.contentSize.height + geometry.contentInsets.top
-                    + geometry.contentInsets.bottom - geometry.containerSize.height)
-                return max(0, geometry.contentOffset.y + geometry.contentInsets.top - end)
+                let offset = geometry.contentOffset.y + geometry.contentInsets.top
+                switch edge {
+                case .top:
+                    return max(0, -offset)
+                case .bottom:
+                    // A list shorter than the screen ends at its top.
+                    let end = max(0, geometry.contentSize.height + geometry.contentInsets.top
+                        + geometry.contentInsets.bottom - geometry.containerSize.height)
+                    return max(0, offset - end)
+                }
             } action: { _, new in
                 distance = enabled ? new : 0
             }
             .onScrollPhaseChange { old, new in
-                // Counts on letting go, so pulling back down before then calls it off.
+                // Counts on letting go, so pulling back before then calls it off.
                 if old == .interacting && new != .interacting && enabled && distance >= threshold {
-                    released = true
+                    if settleFirst {
+                        released = true
+                    } else {
+                        action()
+                    }
                 }
                 if new == .idle && released {
                     released = false
@@ -896,48 +938,81 @@ struct EarlierPostsButton: View {
     }
 }
 
-// Rises from the bottom as the feed is pulled up past its end: the horse fills with gold
-// from the hooves up, and once full, letting go shows the earlier posts.
-struct PullUpIndicator: View {
+// Comes in from the edge the feed is pulled past: the art fills with gold from the
+// bottom up, and once full, letting go does what the caption says. The fleur-de-lis
+// pulls down to refresh, and the horse pulls up for earlier posts.
+struct PullIndicator: View {
+    let image: String
+    // The art's width over its height.
+    let aspect: CGFloat
+    let edge: VerticalEdge
+    let prompt: String
+    let release: String
     let distance: CGFloat
     let threshold: CGFloat
+    // The refresh this pull started is running; the fleur-de-lis stays, full and pulsing.
+    var working = false
 
-    private var progress: CGFloat { min(distance / threshold, 1) }
+    static func refresh(distance: CGFloat, threshold: CGFloat, working: Bool) -> PullIndicator {
+        PullIndicator(image: "PullFleur", aspect: 360 / 402, edge: .top, prompt: "Pull down to refresh",
+                      release: "Release to refresh", distance: distance, threshold: threshold, working: working)
+    }
+
+    static func earlier(distance: CGFloat, threshold: CGFloat) -> PullIndicator {
+        PullIndicator(image: "PullHorse", aspect: 360 / 315, edge: .bottom, prompt: "Pull up for earlier posts",
+                      release: "Release for earlier posts", distance: distance, threshold: threshold)
+    }
+
+    // How tall the art is while its refresh runs, so the status card can sit below it.
+    static let workingHeight: CGFloat = 48
+    private static let size: CGFloat = 80
+
+    private var progress: CGFloat { working ? 1 : min(distance / threshold, 1) }
     private var armed: Bool { distance >= threshold }
+    @State private var pulse = false
 
     var body: some View {
         VStack(spacing: 6) {
             ZStack {
-                horse
+                art
                     .opacity(0.8)
                 // The art is light gray, so multiplying keeps its shading and lines in gold.
-                horse
+                art
                     .colorMultiply(.royalAccent)
                     .mask(alignment: .bottom) {
-                        Rectangle().frame(height: Self.height * progress)
+                        Rectangle().frame(height: height * progress)
                     }
             }
-            .frame(width: Self.width, height: Self.height)
-            .scaleEffect(armed ? 1.15 : 0.7 + 0.3 * progress)
-            Text(armed ? "Release for earlier posts" : "Pull up for earlier posts")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
+            .frame(width: height * aspect, height: height)
+            .scaleEffect(working ? (pulse ? 1.08 : 0.92) : armed ? 1.15 : 0.7 + 0.3 * progress)
+            if !working {
+                Text(armed ? release : prompt)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
         }
         // Clears the floating tab bar, which the list runs under.
-        .padding(.bottom, 44)
+        .padding(edge == .top ? .top : .bottom, edge == .top ? 8 : 44)
         .opacity(Double(progress))
-        // Comes up with the gap the pull opens below the list, rather than ahead of it.
-        .offset(y: max(0, threshold - distance) * 0.6)
+        // Comes in with the gap the pull opens, rather than ahead of it.
+        .offset(y: working ? 0 : max(0, threshold - distance) * 0.6 * (edge == .top ? -1 : 1))
         .animation(.spring(duration: 0.25), value: armed)
-        .sensoryFeedback(.impact(weight: .medium), trigger: armed) { _, armed in armed }
+        .animation(.spring(duration: 0.3), value: working)
+        .sensoryFeedback(.impact(weight: .medium), trigger: armed) { _, armed in armed && !working }
+        .onChange(of: working, initial: true) { _, working in
+            pulse = false
+            guard working else { return }
+            withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { pulse = true }
+        }
     }
 
-    private static let width: CGFloat = 80
-    // The art's aspect ratio.
-    private static let height = width * 315 / 360
+    // The fleur-de-lis is taller than wide, so the two read as about the same size.
+    private var height: CGFloat {
+        working ? Self.workingHeight : aspect < 1 ? Self.size * 0.9 : Self.size / aspect
+    }
 
-    private var horse: some View {
-        Image("PullHorse")
+    private var art: some View {
+        Image(image)
             .resizable()
             .scaledToFit()
     }
