@@ -72,8 +72,8 @@ struct CombinedFeedView: View {
 }
 
 struct RedditFeedView: View {
-    // Starts on Top and stays on whichever sort was picked last.
-    @AppStorage(Preference.redditSort) private var sort = "top"
+    // Starts on Best and stays on whichever sort was picked last.
+    @AppStorage(Preference.redditSort) private var sort = "best"
     @EnvironmentObject private var store: FeedStore
     // The one subreddit showing, or nil for everything followed. Starts on everything.
     @State private var subreddit: String?

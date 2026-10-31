@@ -243,3 +243,34 @@ test("A Reddit block page isn't reported as being logged out, but other refusals
     globalThis.fetch = originalFetch;
   }
 });
+
+test("Hacker News pagination stops at 100 stories for both lists", async () => {
+  const originalFetch = globalThis.fetch;
+  const requested = [];
+  globalThis.fetch = async (url) => ({
+    ok: true,
+    json: async () => {
+      if (url.includes("stories.json")) return Array.from({ length: 500 }, (_, i) => i + 1);
+      const id = Number(new URL(url).pathname.match(/(\d+)\.json$/)[1]);
+      requested.push(id);
+      return { id, title: `Story ${id}`, time: 0 };
+    },
+  });
+  try {
+    for (const list of ["top", "new"]) {
+      const posts = [];
+      let offset = 0;
+      do {
+        const page = await fetchHackerNewsPage(30, { list, offset });
+        posts.push(...page.posts);
+        offset = page.next;
+      } while (offset !== null);
+      assert.equal(posts.length, 100);
+      assert.equal(posts.at(-1).id, "hn_100");
+      assert.deepEqual(await fetchHackerNewsPage(30, { list, offset: 120 }), { posts: [], next: null });
+    }
+    assert.ok(requested.every((id) => id <= 100));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

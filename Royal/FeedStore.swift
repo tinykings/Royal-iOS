@@ -254,7 +254,11 @@ final class FeedStore: ObservableObject {
         guard let data = try? Data(contentsOf: Self.cacheURL),
               let cache = try? JSONDecoder().decode(Cache.self, from: data) else { return }
         for feed in cache.feeds {
-            feeds[feed.key] = FeedState(posts: feed.posts, loaded: true, next: feed.next, loadedAt: feed.loadedAt)
+            // Apply the Hacker News cap to feeds cached before the limit existed too.
+            let isHackerNews = feed.key.source == .hn
+            let posts = isHackerNews ? Array(feed.posts.prefix(100)) : feed.posts
+            let next = isHackerNews && (feed.next ?? 100) >= 100 ? nil : feed.next
+            feeds[feed.key] = FeedState(posts: posts, loaded: true, next: next, loadedAt: feed.loadedAt)
         }
         lastRefresh = cache.lastRefresh
         previousRefresh = cache.previousRefresh

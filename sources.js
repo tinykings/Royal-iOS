@@ -171,9 +171,10 @@ export async function fetchHackerNews(limit, { list = "top" } = {}) {
 }
 
 // One page of stories, so callers can show the first page fast and fetch more on
-// demand. `next` is the offset of the following page, or null after the last one.
+// demand, stopping after the first 100 stories. `next` is the offset of the
+// following page, or null after the last one.
 export async function fetchHackerNewsPage(count, { list = "top", offset = 0 } = {}) {
-  const ids = await hackerNewsIds(list);
+  const ids = (await hackerNewsIds(list)).slice(0, 100);
   const end = offset + count;
   return { posts: await hackerNewsItems(ids.slice(offset, end)), next: end < ids.length ? end : null };
 }
