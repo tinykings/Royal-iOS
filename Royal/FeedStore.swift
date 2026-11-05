@@ -43,6 +43,7 @@ final class FeedStore: ObservableObject {
     private let session = FeedSession()
     @Published private(set) var feeds: [FeedKey: FeedState] = [:]
     @Published private(set) var loggedIn: [FeedSource: Bool] = [:]
+    @Published private(set) var loginCookies: [FeedSource: [LoginCookie]] = [:]
     // The followed subreddits, for the Reddit tab's menu.
     @Published private(set) var subreddits: [String] = []
     @Published var selectedTab: AppTab = .all
@@ -260,6 +261,7 @@ final class FeedStore: ObservableObject {
         }
         if source == .reddit { subreddits = [] }
         loggedIn[source] = false
+        loginCookies[source] = []
         saveCache()
     }
 
@@ -364,6 +366,7 @@ final class FeedStore: ObservableObject {
     func refreshLoginStatus() async {
         for source in FeedSource.allCases {
             loggedIn[source] = await session.isLoggedIn(source)
+            loginCookies[source] = await session.loginCookies(source)
         }
     }
 

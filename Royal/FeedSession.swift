@@ -59,6 +59,14 @@ enum FeedError: LocalizedError {
     }
 }
 
+// A cookie that keeps a source logged in, and when it runs out (nil: when the browser
+// session ends).
+struct LoginCookie: Identifiable, Equatable {
+    let name: String
+    let expires: Date?
+    var id: String { name }
+}
+
 // One browser profile for the app: login pages store cookies here,
 // and native requests read them back.
 enum WebProfile {
@@ -240,6 +248,21 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         case .reddit: return cookies.contains { $0.name == "reddit_session" && $0.domain.hasSuffix("reddit.com") }
         case .youtube: return cookies.contains { $0.name == "LOGIN_INFO" && $0.domain.hasSuffix("youtube.com") }
         case .hn: return true
+        }
+    }
+
+    // The cookies worth watching for the source's login. On YouTube, __Secure-1PSIDTS
+    // can run out well before LOGIN_INFO, and losing it signs the user out.
+    func loginCookies(_ source: FeedSource) async -> [LoginCookie] {
+        let (domain, names): (String, [String]) = switch source {
+        case .reddit: ("reddit.com", ["reddit_session"])
+        case .youtube: ("youtube.com", ["LOGIN_INFO", "__Secure-1PSIDTS"])
+        case .hn: ("", [])
+        }
+        let cookies = await cookieStore.allCookies()
+        return names.compactMap { name in
+            cookies.first { $0.name == name && $0.domain.hasSuffix(domain) }
+                .map { LoginCookie(name: name, expires: $0.expiresDate) }
         }
     }
 

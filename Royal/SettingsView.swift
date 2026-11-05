@@ -52,6 +52,7 @@ struct SettingsView: View {
                     } label: {
                         LabeledContent("Account", value: status(.youtube))
                     }
+                    cookieExpirations(.youtube)
                     logOutButton(.youtube)
                     Picker("View", selection: $youtubeLayout) {
                         ForEach(FeedLayout.allCases) { Text($0.title).tag($0) }
@@ -72,6 +73,7 @@ struct SettingsView: View {
                     } label: {
                         LabeledContent("Account", value: status(.reddit))
                     }
+                    cookieExpirations(.reddit)
                     logOutButton(.reddit)
                     Picker("View", selection: $redditLayout) {
                         ForEach(FeedLayout.allCases) { Text($0.title).tag($0) }
@@ -154,6 +156,21 @@ struct SettingsView: View {
         let version = info?["CFBundleShortVersionString"] as? String ?? "?"
         let build = info?["CFBundleVersion"] as? String ?? "?"
         return "\(version) (\(build))"
+    }
+
+    // When each login cookie runs out, as set by the service and capped by WebKit.
+    @ViewBuilder
+    private func cookieExpirations(_ source: FeedSource) -> some View {
+        if store.loggedIn[source] == true {
+            ForEach(store.loginCookies[source] ?? []) { cookie in
+                LabeledContent(cookie.name, value: expiration(cookie))
+            }
+        }
+    }
+
+    private func expiration(_ cookie: LoginCookie) -> String {
+        guard let expires = cookie.expires else { return "End of session" }
+        return expires > Date() ? expires.formatted(date: .abbreviated, time: .shortened) : "Expired"
     }
 
     @ViewBuilder
