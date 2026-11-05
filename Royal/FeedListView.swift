@@ -53,8 +53,11 @@ struct FeedListView<Trailing: View>: View {
         // new since the previous refresh first.
         let isAll = keys == FeedKey.combined && !savedOnly
         let split = isAll ? store.splitByRefresh(posts) : nil
-        // Posts seen before stay tucked away until asked for.
-        let collapsed = !showEarlier && split.map { !$0.new.isEmpty || !$0.seen.isEmpty } == true
+        // Posts seen before stay tucked away until asked for. Until the feed's first been marked
+        // read they show when nothing's new, so a new install's feed doesn't start out empty.
+        let collapsed = !showEarlier && split.map {
+            !$0.new.isEmpty || (store.hasMarkedRead && !$0.seen.isEmpty)
+        } == true
         // Pulling up past the end marks unread posts read; only an empty feed shows earlier ones.
         let hasUnread = split?.new.isEmpty == false
         NavigationStack {

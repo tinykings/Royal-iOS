@@ -269,7 +269,10 @@ final class FeedStore: ObservableObject {
     private static let refreshedKey = "allFeedRefreshedAt"
     private static let sourcesKey = "allFeedSources"
     private static let seenLimit = 3000
+    private static let markedReadKey = "allFeedMarkedRead"
 
+    // Whether the All feed has ever been marked read on this install.
+    @Published private(set) var hasMarkedRead = UserDefaults.standard.bool(forKey: FeedStore.markedReadKey)
     // When the All feed was last refreshed; shown atop the feed.
     @Published private(set) var lastRefresh: Date?
     // When the All feed was refreshed before this one; the divider shows this time.
@@ -321,6 +324,8 @@ final class FeedStore: ObservableObject {
         rememberSeen(current)
         // Published, so the feed redraws; the earlier posts now run up to the latest refresh.
         previousRefresh = lastRefresh ?? Date()
+        hasMarkedRead = true
+        UserDefaults.standard.set(true, forKey: Self.markedReadKey)
         saveCache()
     }
 
