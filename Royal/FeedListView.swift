@@ -32,6 +32,8 @@ struct FeedListView<Trailing: View>: View {
     var savedOnly = false
     // The header toggle's current choice, shown beside the title since the toggles are icons.
     var subtitle: String? = nil
+    // A menu to show in place of the title.
+    var titleMenu: AnyView? = nil
     // Optional nav bar control; when present the title moves to the leading edge.
     @ViewBuilder var trailing: Trailing
 
@@ -103,6 +105,17 @@ struct FeedListView<Trailing: View>: View {
                     } else if posts.isEmpty && keys.contains(where: { store.state($0).loading && store.state($0).error == nil }) {
                         ProgressView()
                             .frame(maxWidth: .infinity)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                    } else if posts.isEmpty && loggedOut.isEmpty
+                                && keys.allSatisfy({ store.state($0).loaded && !store.state($0).loading && store.state($0).error == nil }) {
+                        // A quiet subreddit can have nothing in Top today.
+                        Text("No posts to show.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .multilineTextAlignment(.center)
+                            .padding(.vertical, 40)
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
                     }
@@ -199,9 +212,13 @@ struct FeedListView<Trailing: View>: View {
                     if Trailing.self != EmptyView.self {
                         PlainToolbarItem(placement: .topBarLeading) {
                             HStack(spacing: 8) {
-                                Text(title)
-                                    .font(.headline)
-                                    .accessibilityAddTraits(.isHeader)
+                                if let titleMenu {
+                                    titleMenu
+                                } else {
+                                    Text(title)
+                                        .font(.headline)
+                                        .accessibilityAddTraits(.isHeader)
+                                }
                                 if let subtitle {
                                     Text(subtitle)
                                         .font(.subheadline.weight(.medium))
@@ -1228,7 +1245,7 @@ struct PostRow: View {
         if let score = post.score { parts.append(Self.count(score, "pt")) }
         if let comments = post.comments { parts.append(Self.count(comments, "comment")) }
         if let created = post.created { parts.append(Self.age(Date().timeIntervalSince1970 - created)) }
-        if let published = post.published, !published.isEmpty { parts.append(Self.shortAge(published)) }
+        if let published = post.published, !published.isEmpty { parts.append(Self.shortAge(published, publishedAt: post.publishedAt)) }
         return parts.joined(separator: " · ")
     }
 
@@ -1258,11 +1275,20 @@ struct PostRow: View {
 
     // YouTube writes "6 minutes ago", "23h ago" or "Streamed 2 hours ago"; shorten those to match the
     // other sources' "6m". Other text, like "Live" or "Scheduled for…", stays as it is.
-    private static func shortAge(_ published: String) -> String {
+    // That text is as old as the fetch, so the age counts from `publishedAt` when there is one;
+    // otherwise a saved video would read "28m" for good.
+    private static func shortAge(_ published: String, publishedAt: Double?) -> String {
+        guard let age = publishedAge(published) else { return published }
+        let seconds = publishedAt.map { Date().timeIntervalSince1970 - $0 } ?? age.seconds
+        return age.prefix + Self.age(seconds)
+    }
+
+    // The age in YouTube's text, and any "Streamed " or "Premiered " before it.
+    static func publishedAge(_ published: String) -> (prefix: String, seconds: Double)? {
         let pattern = /^(?<prefix>Streamed |Premiered )?(?<count>\d+)\s?(?<unit>second|sec|minute|min|hour|hr|day|week|wk|month|mo|year|yr|[smhdwy])s? ago$/
         guard let match = try? pattern.ignoresCase().wholeMatch(in: published.replacingOccurrences(of: "\u{a0}", with: " ")),
-              let count = Double(match.count), let seconds = ageSeconds[match.unit.lowercased()] else { return published }
-        return (match.prefix.map { "\($0)" } ?? "") + age(count * seconds)
+              let count = Double(match.count), let seconds = ageSeconds[match.unit.lowercased()] else { return nil }
+        return (match.prefix.map { "\($0)" } ?? "", count * seconds)
     }
 }
 

@@ -74,17 +74,52 @@ struct CombinedFeedView: View {
 struct RedditFeedView: View {
     // Starts on Top and stays on whichever sort was picked last.
     @AppStorage(Preference.redditSort) private var sort = "top"
+    @EnvironmentObject private var store: FeedStore
+    // The one subreddit showing, or nil for everything followed. Starts on everything.
+    @State private var subreddit: String?
 
     var body: some View {
         // Top is always today's, so it uses the same feed as the All page.
-        FeedListView(title: "Reddit", tab: .reddit, keys: [.reddit(sort: sort, timeframe: "day")],
-                     subtitle: sort == "top" ? "Top Today" : sort.capitalized) {
+        let key: FeedKey = subreddit.map { FeedKey.subreddit(name: $0, sort: sort) } ?? .reddit(sort: sort, timeframe: "day")
+        FeedListView(title: "Reddit", tab: .reddit, keys: [key],
+                     // A subreddit's name takes up the room the sort's name would use.
+                     subtitle: subreddit != nil ? nil : sort == "top" ? "Top Today" : sort.capitalized,
+                     titleMenu: AnyView(subredditMenu)) {
             HeaderPicker(title: "Sort", selection: $sort, options: [
                 HeaderOption(value: "best", icon: "rosette", title: "Best"),
                 HeaderOption(value: "top", icon: "trophy", title: "Top"),
                 HeaderOption(value: "new", icon: "clock", title: "New"),
             ])
         }
+        .task { if store.subreddits.isEmpty { await store.loadSubreddits() } }
+    }
+
+    private var subredditMenu: some View {
+        Menu {
+            Picker("Subreddit", selection: $subreddit) {
+                Text("All Subreddits").tag(String?.none)
+                ForEach(store.subreddits, id: \.self) { name in
+                    Text("r/\(name)").tag(String?.some(name))
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(subredditTitle)
+                    .font(.headline)
+                    .accessibilityAddTraits(.isHeader)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.semibold))
+            }
+            .foregroundStyle(.primary)
+        }
+        .accessibilityLabel(subreddit.map { "Subreddit: \($0)" } ?? "Reddit, all subreddits")
+    }
+
+    // Shortened by hand since the header sizes its title to fit, and the sort control beside it
+    // leaves room for about this much.
+    private var subredditTitle: String {
+        guard let subreddit else { return "Reddit" }
+        return "r/" + (subreddit.count > 14 ? String(subreddit.prefix(13)) + "…" : subreddit)
     }
 }
 

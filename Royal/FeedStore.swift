@@ -2,12 +2,14 @@ import SwiftUI
 
 enum FeedKey: Hashable, Codable {
     case reddit(sort: String, timeframe: String)
+    // One followed subreddit, chosen on the Reddit tab.
+    case subreddit(name: String, sort: String)
     case hn(list: String)
     case youtube
 
     var source: FeedSource {
         switch self {
-        case .reddit: .reddit
+        case .reddit, .subreddit: .reddit
         case .hn: .hn
         case .youtube: .youtube
         }
@@ -41,6 +43,8 @@ final class FeedStore: ObservableObject {
     private let session = FeedSession()
     @Published private(set) var feeds: [FeedKey: FeedState] = [:]
     @Published private(set) var loggedIn: [FeedSource: Bool] = [:]
+    // The followed subreddits, for the Reddit tab's menu.
+    @Published private(set) var subreddits: [String] = []
     @Published var selectedTab: AppTab = .all
     // The video in the docked player.
     @Published var playingVideo: FeedPost?
@@ -66,7 +70,7 @@ final class FeedStore: ObservableObject {
     }
 
     var savedPosts: [FeedPost] {
-        saved.map(\.post)
+        saved.map { $0.dated }
     }
 
     func isSaved(_ post: FeedPost) -> Bool {
@@ -91,7 +95,15 @@ final class FeedStore: ObservableObject {
     // already loading waits for that fetch instead of returning before it lands.
     private var fetches: [FeedKey: Task<Void, Never>] = [:]
 
+    // A failure keeps the list already shown; the next refresh tries again.
+    func loadSubreddits() async {
+        if let names = try? await session.subreddits() { subreddits = names }
+    }
+
     func load(_ keys: [FeedKey], force: Bool = false) async {
+        if force && keys.contains(where: { $0.source == .reddit }) {
+            Task { await loadSubreddits() }
+        }
         // Marks the feeds loading before the first suspension, so a caller that just
         // changed what's shown never draws a frame with the old state.
         var started: [FeedKey] = []
@@ -203,8 +215,11 @@ final class FeedStore: ObservableObject {
 
     private func saveCache() {
         let cache = Cache(
+            // A subreddit's posts are only kept while the app runs; it's picked now and then,
+            // and would otherwise open however long ago it was last looked at.
             feeds: feeds.compactMap { key, state in
-                state.posts.isEmpty ? nil
+                if case .subreddit = key { return nil }
+                return state.posts.isEmpty ? nil
                     : Cache.Feed(key: key, posts: state.posts, next: state.next, loadedAt: state.loadedAt)
             },
             lastRefresh: lastRefresh, previousRefresh: previousRefresh, previouslySeen: previouslySeen,
@@ -235,6 +250,7 @@ final class FeedStore: ObservableObject {
         for key in feeds.keys where key.source == source {
             feeds[key] = FeedState()
         }
+        if source == .reddit { subreddits = [] }
         loggedIn[source] = false
         saveCache()
     }

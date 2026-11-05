@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fetchHackerNews, fetchHackerNewsPage, fetchReddit, NotLoggedInError } from "./sources.js";
+import { fetchHackerNews, fetchHackerNewsPage, fetchReddit, fetchSubscribedSubreddits, NotLoggedInError } from "./sources.js";
 
 test("Reddit sort uses personalized Best, score-ranked Top with timeframe, and chronological New", async () => {
   const originalFetch = globalThis.fetch;
@@ -153,6 +153,59 @@ test("Hacker News pages walk the story list and report the next offset", async (
     const last = await fetchHackerNewsPage(3, { offset: first.next });
     assert.deepEqual(last.posts.map((p) => p.id), ["hn_4", "hn_5"]);
     assert.equal(last.next, null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("A single subreddit uses its own listing, maps Best to Hot, and isn't capped per subreddit", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (url) => {
+    requests.push(new URL(url));
+    return {
+      ok: true,
+      json: async () => url.includes("/subreddits/mine/")
+        ? { data: { children: [{ data: { display_name: "test" } }], after: null } }
+        : { data: { children: Array.from({ length: 8 }, (_, i) => ({ data: {
+          name: `p${i}`, title: `p${i}`, score: i, created_utc: i, subreddit: "swift",
+          permalink: `/r/swift/comments/p${i}`, url: `https://example.com/p${i}`,
+        } })) } },
+    };
+  };
+  try {
+    assert.equal((await fetchReddit(100, { sort: "best", subreddit: "swift" })).length, 8);
+    assert.equal(requests.at(-1).pathname, "/r/swift/hot.json");
+    await fetchReddit(100, { sort: "top", timeframe: "day", subreddit: "swift" });
+    assert.equal(requests.at(-1).pathname, "/r/swift/top.json");
+    assert.equal(requests.at(-1).searchParams.get("t"), "day");
+    await fetchReddit(100, { sort: "new", subreddit: "swift" });
+    assert.equal(requests.at(-1).pathname, "/r/swift/new.json");
+    await assert.rejects(fetchReddit(100, { subreddit: "../evil" }), /Invalid subreddit/);
+    // Without a subreddit, the home listing keeps its cap.
+    assert.equal((await fetchReddit(100, { sort: "new" })).length, 5);
+    assert.equal(requests.at(-1).pathname, "/new.json");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Followed subreddits walk every page, sort A to Z, and skip people and NSFW", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const pages = {
+    "": { children: [{ display_name: "zig" }, { display_name: "u_someone", subreddit_type: "user" }], after: "t5_a" },
+    t5_a: { children: [{ display_name: "Apple" }, { display_name: "nsfwsub", over18: true }, { display_name: "banana" }], after: null },
+  };
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(url);
+    requests.push(parsed);
+    const page = pages[parsed.searchParams.get("after") ?? ""];
+    return { ok: true, json: async () => ({ data: { children: page.children.map((data) => ({ data })), after: page.after } }) };
+  };
+  try {
+    assert.deepEqual(await fetchSubscribedSubreddits(), ["Apple", "banana", "zig"]);
+    assert.equal(requests.length, 2);
   } finally {
     globalThis.fetch = originalFetch;
   }

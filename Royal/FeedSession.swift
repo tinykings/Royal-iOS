@@ -42,7 +42,7 @@ struct FeedPost: Codable, Identifiable {
     let videoId: String?
     let published: String?
     // YouTube only: latest time the video could have been published, from its age text.
-    let publishedAt: Double?
+    var publishedAt: Double?
 }
 
 enum FeedError: LocalizedError {
@@ -111,7 +111,7 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
               return res;
             };
             \(body)
-            return { fetchReddit, fetchHackerNewsPage, fetchYouTube, NotLoggedInError };
+            return { fetchReddit, fetchSubscribedSubreddits, fetchHackerNewsPage, fetchYouTube, NotLoggedInError };
             })();
 
             """
@@ -291,13 +291,25 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         let next: Int?
     }
 
+    // The followed subreddits, A to Z.
+    func subreddits() async throws -> [String] {
+        guard !sourcesScript.isEmpty else { throw FeedError.failed("sources.js missing from app bundle") }
+        let result = try await run(sourcesScript + "return JSON.stringify(await Royal.fetchSubscribedSubreddits());")
+        guard let json = result as? String else { throw FeedError.failed("No result from page") }
+        return try JSONDecoder().decode([String].self, from: Data(json.utf8))
+    }
+
     func posts(_ key: FeedKey, offset: Int = 0, limit: Int = 100) async throws -> Page {
         var arguments: [String: Any] = ["source": key.source.rawValue, "limit": limit,
-                                        "offset": offset, "pageSize": Self.hackerNewsPageSize]
+                                        "offset": offset, "pageSize": Self.hackerNewsPageSize, "subreddit": ""]
         switch key {
         case .reddit(let sort, let timeframe):
             arguments["sort"] = sort
             arguments["timeframe"] = timeframe
+        case .subreddit(let name, let sort):
+            arguments["sort"] = sort
+            arguments["timeframe"] = "day"
+            arguments["subreddit"] = name
         case .hn(let list):
             arguments["list"] = list
         case .youtube:
@@ -306,7 +318,7 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         guard !sourcesScript.isEmpty else { throw FeedError.failed("sources.js missing from app bundle") }
         let result = try await run(sourcesScript + """
             const fetchers = {
-              reddit: async () => ({ posts: await Royal.fetchReddit(limit, { sort, timeframe }), next: null }),
+              reddit: async () => ({ posts: await Royal.fetchReddit(limit, { sort, timeframe, subreddit }), next: null }),
               hn: () => Royal.fetchHackerNewsPage(pageSize, { list, offset }),
               youtube: async () => ({ posts: await Royal.fetchYouTube(limit), next: null }),
             };

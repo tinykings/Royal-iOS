@@ -69,16 +69,38 @@ function redditImage(post) {
     ?? sizedImage(post.thumbnail, post.thumbnail_width, post.thumbnail_height);
 }
 
-export async function fetchReddit(limit, { sort = "best", timeframe = CONFIG.redditTimeWindow } = {}) {
+// The followed subreddits, A to Z. Followed people and NSFW subreddits are left out, since
+// the app shows neither.
+export async function fetchSubscribedSubreddits() {
+  const names = [];
+  let after = null;
+  for (let page = 0; page < 20; page++) {
+    const params = new URLSearchParams({ limit: "100", raw_json: "1" });
+    if (after) params.set("after", after);
+    const listing = await getJson(`${REDDIT}/subreddits/mine/subscriber.json?${params}`);
+    for (const { data } of listing.data.children) {
+      if (data.subreddit_type !== "user" && !data.over18) names.push(data.display_name);
+    }
+    after = listing.data.after;
+    if (!after) break;
+  }
+  return names.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
+
+// Without `subreddit`, the home listing of everything followed. With it, that subreddit alone.
+export async function fetchReddit(limit, { sort = "best", timeframe = CONFIG.redditTimeWindow, subreddit = "" } = {}) {
   if (!["best", "top", "new"].includes(sort)) throw new Error("Invalid Reddit sort");
   if (!["hour", "day", "week", "month", "year", "all"].includes(timeframe)) throw new Error("Invalid Reddit timeframe");
+  if (subreddit && !/^\w+$/.test(subreddit)) throw new Error("Invalid subreddit");
   await requireSubscriptions();
 
   const params = new URLSearchParams({ limit: "100", raw_json: "1" });
   if (sort === "top") params.set("t", timeframe);
   // Logged-in home listings cover subscriptions. Reddit now redirects combined
   // r/a+b+c listings to its home page instead of returning JSON.
-  const listing = await getJson(`${REDDIT}/${sort}.json?${params}`);
+  // Best is a home listing; a subreddit's own default ranking is Hot.
+  const path = subreddit ? `/r/${subreddit}/${sort === "best" ? "hot" : sort}` : `/${sort}`;
+  const listing = await getJson(`${REDDIT}${path}.json?${params}`);
 
   const posts = listing.data.children
     .map((c) => c.data)
@@ -90,7 +112,7 @@ export async function fetchReddit(limit, { sort = "best", timeframe = CONFIG.red
   const picked = [];
   for (const p of posts) {
     const n = perSub.get(p.subreddit) ?? 0;
-    if (n >= CONFIG.maxPerSubreddit) continue;
+    if (!subreddit && n >= CONFIG.maxPerSubreddit) continue;
     perSub.set(p.subreddit, n + 1);
     const commentsUrl = REDDIT + p.permalink;
     const image = redditImage(p);
