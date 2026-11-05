@@ -70,7 +70,7 @@ final class FeedStore: ObservableObject {
     }
 
     var savedPosts: [FeedPost] {
-        saved.map { $0.dated }
+        saved.map(\.post)
     }
 
     func isSaved(_ post: FeedPost) -> Bool {
@@ -94,6 +94,14 @@ final class FeedStore: ObservableObject {
     // even if SwiftUI cancels the pull-to-refresh task, and a refresh that finds a feed
     // already loading waits for that fetch instead of returning before it lands.
     private var fetches: [FeedKey: Task<Void, Never>] = [:]
+
+    // Fetches every loaded Reddit feed again after the NSFW setting changes. Turning it off
+    // hides NSFW posts at once (see FeedListView); this fills the room they took up.
+    func reloadRedditForNSFWChange() async {
+        let keys = feeds.filter { $0.key.source == .reddit && $0.value.loaded }.map(\.key)
+        if keys.isEmpty { await loadSubreddits() }
+        await load(keys, force: true)
+    }
 
     // A failure keeps the list already shown; the next refresh tries again.
     func loadSubreddits() async {

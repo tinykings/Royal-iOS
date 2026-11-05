@@ -11,6 +11,8 @@ enum Preference {
     static let feedTextSize = "feedTextSize"
     // The Reddit tab's last chosen sort.
     static let redditSort = "redditSort"
+    // Whether Reddit feeds include NSFW posts; off unless turned on in Settings.
+    static let redditNSFW = "redditNSFW"
 }
 
 // Text size for feed posts, a step on the Settings slider. Default follows the

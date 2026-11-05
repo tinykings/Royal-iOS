@@ -1,6 +1,6 @@
 // Fetching and normalizing posts from Reddit, Hacker News, and YouTube.
 // Every post is normalized to:
-//   { source, id, title, url, commentsUrl, score, comments, created, label, image?, imageAspect? }
+//   { source, id, title, url, commentsUrl, score, comments, created, label, image?, imageAspect?, nsfw? }
 
 export const CONFIG = {
   totalItems: 100,
@@ -69,9 +69,9 @@ function redditImage(post) {
     ?? sizedImage(post.thumbnail, post.thumbnail_width, post.thumbnail_height);
 }
 
-// The followed subreddits, A to Z. Followed people and NSFW subreddits are left out, since
-// the app shows neither.
-export async function fetchSubscribedSubreddits() {
+// The followed subreddits, A to Z. Followed people are left out, and NSFW subreddits unless
+// `nsfw` is set.
+export async function fetchSubscribedSubreddits({ nsfw = false } = {}) {
   const names = [];
   let after = null;
   for (let page = 0; page < 20; page++) {
@@ -79,7 +79,7 @@ export async function fetchSubscribedSubreddits() {
     if (after) params.set("after", after);
     const listing = await getJson(`${REDDIT}/subreddits/mine/subscriber.json?${params}`);
     for (const { data } of listing.data.children) {
-      if (data.subreddit_type !== "user" && !data.over18) names.push(data.display_name);
+      if (data.subreddit_type !== "user" && (nsfw || !data.over18)) names.push(data.display_name);
     }
     after = listing.data.after;
     if (!after) break;
@@ -88,7 +88,7 @@ export async function fetchSubscribedSubreddits() {
 }
 
 // Without `subreddit`, the home listing of everything followed. With it, that subreddit alone.
-export async function fetchReddit(limit, { sort = "best", timeframe = CONFIG.redditTimeWindow, subreddit = "" } = {}) {
+export async function fetchReddit(limit, { sort = "best", timeframe = CONFIG.redditTimeWindow, subreddit = "", nsfw = false } = {}) {
   if (!["best", "top", "new"].includes(sort)) throw new Error("Invalid Reddit sort");
   if (!["hour", "day", "week", "month", "year", "all"].includes(timeframe)) throw new Error("Invalid Reddit timeframe");
   if (subreddit && !/^\w+$/.test(subreddit)) throw new Error("Invalid subreddit");
@@ -104,7 +104,7 @@ export async function fetchReddit(limit, { sort = "best", timeframe = CONFIG.red
 
   const posts = listing.data.children
     .map((c) => c.data)
-    .filter((p) => !p.stickied && !p.over_18);
+    .filter((p) => !p.stickied && (nsfw || !p.over_18));
   if (sort === "top") posts.sort((a, b) => b.score - a.score);
   if (sort === "new") posts.sort((a, b) => b.created_utc - a.created_utc);
 
@@ -128,6 +128,7 @@ export async function fetchReddit(limit, { sort = "best", timeframe = CONFIG.red
       label: `r/${p.subreddit}`,
       image: image?.url ?? null,
       imageAspect: image?.aspect ?? null,
+      nsfw: Boolean(p.over_18),
     });
     if (picked.length >= limit) break;
   }

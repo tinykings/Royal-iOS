@@ -10,7 +10,7 @@ iOS app combining Reddit, Hacker News, and your YouTube subscriptions in one fee
 - Reddit sort: **Best**, **Top** (today), or **New**, from the subreddits you follow only, or from one of them picked from the menu at the top (where Best shows the subreddit's Hot ranking). Hacker News: **Top** or **New**.
 - Uses your Reddit and YouTube logins from in-app sign-in pages—no API keys or OAuth setup. Reddit links open with that login, so you can vote and reply.
 - Plays YouTube videos in-app.
-- Caps Reddit posts at five per subreddit, except when viewing a single subreddit; excludes pinned and NSFW posts.
+- Caps Reddit posts at five per subreddit, except when viewing a single subreddit; excludes pinned posts, and NSFW posts unless turned on in Settings.
 - The All feed puts posts new since the previous refresh above a divider. Feeds refresh on their own after 15 minutes away; tap the current tab to jump to the top, and again to refresh.
 
 ## Build

@@ -210,3 +210,26 @@ test("Followed subreddits walk every page, sort A to Z, and skip people and NSFW
     globalThis.fetch = originalFetch;
   }
 });
+
+test("NSFW posts and subreddits are left out unless asked for, and posts say which they are", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => ({
+    ok: true,
+    json: async () => url.includes("/subreddits/mine/")
+      ? { data: { children: [{ data: { display_name: "safe" } }, { data: { display_name: "adult", over18: true } }], after: null } }
+      : { data: { children: [
+        { name: "clean", over_18: false },
+        { name: "mature", over_18: true },
+      ].map((post) => ({ data: { ...post, score: 1, created_utc: 1, subreddit: "test",
+        permalink: `/r/test/comments/${post.name}`, url: `https://example.com/${post.name}` } })) } },
+  });
+  try {
+    assert.deepEqual((await fetchReddit(10)).map((post) => post.id), ["clean"]);
+    assert.deepEqual((await fetchReddit(10, { nsfw: true })).map((post) => [post.id, post.nsfw]),
+      [["clean", false], ["mature", true]]);
+    assert.deepEqual(await fetchSubscribedSubreddits(), ["safe"]);
+    assert.deepEqual(await fetchSubscribedSubreddits({ nsfw: true }), ["adult", "safe"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

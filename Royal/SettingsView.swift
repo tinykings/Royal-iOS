@@ -10,6 +10,7 @@ struct SettingsView: View {
     @AppStorage(Preference.listWhilePlaying) private var listWhilePlaying = true
     @AppStorage(Preference.redditLayout) private var redditLayout = FeedLayout.cards
     @AppStorage(Preference.redditOpen) private var redditOpen = OpenTarget.link
+    @AppStorage(Preference.redditNSFW) private var redditNSFW = false
     @AppStorage(Preference.hnOpen) private var hnOpen = OpenTarget.link
     @AppStorage(Preference.feedTextSize) private var feedTextSize = FeedTextSize.standard
 
@@ -78,10 +79,14 @@ struct SettingsView: View {
                     Picker("Tapping a post opens", selection: $redditOpen) {
                         ForEach(OpenTarget.allCases) { Text($0.title).tag($0) }
                     }
+                    Toggle("Show NSFW posts", isOn: $redditNSFW)
+                        .onChange(of: redditNSFW) {
+                            Task { await store.reloadRedditForNSFWChange() }
+                        }
                 } header: {
                     Text("Reddit")
                 } footer: {
-                    Text("Log in with a username and password; \"Continue with Google\" is blocked inside apps. Long-press a post to open the other.")
+                    Text("Log in with a username and password; \"Continue with Google\" is blocked inside apps. Long-press a post to open the other. Your Reddit account's own mature content setting may also limit NSFW posts.")
                 }
                 Section {
                     Picker("Tapping a post opens", selection: $hnOpen) {

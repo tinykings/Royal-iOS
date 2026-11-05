@@ -23,6 +23,7 @@ struct FeedListView<Trailing: View>: View {
     @AppStorage(Preference.hnOpen) private var hnOpen = OpenTarget.link
     @AppStorage(Preference.youtubePlayback) private var youtubePlayback = VideoPlayback.inApp
     @AppStorage(Preference.listWhilePlaying) private var listWhilePlaying = true
+    @AppStorage(Preference.redditNSFW) private var showsNSFW = false
     let title: String
     // The tab showing this feed; tapping it again scrolls to the top.
     let tab: AppTab
@@ -38,7 +39,9 @@ struct FeedListView<Trailing: View>: View {
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
-        let posts = savedOnly ? store.savedPosts : store.posts(keys)
+        // NSFW posts hide here too, so turning the setting off takes effect at once, saved
+        // posts included, without waiting on a reload.
+        let posts = (savedOnly ? store.savedPosts : store.posts(keys)).filter { showsNSFW || $0.nsfw != true }
         // The header slides away while scrolling down, leaving more room for the feed,
         // and comes back on scrolling up, so its controls stay in reach during a video.
         let headerHidden = scrolledAway
@@ -333,7 +336,7 @@ struct FeedListView<Trailing: View>: View {
 
     private func postRow(_ post: FeedPost, nearEnd: Bool) -> some View {
         let isSaved = store.isSaved(post)
-        return PostRow(post: post, showsSource: showsSource, layout: layout(for: post), saved: isSaved,
+        return PostRow(post: post, showsSource: showsSource, showsDate: !savedOnly, layout: layout(for: post), saved: isSaved,
                        playing: store.playingVideo?.id == post.id)
             .contentShape(RoundedRectangle(cornerRadius: PostRow.cornerRadius))
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: PostRow.cornerRadius))
@@ -1079,6 +1082,7 @@ struct RefreshDivider: View {
 struct PostRow: View {
     let post: FeedPost
     var showsSource = false
+    var showsDate = true
     var layout = FeedLayout.list
     var saved = false
     // The video in the docked player; outlined so it's easy to find in the list.
@@ -1244,8 +1248,10 @@ struct PostRow: View {
         var parts = [post.label]
         if let score = post.score { parts.append(Self.count(score, "pt")) }
         if let comments = post.comments { parts.append(Self.count(comments, "comment")) }
-        if let created = post.created { parts.append(Self.age(Date().timeIntervalSince1970 - created)) }
-        if let published = post.published, !published.isEmpty { parts.append(Self.shortAge(published, publishedAt: post.publishedAt)) }
+        if showsDate {
+            if let created = post.created { parts.append(Self.age(Date().timeIntervalSince1970 - created)) }
+            if let published = post.published, !published.isEmpty { parts.append(Self.shortAge(published, publishedAt: post.publishedAt)) }
+        }
         return parts.joined(separator: " · ")
     }
 
@@ -1275,8 +1281,7 @@ struct PostRow: View {
 
     // YouTube writes "6 minutes ago", "23h ago" or "Streamed 2 hours ago"; shorten those to match the
     // other sources' "6m". Other text, like "Live" or "Scheduled for…", stays as it is.
-    // That text is as old as the fetch, so the age counts from `publishedAt` when there is one;
-    // otherwise a saved video would read "28m" for good.
+    // That text is as old as the fetch, so the age counts from `publishedAt` when there is one.
     private static func shortAge(_ published: String, publishedAt: Double?) -> String {
         guard let age = publishedAge(published) else { return published }
         let seconds = publishedAt.map { Date().timeIntervalSince1970 - $0 } ?? age.seconds
@@ -1284,7 +1289,7 @@ struct PostRow: View {
     }
 
     // The age in YouTube's text, and any "Streamed " or "Premiered " before it.
-    static func publishedAge(_ published: String) -> (prefix: String, seconds: Double)? {
+    private static func publishedAge(_ published: String) -> (prefix: String, seconds: Double)? {
         let pattern = /^(?<prefix>Streamed |Premiered )?(?<count>\d+)\s?(?<unit>second|sec|minute|min|hour|hr|day|week|wk|month|mo|year|yr|[smhdwy])s? ago$/
         guard let match = try? pattern.ignoresCase().wholeMatch(in: published.replacingOccurrences(of: "\u{a0}", with: " ")),
               let count = Double(match.count), let seconds = ageSeconds[match.unit.lowercased()] else { return nil }

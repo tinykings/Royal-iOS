@@ -5,16 +5,6 @@ import Foundation
 struct SavedPost: Codable {
     let post: FeedPost
     let savedAt: Date
-
-    // Posts saved before videos recorded when they went up only have YouTube's age text from
-    // that moment. Counting from the time of saving keeps their age from standing still.
-    @MainActor var dated: FeedPost {
-        guard post.publishedAt == nil, let published = post.published,
-              let age = PostRow.publishedAge(published) else { return post }
-        var copy = post
-        copy.publishedAt = savedAt.timeIntervalSince1970 - age.seconds
-        return copy
-    }
 }
 
 // Saved posts live in iCloud key-value storage so they follow the user across

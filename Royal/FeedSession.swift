@@ -42,7 +42,9 @@ struct FeedPost: Codable, Identifiable {
     let videoId: String?
     let published: String?
     // YouTube only: latest time the video could have been published, from its age text.
-    var publishedAt: Double?
+    let publishedAt: Double?
+    // Reddit only: marked NSFW. Missing on posts fetched while NSFW was always left out.
+    let nsfw: Bool?
 }
 
 enum FeedError: LocalizedError {
@@ -291,17 +293,21 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         let next: Int?
     }
 
+    private static var showsNSFW: Bool { UserDefaults.standard.bool(forKey: Preference.redditNSFW) }
+
     // The followed subreddits, A to Z.
     func subreddits() async throws -> [String] {
         guard !sourcesScript.isEmpty else { throw FeedError.failed("sources.js missing from app bundle") }
-        let result = try await run(sourcesScript + "return JSON.stringify(await Royal.fetchSubscribedSubreddits());")
+        let result = try await run(sourcesScript + "return JSON.stringify(await Royal.fetchSubscribedSubreddits({ nsfw }));",
+                                   ["nsfw": Self.showsNSFW])
         guard let json = result as? String else { throw FeedError.failed("No result from page") }
         return try JSONDecoder().decode([String].self, from: Data(json.utf8))
     }
 
     func posts(_ key: FeedKey, offset: Int = 0, limit: Int = 100) async throws -> Page {
         var arguments: [String: Any] = ["source": key.source.rawValue, "limit": limit,
-                                        "offset": offset, "pageSize": Self.hackerNewsPageSize, "subreddit": ""]
+                                        "offset": offset, "pageSize": Self.hackerNewsPageSize, "subreddit": "",
+                                        "nsfw": Self.showsNSFW]
         switch key {
         case .reddit(let sort, let timeframe):
             arguments["sort"] = sort
@@ -318,7 +324,7 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         guard !sourcesScript.isEmpty else { throw FeedError.failed("sources.js missing from app bundle") }
         let result = try await run(sourcesScript + """
             const fetchers = {
-              reddit: async () => ({ posts: await Royal.fetchReddit(limit, { sort, timeframe, subreddit }), next: null }),
+              reddit: async () => ({ posts: await Royal.fetchReddit(limit, { sort, timeframe, subreddit, nsfw }), next: null }),
               hn: () => Royal.fetchHackerNewsPage(pageSize, { list, offset }),
               youtube: async () => ({ posts: await Royal.fetchYouTube(limit), next: null }),
             };
