@@ -80,13 +80,18 @@ struct RedditFeedView: View {
 
     var body: some View {
         // Top is always today's, so it uses the same feed as the All page.
-        let key: FeedKey = subreddit.map { FeedKey.subreddit(name: $0, sort: sort) } ?? .reddit(sort: sort, timeframe: "day")
+        // The first sort is Best across everything followed and Hot in a single subreddit; it's
+        // remembered as "best" either way, so moving between them stays on that first sort.
+        let key: FeedKey = subreddit.map { FeedKey.subreddit(name: $0, sort: sort == "best" ? "hot" : sort) }
+            ?? .reddit(sort: sort, timeframe: "day")
         FeedListView(title: "Reddit", tab: .reddit, keys: [key],
                      // A subreddit's name takes up the room the sort's name would use.
                      subtitle: subreddit != nil ? nil : sort == "top" ? "Top Today" : sort.capitalized,
                      titleMenu: AnyView(subredditMenu)) {
             HeaderPicker(title: "Sort", selection: $sort, options: [
-                HeaderOption(value: "best", icon: "rosette", title: "Best"),
+                subreddit == nil
+                    ? HeaderOption(value: "best", icon: "rosette", title: "Best")
+                    : HeaderOption(value: "best", icon: "flame", title: "Hot"),
                 HeaderOption(value: "top", icon: "trophy", title: "Top"),
                 HeaderOption(value: "new", icon: "clock", title: "New"),
             ])

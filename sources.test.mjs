@@ -158,7 +158,7 @@ test("Hacker News pages walk the story list and report the next offset", async (
   }
 });
 
-test("A single subreddit uses its own listing, maps Best to Hot, and isn't capped per subreddit", async () => {
+test("A single subreddit uses its own listing, sorts by Hot rather than Best, and isn't capped per subreddit", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];
   globalThis.fetch = async (url) => {
@@ -174,14 +174,16 @@ test("A single subreddit uses its own listing, maps Best to Hot, and isn't cappe
     };
   };
   try {
-    assert.equal((await fetchReddit(100, { sort: "best", subreddit: "swift" })).length, 8);
+    assert.equal((await fetchReddit(100, { sort: "hot", subreddit: "swift" })).length, 8);
     assert.equal(requests.at(-1).pathname, "/r/swift/hot.json");
     await fetchReddit(100, { sort: "top", timeframe: "day", subreddit: "swift" });
     assert.equal(requests.at(-1).pathname, "/r/swift/top.json");
     assert.equal(requests.at(-1).searchParams.get("t"), "day");
     await fetchReddit(100, { sort: "new", subreddit: "swift" });
     assert.equal(requests.at(-1).pathname, "/r/swift/new.json");
-    await assert.rejects(fetchReddit(100, { subreddit: "../evil" }), /Invalid subreddit/);
+    await assert.rejects(fetchReddit(100, { sort: "hot", subreddit: "../evil" }), /Invalid subreddit/);
+    await assert.rejects(fetchReddit(100, { sort: "best", subreddit: "swift" }), /Invalid Reddit sort/);
+    await assert.rejects(fetchReddit(100, { sort: "hot" }), /Invalid Reddit sort/);
     // Without a subreddit, the home listing keeps its cap.
     assert.equal((await fetchReddit(100, { sort: "new" })).length, 5);
     assert.equal(requests.at(-1).pathname, "/new.json");
