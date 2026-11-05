@@ -96,7 +96,9 @@ export async function fetchReddit(limit, { sort = "best", timeframe = CONFIG.red
   await requireSubscriptions();
 
   const params = new URLSearchParams({ limit: "100", raw_json: "1" });
-  if (sort === "top") params.set("t", timeframe);
+  // Only Top uses `t`. A single subreddit sends it on every sort: Reddit answered 403 to
+  // that subreddit's Hot and New without it, while its Top worked.
+  if (sort === "top" || subreddit) params.set("t", timeframe);
   // Logged-in home listings cover subscriptions. Reddit now redirects combined
   // r/a+b+c listings to its home page instead of returning JSON.
   const path = subreddit ? `/r/${subreddit}/${sort}` : `/${sort}`;
