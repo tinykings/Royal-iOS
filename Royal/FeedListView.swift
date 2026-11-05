@@ -163,13 +163,6 @@ struct FeedListView<Trailing: View>: View {
                     }
                 }
                 .listStyle(.plain)
-                // Sits in the gap the pull opens, and goes with it on letting go.
-                .overlay(alignment: .top) {
-                    if pullDown > 0 {
-                        PullIndicator.refresh(distance: pullDown, threshold: Self.pullThreshold)
-                            .allowsHitTesting(false)
-                    }
-                }
                 // Lets the top anchor take no space; posts are taller than the default minimum.
                 .environment(\.defaultMinListRowHeight, 0)
                 // Posts sit on tiles over the grouped background.
@@ -198,10 +191,10 @@ struct FeedListView<Trailing: View>: View {
                         .allowsHitTesting(false)
                     }
                 }
-                // Pulling down past the top refreshes, with the fleur-de-lis in place of the
-                // system spinner.
+                // Pulling down past the top refreshes, with the header saying so in place of the
+                // system spinner. Only a drag counts, so the bounce after a fling leaves it alone.
                 .pullPast(.top, enabled: refresh?.finished != false, distance: $pullDown,
-                          threshold: Self.pullThreshold) {
+                          threshold: Self.pullThreshold, whileDragging: true) {
                     Task { await refreshFeeds() }
                 }
                 // Tapping the tab again scrolls to the top, or refreshes when already there.
@@ -220,7 +213,13 @@ struct FeedListView<Trailing: View>: View {
                 .navigationTitle(Trailing.self == EmptyView.self ? title : "")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    if Trailing.self != EmptyView.self {
+                    // A pull takes over the whole header.
+                    if pullDown > 0 {
+                        PlainToolbarItem(placement: .principal) {
+                            PullDownHeader(distance: pullDown, threshold: Self.pullThreshold)
+                        }
+                    }
+                    if pullDown == 0 && Trailing.self != EmptyView.self {
                         PlainToolbarItem(placement: .topBarLeading) {
                             HStack(spacing: 8) {
                                 if let titleMenu {
@@ -258,7 +257,7 @@ struct FeedListView<Trailing: View>: View {
                         }
                     }
                     // No controls here and a centered title, so the status has this side to itself.
-                    if Trailing.self == EmptyView.self {
+                    if pullDown == 0 && Trailing.self == EmptyView.self {
                         PlainToolbarItem(placement: .topBarTrailing) {
                             refreshStatus(split: split, loggedOut: loggedOut, showsText: true)
                                 .fixedSize()
@@ -554,14 +553,16 @@ extension View {
     // Sets `distance` to how far the list is dragged past its top or end, and calls
     // `action` when let go past `threshold`. The list's own bounce gives the pull its
     // resistance. With `settleFirst` the action waits for the bounce back to settle, which
-    // would otherwise carry the list on past where the action scrolls it to. Needs iOS 18
-    // scroll geometry.
+    // would otherwise carry the list on past where the action scrolls it to. With
+    // `whileDragging` the distance only counts during a drag, and is 0 once let go. Needs
+    // iOS 18 scroll geometry.
     @ViewBuilder
     func pullPast(_ edge: VerticalEdge, enabled: Bool, distance: Binding<CGFloat>, threshold: CGFloat,
-                  settleFirst: Bool = false, action: @escaping () -> Void) -> some View {
+                  settleFirst: Bool = false, whileDragging: Bool = false,
+                  action: @escaping () -> Void) -> some View {
         if #available(iOS 18, *) {
             modifier(PullPastEdge(edge: edge, enabled: enabled, distance: distance, threshold: threshold,
-                                  settleFirst: settleFirst, action: action))
+                                  settleFirst: settleFirst, whileDragging: whileDragging, action: action))
         } else {
             self
         }
@@ -585,9 +586,11 @@ private struct PullPastEdge: ViewModifier {
     @Binding var distance: CGFloat
     let threshold: CGFloat
     let settleFirst: Bool
+    let whileDragging: Bool
     let action: () -> Void
     // Let go past the threshold, waiting for the list to settle.
     @State private var released = false
+    @State private var dragging = false
 
     func body(content: Content) -> some View {
         content
@@ -603,9 +606,10 @@ private struct PullPastEdge: ViewModifier {
                     return max(0, offset - end)
                 }
             } action: { _, new in
-                distance = enabled ? new : 0
+                distance = enabled && (dragging || !whileDragging) ? new : 0
             }
             .onScrollPhaseChange { old, new in
+                dragging = new == .interacting
                 // Counts on letting go, so pulling back before then calls it off.
                 if old == .interacting && new != .interacting && enabled && distance >= threshold {
                     if settleFirst {
@@ -620,6 +624,7 @@ private struct PullPastEdge: ViewModifier {
                 } else if new == .interacting {
                     released = false
                 }
+                if whileDragging && new != .interacting { distance = 0 }
             }
     }
 }
@@ -1066,35 +1071,44 @@ struct EarlierPostsButton: View {
     }
 }
 
-// Comes in from the edge the feed is pulled past: the art fills with gold from the
-// bottom up, and once full, letting go does what the caption says. The fleur-de-lis
-// pulls down to refresh, and the horse pulls up to mark read or for earlier posts.
+// Fills the header while the feed is pulled down; letting go once it says so refreshes.
+struct PullDownHeader: View {
+    let distance: CGFloat
+    let threshold: CGFloat
+
+    private var armed: Bool { distance >= threshold }
+
+    var body: some View {
+        Text(armed ? "Release to refresh" : "Pull down to refresh")
+            .font(.headline)
+            .foregroundStyle(armed ? Color.royalAccent : Color.primary)
+            .fixedSize()
+            .sensoryFeedback(.impact(weight: .medium), trigger: armed) { _, armed in armed }
+    }
+}
+
+// Comes in from the bottom as the feed is pulled up past its end: the horse fills with gold
+// from the bottom up, and once full, letting go does what the caption says.
 struct PullIndicator: View {
-    let image: String
-    // The art's width over its height.
-    let aspect: CGFloat
-    let edge: VerticalEdge
     let prompt: String
     let release: String
     let distance: CGFloat
     let threshold: CGFloat
 
-    static func refresh(distance: CGFloat, threshold: CGFloat) -> PullIndicator {
-        PullIndicator(image: "PullFleur", aspect: 360 / 402, edge: .top, prompt: "Pull down to refresh",
-                      release: "Release to refresh", distance: distance, threshold: threshold)
-    }
-
     static func markRead(distance: CGFloat, threshold: CGFloat) -> PullIndicator {
-        PullIndicator(image: "PullHorse", aspect: 360 / 315, edge: .bottom, prompt: "Pull up to mark as read",
-                      release: "Release to mark as read", distance: distance, threshold: threshold)
+        PullIndicator(prompt: "Pull up to mark as read", release: "Release to mark as read",
+                      distance: distance, threshold: threshold)
     }
 
     static func earlier(distance: CGFloat, threshold: CGFloat) -> PullIndicator {
-        PullIndicator(image: "PullHorse", aspect: 360 / 315, edge: .bottom, prompt: "Pull up for earlier posts",
-                      release: "Release for earlier posts", distance: distance, threshold: threshold)
+        PullIndicator(prompt: "Pull up for earlier posts", release: "Release for earlier posts",
+                      distance: distance, threshold: threshold)
     }
 
-    private static let size: CGFloat = 80
+    // The art's width over its height.
+    private static let aspect: CGFloat = 360 / 315
+    private static let width: CGFloat = 80
+    private var height: CGFloat { Self.width / Self.aspect }
 
     private var progress: CGFloat { min(distance / threshold, 1) }
     private var armed: Bool { distance >= threshold }
@@ -1111,28 +1125,23 @@ struct PullIndicator: View {
                         Rectangle().frame(height: height * progress)
                     }
             }
-            .frame(width: height * aspect, height: height)
+            .frame(width: Self.width, height: height)
             .scaleEffect(armed ? 1.15 : 0.7 + 0.3 * progress)
             Text(armed ? release : prompt)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
         }
         // Clears the floating tab bar, which the list runs under.
-        .padding(edge == .top ? .top : .bottom, edge == .top ? 8 : 44)
+        .padding(.bottom, 44)
         .opacity(Double(progress))
         // Comes in with the gap the pull opens, rather than ahead of it.
-        .offset(y: max(0, threshold - distance) * 0.6 * (edge == .top ? -1 : 1))
+        .offset(y: max(0, threshold - distance) * 0.6)
         .animation(.spring(duration: 0.25), value: armed)
         .sensoryFeedback(.impact(weight: .medium), trigger: armed) { _, armed in armed }
     }
 
-    // The fleur-de-lis is taller than wide, so the two read as about the same size.
-    private var height: CGFloat {
-        aspect < 1 ? Self.size * 0.9 : Self.size / aspect
-    }
-
     private var art: some View {
-        Image(image)
+        Image("PullHorse")
             .resizable()
             .scaledToFit()
     }
