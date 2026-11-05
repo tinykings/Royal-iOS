@@ -155,18 +155,12 @@ struct FeedListView<Trailing: View>: View {
                     }
                 }
                 .listStyle(.plain)
-                // Floats over the list; a row inserted at the top would sit just out of view.
+                // Sits in the gap the pull opens, and goes with it on letting go.
                 .overlay(alignment: .top) {
-                    let pulledRefreshing = refresh.map { $0.pulled && !$0.finished } == true
-                    ZStack(alignment: .top) {
-                        if pulledRefreshing || pullDown > 0 {
-                            PullIndicator.refresh(distance: pullDown, threshold: Self.pullThreshold,
-                                                  working: pulledRefreshing)
-                                .allowsHitTesting(false)
-                        }
+                    if pullDown > 0 {
+                        PullIndicator.refresh(distance: pullDown, threshold: Self.pullThreshold)
+                            .allowsHitTesting(false)
                     }
-                    // Only here: on the list, this would slide the rows when a refresh ends.
-                    .animation(.easeInOut(duration: 0.25), value: refresh)
                 }
                 // Lets the top anchor take no space; posts are taller than the default minimum.
                 .environment(\.defaultMinListRowHeight, 0)
@@ -189,14 +183,14 @@ struct FeedListView<Trailing: View>: View {
                 // system spinner.
                 .pullPast(.top, enabled: refresh?.finished != false, distance: $pullDown,
                           threshold: Self.pullThreshold) {
-                    Task { await refreshFeeds(pulled: true) }
+                    Task { await refreshFeeds() }
                 }
                 // Tapping the tab again scrolls to the top, or refreshes when already there.
                 .onChange(of: store.reselected?.count) {
                     guard store.reselected?.tab == tab else { return }
                     if atTop {
                         guard refresh?.finished != false else { return }
-                        Task { await refreshFeeds(pulled: false) }
+                        Task { await refreshFeeds() }
                     } else {
                         withAnimation { proxy.scrollTo(Self.topID, anchor: .top) }
                         scrolledAway = false
@@ -253,7 +247,7 @@ struct FeedListView<Trailing: View>: View {
                         }
                     }
                 }
-                .systemRefreshable(!Self.canPull) { await refreshFeeds(pulled: true) }
+                .systemRefreshable(!Self.canPull) { await refreshFeeds() }
                 // Back to the top once refreshed, where new posts land; the list otherwise
                 // keeps the rows that were showing in view, leaving new ones above them.
                 .onChange(of: refresh?.finished) { _, finished in
@@ -290,8 +284,8 @@ struct FeedListView<Trailing: View>: View {
     // Where the earlier posts begin once shown.
     private static var earlierID: String { "earlier" }
 
-    private func refreshFeeds(pulled: Bool) async {
-        let run = RefreshRun(id: (refresh?.id ?? 0) + 1, pulled: pulled)
+    private func refreshFeeds() async {
+        let run = RefreshRun(id: (refresh?.id ?? 0) + 1)
         refresh = run
         await store.load(keys, force: true)
         guard refresh?.id == run.id else { return }
@@ -872,8 +866,6 @@ struct LoginCard: View {
 
 struct RefreshRun: Equatable {
     let id: Int
-    // Started by pulling the feed down, so the pull-to-refresh spinner shows too.
-    let pulled: Bool
     var finished = false
 }
 
@@ -1026,12 +1018,10 @@ struct PullIndicator: View {
     let release: String
     let distance: CGFloat
     let threshold: CGFloat
-    // The refresh this pull started is running; the fleur-de-lis stays, full and pulsing.
-    var working = false
 
-    static func refresh(distance: CGFloat, threshold: CGFloat, working: Bool) -> PullIndicator {
+    static func refresh(distance: CGFloat, threshold: CGFloat) -> PullIndicator {
         PullIndicator(image: "PullFleur", aspect: 360 / 402, edge: .top, prompt: "Pull down to refresh",
-                      release: "Release to refresh", distance: distance, threshold: threshold, working: working)
+                      release: "Release to refresh", distance: distance, threshold: threshold)
     }
 
     static func earlier(distance: CGFloat, threshold: CGFloat) -> PullIndicator {
@@ -1039,13 +1029,10 @@ struct PullIndicator: View {
                       release: "Release for earlier posts", distance: distance, threshold: threshold)
     }
 
-    // How tall the art is while its refresh runs.
-    private static let workingHeight: CGFloat = 48
     private static let size: CGFloat = 80
 
-    private var progress: CGFloat { working ? 1 : min(distance / threshold, 1) }
+    private var progress: CGFloat { min(distance / threshold, 1) }
     private var armed: Bool { distance >= threshold }
-    @State private var pulse = false
 
     var body: some View {
         VStack(spacing: 6) {
@@ -1060,31 +1047,23 @@ struct PullIndicator: View {
                     }
             }
             .frame(width: height * aspect, height: height)
-            .scaleEffect(working ? (pulse ? 1.08 : 0.92) : armed ? 1.15 : 0.7 + 0.3 * progress)
-            if !working {
-                Text(armed ? release : prompt)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-            }
+            .scaleEffect(armed ? 1.15 : 0.7 + 0.3 * progress)
+            Text(armed ? release : prompt)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
         }
         // Clears the floating tab bar, which the list runs under.
         .padding(edge == .top ? .top : .bottom, edge == .top ? 8 : 44)
         .opacity(Double(progress))
         // Comes in with the gap the pull opens, rather than ahead of it.
-        .offset(y: working ? 0 : max(0, threshold - distance) * 0.6 * (edge == .top ? -1 : 1))
+        .offset(y: max(0, threshold - distance) * 0.6 * (edge == .top ? -1 : 1))
         .animation(.spring(duration: 0.25), value: armed)
-        .animation(.spring(duration: 0.3), value: working)
-        .sensoryFeedback(.impact(weight: .medium), trigger: armed) { _, armed in armed && !working }
-        .onChange(of: working, initial: true) { _, working in
-            pulse = false
-            guard working else { return }
-            withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { pulse = true }
-        }
+        .sensoryFeedback(.impact(weight: .medium), trigger: armed) { _, armed in armed }
     }
 
     // The fleur-de-lis is taller than wide, so the two read as about the same size.
     private var height: CGFloat {
-        working ? Self.workingHeight : aspect < 1 ? Self.size * 0.9 : Self.size / aspect
+        aspect < 1 ? Self.size * 0.9 : Self.size / aspect
     }
 
     private var art: some View {
