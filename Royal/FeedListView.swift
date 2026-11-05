@@ -9,7 +9,7 @@ struct FeedListView<Trailing: View>: View {
     @State private var scrolledAway = false
     @State private var atTop = true
     // A refresh asked for by pulling the feed down or tapping its tab again; its status
-    // shows atop the feed until a moment after it's done.
+    // shows in the header until a moment after it's done.
     @State private var refresh: RefreshRun?
     // The All feed shows just what's new since the previous refresh until this is set.
     @State private var showEarlier = false
@@ -164,15 +164,10 @@ struct FeedListView<Trailing: View>: View {
                                                   working: pulledRefreshing)
                                 .allowsHitTesting(false)
                         }
-                        if let refresh, !savedOnly {
-                            RefreshStatus(items: statusItems(finished: refresh.finished, split: split, loggedOut: loggedOut))
-                                // Below the pull-to-refresh indicator while it shows.
-                                .padding(.top, pulledRefreshing ? PullIndicator.workingHeight + 16 : 8)
-                                .transition(.move(edge: .top).combined(with: .opacity))
-                        }
                     }
+                    // Only here: on the list, this would slide the rows when a refresh ends.
+                    .animation(.easeInOut(duration: 0.25), value: refresh)
                 }
-                .animation(.easeInOut(duration: 0.25), value: refresh)
                 // Lets the top anchor take no space; posts are taller than the default minimum.
                 .environment(\.defaultMinListRowHeight, 0)
                 // Posts sit on tiles over the grouped background.
@@ -222,23 +217,39 @@ struct FeedListView<Trailing: View>: View {
                                         .font(.headline)
                                         .accessibilityAddTraits(.isHeader)
                                 }
-                                if let subtitle {
-                                    Text(subtitle)
-                                        .font(.subheadline.weight(.medium))
-                                        .foregroundStyle(.secondary)
-                                }
-                                // The All feed's latest refresh.
-                                if isAll, let refresh = store.lastRefresh, !posts.isEmpty {
-                                    Text(RefreshDivider.time(refresh))
-                                        .font(.subheadline)
-                                        .foregroundStyle(.tertiary)
-                                        .accessibilityLabel("Last refresh \(RefreshDivider.time(refresh))")
+                                // A refresh's status takes the place of what's normally here. With
+                                // a subreddit's name showing, there's only room for its icon.
+                                if let status = refreshStatus(split: split, loggedOut: loggedOut,
+                                                              showsText: titleMenu == nil || subtitle != nil) {
+                                    status
+                                } else {
+                                    if let subtitle {
+                                        Text(subtitle)
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    // The All feed's latest refresh.
+                                    if isAll, let refresh = store.lastRefresh, !posts.isEmpty {
+                                        Text(RefreshDivider.time(refresh))
+                                            .font(.subheadline)
+                                            .foregroundStyle(.tertiary)
+                                            .accessibilityLabel("Last refresh \(RefreshDivider.time(refresh))")
+                                    }
                                 }
                             }
                             .fixedSize()
+                            .animation(.easeInOut(duration: 0.25), value: refresh)
                         }
                         PlainToolbarItem(placement: .topBarTrailing) {
                             trailing
+                        }
+                    }
+                    // No controls here and a centered title, so the status has this side to itself.
+                    if Trailing.self == EmptyView.self {
+                        PlainToolbarItem(placement: .topBarTrailing) {
+                            refreshStatus(split: split, loggedOut: loggedOut, showsText: true)
+                                .fixedSize()
+                                .animation(.easeInOut(duration: 0.25), value: refresh)
                         }
                     }
                 }
@@ -285,11 +296,22 @@ struct FeedListView<Trailing: View>: View {
         await store.load(keys, force: true)
         guard refresh?.id == run.id else { return }
         refresh?.finished = true
-        // Leaves the results up a moment, unless another refresh has begun since.
+        // Leaves the results up long enough to pass through them all, unless another
+        // refresh has begun since.
+        let linger = max(3, Double(keys.count) * RefreshStatus.interval)
         Task {
-            try? await Task.sleep(for: .seconds(3))
+            try? await Task.sleep(for: .seconds(linger))
             if refresh?.id == run.id { refresh = nil }
         }
+    }
+
+    // The header's status while a refresh runs and a moment after.
+    private func refreshStatus(split: (new: [FeedPost], seen: [FeedPost])?, loggedOut: [FeedSource],
+                               showsText: Bool) -> RefreshStatus? {
+        guard let refresh, !savedOnly else { return nil }
+        let items = statusItems(finished: refresh.finished, split: split, loggedOut: loggedOut)
+        guard !items.isEmpty else { return nil }
+        return RefreshStatus(items: items, finished: refresh.finished, showsSource: keys.count > 1, showsText: showsText)
     }
 
     // Each feed's progress; once done, the All feed counts what's new from each.
@@ -855,7 +877,7 @@ struct RefreshRun: Equatable {
     var finished = false
 }
 
-// Floats atop a refreshing feed: each source's progress, then how it went.
+// In the header during a refresh: each source's progress, then how it went, one at a time.
 struct RefreshStatus: View {
     enum Phase: Equatable {
         case loading
@@ -870,27 +892,57 @@ struct RefreshStatus: View {
         var id: FeedSource { source }
     }
 
+    // Seconds each source stays up before the next scrolls in.
+    static let interval = 1.5
+
+    // Never empty; the feed leaves the status out when no source is refreshing.
     let items: [Item]
+    let finished: Bool
+    // Off where the title already names the only source.
+    var showsSource = true
+    var showsText = true
+    @State private var index = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
-            ForEach(items) { item in
-                GridRow {
-                    icon(item.phase)
-                        .frame(width: 16)
-                    Text(item.source.title)
-                        .fontWeight(.medium)
-                    Text(detail(item.phase))
-                        .foregroundStyle(.secondary)
-                }
+        let item = items[index % items.count]
+        ZStack {
+            line(item)
+                .id(item.source)
+                .transition(reduceMotion ? .opacity : .asymmetric(
+                    insertion: .move(edge: .bottom).combined(with: .opacity),
+                    removal: .move(edge: .top).combined(with: .opacity)))
+        }
+        .clipped()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(items.map { "\($0.source.title) \(detail($0.phase))" }.joined(separator: ", "))
+        // Starts over with the first source when the results come in.
+        .task(id: finished) {
+            index = 0
+            guard items.count > 1 else { return }
+            while true {
+                try? await Task.sleep(for: .seconds(Self.interval))
+                if Task.isCancelled { return }
+                withAnimation(.easeInOut(duration: 0.3)) { index += 1 }
             }
         }
-        .font(.footnote)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
-        .accessibilityElement(children: .combine)
+    }
+
+    private func line(_ item: Item) -> some View {
+        HStack(spacing: 4) {
+            icon(item.phase)
+                .frame(width: 14)
+            if showsText {
+                if showsSource {
+                    Text(item.source.title)
+                        .fontWeight(.medium)
+                }
+                Text(detail(item.phase))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.caption)
+        .lineLimit(1)
     }
 
     @ViewBuilder
@@ -987,8 +1039,8 @@ struct PullIndicator: View {
                       release: "Release for earlier posts", distance: distance, threshold: threshold)
     }
 
-    // How tall the art is while its refresh runs, so the status card can sit below it.
-    static let workingHeight: CGFloat = 48
+    // How tall the art is while its refresh runs.
+    private static let workingHeight: CGFloat = 48
     private static let size: CGFloat = 80
 
     private var progress: CGFloat { working ? 1 : min(distance / threshold, 1) }
