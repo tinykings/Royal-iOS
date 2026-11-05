@@ -11,9 +11,9 @@ struct FeedListView<Trailing: View>: View {
     // A refresh asked for by pulling the feed down or tapping its tab again; its status
     // shows in the header until a moment after it's done.
     @State private var refresh: RefreshRun?
-    // The All feed shows just what's new since the previous refresh until this is set.
+    // The All feed shows just its unread posts until this is set.
     @State private var showEarlier = false
-    // How far past the end the feed is pulled up while earlier posts are tucked away.
+    // How far past the end the feed is pulled up, to mark it read or show earlier posts.
     @State private var pullUp: CGFloat = 0
     // How far past the top the feed is pulled down, to refresh.
     @State private var pullDown: CGFloat = 0
@@ -53,8 +53,10 @@ struct FeedListView<Trailing: View>: View {
         // new since the previous refresh first.
         let isAll = keys == FeedKey.combined && !savedOnly
         let split = isAll ? store.splitByRefresh(posts) : nil
-        // Posts seen before stay tucked away behind a button until asked for.
-        let collapsed = !showEarlier && split.map { !$0.seen.isEmpty } == true
+        // Posts seen before stay tucked away until asked for.
+        let collapsed = !showEarlier && split.map { !$0.new.isEmpty || !$0.seen.isEmpty } == true
+        // Pulling up past the end marks unread posts read; only an empty feed shows earlier ones.
+        let hasUnread = split?.new.isEmpty == false
         NavigationStack {
             ScrollViewReader { proxy in
                 List {
@@ -123,18 +125,21 @@ struct FeedListView<Trailing: View>: View {
                             .listRowBackground(Color.clear)
                     }
                     // Reaching any of the last rows fetches the next page; while earlier
-                    // posts are tucked away, the feed ends at the new ones and doesn't page.
+                    // posts are tucked away, the feed ends at the unread ones and doesn't page.
                     let shown = split.map { $0.new + $0.seen } ?? posts
                     let endIDs = collapsed ? [] : Set(shown.suffix(8).map(\.id))
-                    if let split, let previous = store.previousRefresh {
+                    if let split {
                         ForEach(split.new) { postRow($0, nearEnd: endIDs.contains($0.id)) }
                         if collapsed {
-                            EarlierPostsButton(date: previous, nothingNew: split.new.isEmpty,
-                                               pullable: Self.canPull) {
-                                revealEarlier(proxy)
+                            if hasUnread {
+                                MarkReadButton(pullable: Self.canPull) { markRead(proxy) }
+                            } else {
+                                EarlierPostsButton(date: store.previousRefresh, pullable: Self.canPull) {
+                                    revealEarlier(proxy)
+                                }
                             }
                         } else {
-                            if !split.new.isEmpty && !split.seen.isEmpty {
+                            if !split.new.isEmpty && !split.seen.isEmpty, let previous = store.previousRefresh {
                                 RefreshDivider(prefix: "Previous refresh", date: previous)
                                     .id(Self.earlierID)
                             } else {
@@ -168,15 +173,26 @@ struct FeedListView<Trailing: View>: View {
                 .scrollContentBackground(.hidden)
                 .background(Color(.systemGroupedBackground))
                 .hidesHeaderOnScroll($scrolledAway, atTop: $atTop)
-                // Pulling up past the new posts shows the earlier ones, like pulling down refreshes.
+                // Pulling up past the unread posts marks them read, and pulling up the empty
+                // feed then shows the earlier ones, like pulling down refreshes.
                 .pullPast(.bottom, enabled: collapsed, distance: $pullUp, threshold: Self.pullThreshold,
                           settleFirst: true) {
-                    revealEarlier(proxy)
+                    if hasUnread {
+                        markRead(proxy)
+                    } else {
+                        revealEarlier(proxy)
+                    }
                 }
                 .overlay(alignment: .bottom) {
                     if collapsed && pullUp > 0 {
-                        PullIndicator.earlier(distance: pullUp, threshold: Self.pullThreshold)
-                            .allowsHitTesting(false)
+                        Group {
+                            if hasUnread {
+                                PullIndicator.markRead(distance: pullUp, threshold: Self.pullThreshold)
+                            } else {
+                                PullIndicator.earlier(distance: pullUp, threshold: Self.pullThreshold)
+                            }
+                        }
+                        .allowsHitTesting(false)
                     }
                 }
                 // Pulling down past the top refreshes, with the fleur-de-lis in place of the
@@ -253,7 +269,7 @@ struct FeedListView<Trailing: View>: View {
                 .onChange(of: refresh?.finished) { _, finished in
                     if finished == true { proxy.scrollTo(Self.topID, anchor: .top) }
                 }
-                // Each refresh starts with just the new posts again.
+                // Each refresh starts with just the unread posts again.
                 .onChange(of: store.lastRefresh) { showEarlier = false }
                 .task(id: keys) { await store.load(keys) }
                 .fullScreenCover(item: $browserURL) { item in
@@ -268,9 +284,19 @@ struct FeedListView<Trailing: View>: View {
     private static var topID: String { "top" }
     private static var pullThreshold: CGFloat { 90 }
     // Pulling past the ends needs iOS 18's scroll geometry; earlier versions keep the
-    // button for earlier posts and the system's pull to refresh.
+    // buttons for marking read and earlier posts, and the system's pull to refresh.
     private static var canPull: Bool {
         if #available(iOS 18, *) { true } else { false }
+    }
+
+    // Clears the unread posts, leaving the empty feed at the top.
+    private func markRead(_ proxy: ScrollViewProxy) {
+        store.markAllRead()
+        pullUp = 0
+        scrolledAway = false
+        DispatchQueue.main.async {
+            proxy.scrollTo(Self.topID, anchor: .top)
+        }
     }
 
     // Shows the posts from earlier refreshes and starts at the first of them.
@@ -963,11 +989,42 @@ struct RefreshStatus: View {
     }
 }
 
-// Ends the All feed's new posts; tapping it shows the posts from earlier refreshes below.
+// Ends the All feed's unread posts; tapping it marks them all read.
+struct MarkReadButton: View {
+    // The feed marks its posts read when pulled up past here, so this is just a hint;
+    // VoiceOver still offers it as a button.
+    var pullable = false
+    let action: () -> Void
+
+    var body: some View {
+        Group {
+            if pullable {
+                Text("Pull up to mark as read")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.tint)
+                    .accessibilityLabel("Mark All as Read")
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction { action() }
+            } else {
+                Button(action: action) {
+                    Label("Mark All as Read", systemImage: "checkmark")
+                        .font(.subheadline.weight(.medium))
+                }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+    }
+}
+
+// Fills the All feed once nothing's unread; tapping it shows the posts from earlier refreshes.
 struct EarlierPostsButton: View {
-    // When the previous refresh was.
-    let date: Date
-    let nothingNew: Bool
+    // Where the earlier posts leave off.
+    let date: Date?
     // The feed shows the earlier posts when pulled up past here, so this is just a hint;
     // VoiceOver still offers it as a button.
     var pullable = false
@@ -975,11 +1032,9 @@ struct EarlierPostsButton: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            if nothingNew {
-                Text("Nothing new since the previous refresh.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
+            Text("You're all caught up.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             if pullable {
                 Text("Pull up for earlier posts")
                     .font(.subheadline.weight(.medium))
@@ -995,12 +1050,14 @@ struct EarlierPostsButton: View {
                 .buttonStyle(.bordered)
                 .buttonBorderShape(.capsule)
             }
-            Text("From \(RefreshDivider.time(date)) and before")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if let date {
+                Text("From \(RefreshDivider.time(date)) and before")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, nothingNew ? 32 : 12)
+        .padding(.vertical, 32)
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
     }
@@ -1008,7 +1065,7 @@ struct EarlierPostsButton: View {
 
 // Comes in from the edge the feed is pulled past: the art fills with gold from the
 // bottom up, and once full, letting go does what the caption says. The fleur-de-lis
-// pulls down to refresh, and the horse pulls up for earlier posts.
+// pulls down to refresh, and the horse pulls up to mark read or for earlier posts.
 struct PullIndicator: View {
     let image: String
     // The art's width over its height.
@@ -1022,6 +1079,11 @@ struct PullIndicator: View {
     static func refresh(distance: CGFloat, threshold: CGFloat) -> PullIndicator {
         PullIndicator(image: "PullFleur", aspect: 360 / 402, edge: .top, prompt: "Pull down to refresh",
                       release: "Release to refresh", distance: distance, threshold: threshold)
+    }
+
+    static func markRead(distance: CGFloat, threshold: CGFloat) -> PullIndicator {
+        PullIndicator(image: "PullHorse", aspect: 360 / 315, edge: .bottom, prompt: "Pull up to mark as read",
+                      release: "Release to mark as read", distance: distance, threshold: threshold)
     }
 
     static func earlier(distance: CGFloat, threshold: CGFloat) -> PullIndicator {

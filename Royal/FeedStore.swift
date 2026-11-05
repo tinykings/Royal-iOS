@@ -313,6 +313,17 @@ final class FeedStore: ObservableObject {
         defaults.set(Array((stored + ids).suffix(Self.seenLimit)), forKey: Self.seenKey)
     }
 
+    // Marks everything the All feed shows as read, so it moves in with the earlier posts.
+    // The next refresh brings only what's arrived since.
+    func markAllRead() {
+        let current = posts(FeedKey.combined)
+        previouslySeen.formUnion(current.map(\.id))
+        rememberSeen(current)
+        // Published, so the feed redraws; the earlier posts now run up to the latest refresh.
+        previousRefresh = lastRefresh ?? Date()
+        saveCache()
+    }
+
     // Splits the All feed into posts new since the previous refresh and those already seen.
     // Reddit and HN rank posts, so an older post can be new to the feed. YouTube is
     // chronological, so its new videos are the ones above the newest video already seen.
@@ -320,8 +331,9 @@ final class FeedStore: ObservableObject {
     // can't say whether it arrived since the previous refresh; that's the fallback only
     // when none of the videos were seen before.
     // A source new to the feed has nothing new yet, so it mixes in with the rest.
-    func splitByRefresh(_ posts: [FeedPost]) -> (new: [FeedPost], seen: [FeedPost])? {
-        guard let previousRefresh, !previouslySeen.isEmpty else { return nil }
+    // Before anything's been seen, the whole feed is new.
+    func splitByRefresh(_ posts: [FeedPost]) -> (new: [FeedPost], seen: [FeedPost]) {
+        guard let previousRefresh, !previouslySeen.isEmpty else { return (posts, []) }
         let cutoff = previousRefresh.timeIntervalSince1970
         let videos = state(.youtube).posts
         let newestSeenVideo = videos.firstIndex { previouslySeen.contains($0.id) }
