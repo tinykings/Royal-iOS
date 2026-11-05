@@ -7,8 +7,7 @@ struct FeedListView<Trailing: View>: View {
     @Environment(\.openURL) private var openURL
     @State private var browserURL: BrowserURL?
     @State private var scrolledAway = false
-    @State private var atTop = true
-    // A refresh asked for by pulling the feed down or tapping its tab again; its status
+    // A refresh asked for by pulling the feed down; its status
     // shows in the header until a moment after it's done.
     @State private var refresh: RefreshRun?
     // The All feed shows just its unread posts until this is set.
@@ -168,7 +167,7 @@ struct FeedListView<Trailing: View>: View {
                 // Posts sit on tiles over the grouped background.
                 .scrollContentBackground(.hidden)
                 .background(Color(.systemGroupedBackground))
-                .hidesHeaderOnScroll($scrolledAway, atTop: $atTop)
+                .hidesHeaderOnScroll($scrolledAway)
                 // Pulling up past the unread posts marks them read, and pulling up the empty
                 // feed then shows the earlier ones, like pulling down refreshes.
                 .pullPast(.bottom, enabled: collapsed, distance: $pullUp, threshold: Self.pullThreshold,
@@ -197,16 +196,11 @@ struct FeedListView<Trailing: View>: View {
                           threshold: Self.pullThreshold, whileDragging: true) {
                     Task { await refreshFeeds() }
                 }
-                // Tapping the tab again scrolls to the top, or refreshes when already there.
+                // Tapping the tab again scrolls to the top.
                 .onChange(of: store.reselected?.count) {
                     guard store.reselected?.tab == tab else { return }
-                    if atTop {
-                        guard refresh?.finished != false else { return }
-                        Task { await refreshFeeds() }
-                    } else {
-                        withAnimation { proxy.scrollTo(Self.topID, anchor: .top) }
-                        scrolledAway = false
-                    }
+                    withAnimation { proxy.scrollTo(Self.topID, anchor: .top) }
+                    scrolledAway = false
                 }
                 .toolbar(headerHidden ? .hidden : .visible, for: .navigationBar)
                 .animation(.easeInOut(duration: 0.2), value: headerHidden)
@@ -517,10 +511,9 @@ private struct ScrollPosition: Equatable {
 
 extension View {
     // Sets `hidden` while scrolling down and clears it when scrolling up or reaching
-    // the top; `atTop` says whether the list is scrolled to the top. Needs iOS 18 scroll
-    // geometry; earlier versions keep the header and report not being at the top.
+    // the top. Needs iOS 18 scroll geometry; earlier versions keep the header.
     @ViewBuilder
-    func hidesHeaderOnScroll(_ hidden: Binding<Bool>, atTop: Binding<Bool>) -> some View {
+    func hidesHeaderOnScroll(_ hidden: Binding<Bool>) -> some View {
         if #available(iOS 18, *) {
             onScrollGeometryChange(for: ScrollPosition.self) { geometry in
                 ScrollPosition(offset: geometry.contentOffset.y + geometry.contentInsets.top,
@@ -528,7 +521,6 @@ extension View {
                                    + geometry.contentInsets.top + geometry.contentInsets.bottom,
                                insetTop: geometry.contentInsets.top)
             } action: { old, new in
-                atTop.wrappedValue = new.offset <= 1
                 let delta = new.offset - old.offset
                 if new.insetTop != old.insetTop || new.maxOffset != old.maxOffset {
                     // The header appeared or disappeared, or rows resized and the list moved
@@ -544,7 +536,7 @@ extension View {
                 }
             }
         } else {
-            onAppear { atTop.wrappedValue = false }
+            self
         }
     }
 }

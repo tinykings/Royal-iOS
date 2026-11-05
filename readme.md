@@ -11,7 +11,7 @@ iOS app combining Reddit, Hacker News, and your YouTube subscriptions in one fee
 - Uses your Reddit and YouTube logins from in-app sign-in pages—no API keys or OAuth setup. Reddit links open with that login, so you can vote and reply.
 - Plays YouTube videos in-app.
 - Caps Reddit posts at five per subreddit, except when viewing a single subreddit; excludes pinned posts, and NSFW posts unless turned on in Settings.
-- The All feed shows posts new since the previous refresh. Pull up at the end to mark them read; pull up the empty feed to look back through earlier posts. Feeds refresh on their own after 15 minutes away; tap the current tab to jump to the top, and again to refresh.
+- The All feed shows posts new since the previous refresh. Pull up at the end to mark them read; pull up the empty feed to look back through earlier posts. Feeds refresh on their own after 15 minutes away; tap the current tab to jump to the top.
 
 ## Build
 
