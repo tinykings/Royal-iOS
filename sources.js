@@ -188,9 +188,9 @@ export function youTubePublishedAt(published, now = Date.now() / 1000) {
   return now - Number(match[1]) * AGE_UNITS[AGE_NAMES[unit] ?? unit];
 }
 
-// YouTube exposes subscriptions in page data, not a supported public session API.
+// YouTube exposes its feeds in page data, not a supported public session API.
 // Parse JSON only: never execute scripts from the fetched page.
-export function parseYouTubeSubscriptions(html, limit = CONFIG.totalItems) {
+export function parseYouTubeFeed(html, limit = CONFIG.totalItems) {
   if (/"LOGGED_IN"\s*:\s*false/.test(html)) throw new NotLoggedInError("YouTube session is logged out");
   const assignment = /(?:var\s+ytInitialData|window\["ytInitialData"\]|ytInitialData)\s*=\s*/g;
   let data;
@@ -230,7 +230,7 @@ export function parseYouTubeSubscriptions(html, limit = CONFIG.totalItems) {
   function visit(node) {
     if (!node || typeof node !== "object" || posts.length >= limit) return;
     // Ranked carousels ("Most relevant"), Shorts, and other rich shelves are
-    // supplemental sections, not the chronological subscription upload list.
+    // supplemental sections, not the feed's own list of videos.
     if (node.richSectionRenderer || node.richShelfRenderer || node.reelShelfRenderer
       || node.horizontalListRenderer) return;
     // In-feed ads can wrap ordinary video renderers for channels the user doesn't follow.
@@ -264,19 +264,24 @@ export function parseYouTubeSubscriptions(html, limit = CONFIG.totalItems) {
   }
   const tabs = data.contents?.twoColumnBrowseResultsRenderer?.tabs;
   const selected = tabs?.find((tab) => tab.tabRenderer?.selected)?.tabRenderer;
-  if (!data.contents) throw new Error("YouTube subscriptions unavailable. Check login and consent on YouTube.");
+  if (!data.contents) throw new Error("YouTube feed unavailable. Check login and consent on YouTube.");
   visit(selected?.content ?? data.contents);
   const now = Date.now() / 1000;
   for (const post of posts) post.publishedAt = youTubePublishedAt(post.published, now);
   return posts;
 }
 
-export async function fetchYouTube(limit) {
-  const response = await fetch(`${YOUTUBE}/feed/subscriptions`, { credentials: "include" });
+// The page behind each feed: subscription uploads, or the recommendations on YouTube's Home.
+const YOUTUBE_FEEDS = new Map([["subscriptions", "/feed/subscriptions"], ["home", "/"]]);
+
+export async function fetchYouTube(limit, { feed = "subscriptions" } = {}) {
+  const path = YOUTUBE_FEEDS.get(feed);
+  if (!path) throw new Error("Invalid YouTube feed");
+  const response = await fetch(`${YOUTUBE}${path}`, { credentials: "include" });
   if (response.status === 401 || response.status === 403) throw new NotLoggedInError("YouTube login required");
   if (!response.ok) throw new Error(`YouTube HTTP ${response.status}`);
   if (response.url && new URL(response.url).hostname !== "www.youtube.com") {
     throw new Error("Open YouTube and finish login or consent, then refresh.");
   }
-  return parseYouTubeSubscriptions(await response.text(), limit);
+  return parseYouTubeFeed(await response.text(), limit);
 }

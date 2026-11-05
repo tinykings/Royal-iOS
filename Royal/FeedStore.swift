@@ -6,12 +6,14 @@ enum FeedKey: Hashable, Codable {
     case subreddit(name: String)
     case hn(list: String)
     case youtube
+    // The recommendations on YouTube's Home page, chosen on the YouTube tab.
+    case youtubeHome
 
     var source: FeedSource {
         switch self {
         case .reddit, .subreddit: .reddit
         case .hn: .hn
-        case .youtube: .youtube
+        case .youtube, .youtubeHome: .youtube
         }
     }
 
@@ -224,10 +226,12 @@ final class FeedStore: ObservableObject {
 
     private func saveCache() {
         let cache = Cache(
-            // A subreddit's posts are only kept while the app runs; it's picked now and then,
-            // and would otherwise open however long ago it was last looked at.
+            // A subreddit's posts and YouTube's recommendations are only kept while the app runs;
+            // they're picked now and then, and would otherwise open however long ago they were
+            // last looked at.
             feeds: feeds.compactMap { key, state in
                 if case .subreddit = key { return nil }
+                if case .youtubeHome = key { return nil }
                 return state.posts.isEmpty ? nil
                     : Cache.Feed(key: key, posts: state.posts, next: state.next, loadedAt: state.loadedAt)
             },

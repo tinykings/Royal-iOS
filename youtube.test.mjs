@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fetchYouTube, parseYouTubeSubscriptions, NotLoggedInError, youTubePublishedAt } from "./sources.js";
+import { fetchYouTube, parseYouTubeFeed, NotLoggedInError, youTubePublishedAt } from "./sources.js";
 
 const video = (id = "abcdefghijk") => ({ videoRenderer: {
   videoId: id, title: { runs: [{ text: 'Video "title" } \\ test' }] },
@@ -13,7 +13,7 @@ test("YouTube parses subscriptions, escaped titles, deduplication, selected tab,
     { tabRenderer: { content: video("xxxxxxxxxxx") } },
     { tabRenderer: { selected: true, content: { items: [video(), video(), video("12345678901"), video("invalid")] } } },
   ] } });
-  const posts = parseYouTubeSubscriptions(html);
+  const posts = parseYouTubeFeed(html);
   assert.equal(posts.length, 2);
   assert.equal(posts[0].source, "youtube");
   assert.equal(posts[0].id, "yt_abcdefghijk");
@@ -22,7 +22,7 @@ test("YouTube parses subscriptions, escaped titles, deduplication, selected tab,
   assert.equal(posts[0].published, "2 hours ago");
   assert.equal(posts[0].image, "https://i.ytimg.com/vi/abcdefghijk/maxresdefault.jpg");
   assert.equal(posts[0].url, "https://www.youtube.com/watch?v=abcdefghijk");
-  assert.equal(parseYouTubeSubscriptions(html, 1).length, 1);
+  assert.equal(parseYouTubeFeed(html, 1).length, 1);
 });
 
 test("YouTube ignores ranked shelves without consuming limits or hiding chronological duplicates", () => {
@@ -37,8 +37,8 @@ test("YouTube ignores ranked shelves without consuming limits or hiding chronolo
     { shelfRenderer: { title: { simpleText: "Today" }, content: { items: [video()] } } },
     { richItemRenderer: { content: video("12345678901") } },
   ] } });
-  assert.deepEqual(parseYouTubeSubscriptions(html).map((p) => p.videoId), ["abcdefghijk", "12345678901"]);
-  assert.equal(parseYouTubeSubscriptions(html, 1)[0].videoId, "abcdefghijk");
+  assert.deepEqual(parseYouTubeFeed(html).map((p) => p.videoId), ["abcdefghijk", "12345678901"]);
+  assert.equal(parseYouTubeFeed(html, 1)[0].videoId, "abcdefghijk");
 });
 
 test("YouTube skips in-feed ads that wrap videos from unsubscribed channels", () => {
@@ -49,7 +49,7 @@ test("YouTube skips in-feed ads that wrap videos from unsubscribed channels", ()
     { richItemRenderer: { content: { inFeedAdLayoutRenderer: { renderingContent: video("advideo0002") } } } },
     { richItemRenderer: { content: video() } },
   ] } });
-  assert.deepEqual(parseYouTubeSubscriptions(html).map((p) => p.videoId), ["abcdefghijk"]);
+  assert.deepEqual(parseYouTubeFeed(html).map((p) => p.videoId), ["abcdefghijk"]);
 });
 
 test("YouTube supports current lockup renderers and window assignment", () => {
@@ -63,20 +63,20 @@ test("YouTube supports current lockup renderers and window assignment", () => {
       ] } },
     } },
   } }] }).replace("var ytInitialData", 'window["ytInitialData"]');
-  assert.equal(parseYouTubeSubscriptions(html)[0].title, "New layout");
-  assert.equal(parseYouTubeSubscriptions(html)[0].label, "Creator");
-  assert.equal(parseYouTubeSubscriptions(html)[0].published, "3 days ago");
+  assert.equal(parseYouTubeFeed(html)[0].title, "New layout");
+  assert.equal(parseYouTubeFeed(html)[0].label, "Creator");
+  assert.equal(parseYouTubeFeed(html)[0].published, "3 days ago");
   const live = html.replace("12K views", "693 watching").replace("3 days ago", "Live");
-  assert.equal(parseYouTubeSubscriptions(live)[0].published, "Live");
+  assert.equal(parseYouTubeFeed(live)[0].published, "Live");
 });
 
 test("YouTube detects logged-out, consent, malformed pages; empty subscriptions valid", () => {
-  assert.throws(() => parseYouTubeSubscriptions('<script>ytcfg.set({"LOGGED_IN":false})</script>'), NotLoggedInError);
-  assert.throws(() => parseYouTubeSubscriptions(page({}, { responseContext: { mainAppWebResponseContext: { loggedOut: true } } })), NotLoggedInError);
+  assert.throws(() => parseYouTubeFeed('<script>ytcfg.set({"LOGGED_IN":false})</script>'), NotLoggedInError);
+  assert.throws(() => parseYouTubeFeed(page({}, { responseContext: { mainAppWebResponseContext: { loggedOut: true } } })), NotLoggedInError);
   for (const html of ["consent page", "ytInitialData = {bad}", "ytInitialData = {};"]) {
-    assert.throws(() => parseYouTubeSubscriptions(html), /unavailable/);
+    assert.throws(() => parseYouTubeFeed(html), /unavailable/);
   }
-  assert.deepEqual(parseYouTubeSubscriptions(page({ items: [] })), []);
+  assert.deepEqual(parseYouTubeFeed(page({ items: [] })), []);
 });
 
 test("YouTube uses browser credentials and handles network/login/consent errors", async () => {
@@ -99,6 +99,30 @@ test("YouTube uses browser credentials and handles network/login/consent errors"
   } finally { globalThis.fetch = original; }
 });
 
+test("YouTube's Home feed loads the home page, keeping its videos and dropping shelves and ads", async () => {
+  const original = globalThis.fetch;
+  try {
+    let requested;
+    globalThis.fetch = async (url) => {
+      requested = url;
+      return { ok: true, url, text: async () => page({ twoColumnBrowseResultsRenderer: { tabs: [{ tabRenderer: {
+        selected: true,
+        content: { richGridRenderer: { contents: [
+          { richItemRenderer: { content: video() } },
+          { richSectionRenderer: { content: { richShelfRenderer: { contents: [video("shortsvideo")] } } } },
+          { richItemRenderer: { content: { adSlotRenderer: { renderingContent: video("advideo0001") } } } },
+          { richItemRenderer: { content: video("12345678901") } },
+        ] } },
+      } }] } }) };
+    };
+    const posts = await fetchYouTube(100, { feed: "home" });
+    assert.equal(requested, "https://www.youtube.com/");
+    assert.deepEqual(posts.map((p) => p.videoId), ["abcdefghijk", "12345678901"]);
+    assert.equal((await fetchYouTube(1, { feed: "home" })).length, 1);
+    await assert.rejects(fetchYouTube(10, { feed: "constructor" }), /Invalid YouTube feed/);
+  } finally { globalThis.fetch = original; }
+});
+
 test("YouTube ages become the latest possible publish time", () => {
   assert.equal(youTubePublishedAt("2 hours ago", 10000), 10000 - 7200);
   assert.equal(youTubePublishedAt("1 day ago", 100000), 100000 - 86400);
@@ -111,6 +135,6 @@ test("YouTube ages become the latest possible publish time", () => {
   assert.equal(youTubePublishedAt("", 1000), null);
   const html = page({ items: [video()] });
   const before = Date.now() / 1000;
-  const at = parseYouTubeSubscriptions(html)[0].publishedAt;
+  const at = parseYouTubeFeed(html)[0].publishedAt;
   assert.ok(at >= before - 7200 && at <= Date.now() / 1000 - 7200);
 });

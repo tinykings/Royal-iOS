@@ -342,14 +342,16 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         case .hn(let list):
             arguments["list"] = list
         case .youtube:
-            break
+            arguments["feed"] = "subscriptions"
+        case .youtubeHome:
+            arguments["feed"] = "home"
         }
         guard !sourcesScript.isEmpty else { throw FeedError.failed("sources.js missing from app bundle") }
         let result = try await run(sourcesScript + """
             const fetchers = {
               reddit: async () => ({ posts: await Royal.fetchReddit(limit, { sort, timeframe, subreddit, nsfw }), next: null }),
               hn: () => Royal.fetchHackerNewsPage(pageSize, { list, offset }),
-              youtube: async () => ({ posts: await Royal.fetchYouTube(limit), next: null }),
+              youtube: async () => ({ posts: await Royal.fetchYouTube(limit, { feed }), next: null }),
             };
             try {
               return JSON.stringify(await fetchers[source]());

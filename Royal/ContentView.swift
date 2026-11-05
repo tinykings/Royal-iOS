@@ -31,7 +31,7 @@ struct ContentView: View {
                             .accessibilityLabel("All")
                     }
                     .tag(AppTab.all)
-                FeedListView(title: "YouTube", tab: .youtube, keys: [.youtube])
+                YouTubeFeedView()
                     .tabItem { Image(systemName: "play.rectangle").accessibilityLabel("YouTube") }
                     .tag(AppTab.youtube)
                 SettingsView()
@@ -140,6 +140,20 @@ struct HackerNewsFeedView: View {
             HeaderPicker(title: "List", selection: $list, options: [
                 HeaderOption(value: "top", icon: "trophy", title: "Top"),
                 HeaderOption(value: "new", icon: "clock", title: "New"),
+            ])
+        }
+    }
+}
+
+struct YouTubeFeedView: View {
+    @State private var key = FeedKey.youtube
+
+    var body: some View {
+        FeedListView(title: "YouTube", tab: .youtube, keys: [key],
+                     subtitle: key == .youtube ? "Subscriptions" : "Recommended") {
+            HeaderPicker(title: "Show", selection: $key, options: [
+                HeaderOption(value: FeedKey.youtube, icon: "play.square.stack", title: "Subscriptions"),
+                HeaderOption(value: FeedKey.youtubeHome, icon: "house", title: "Recommended"),
             ])
         }
     }
