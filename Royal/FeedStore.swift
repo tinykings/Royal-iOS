@@ -2,8 +2,8 @@ import SwiftUI
 
 enum FeedKey: Hashable, Codable {
     case reddit(sort: String, timeframe: String)
-    // One followed subreddit, chosen on the Reddit tab.
-    case subreddit(name: String, sort: String)
+    // One followed subreddit's Top today, chosen on the Reddit tab.
+    case subreddit(name: String)
     case hn(list: String)
     case youtube
 

@@ -90,15 +90,13 @@ export async function fetchSubscribedSubreddits({ nsfw = false } = {}) {
 // Without `subreddit`, the home listing of everything followed. With it, that subreddit alone.
 export async function fetchReddit(limit, { sort = "best", timeframe = CONFIG.redditTimeWindow, subreddit = "", nsfw = false } = {}) {
   if (subreddit && !/^\w+$/.test(subreddit)) throw new Error("Invalid subreddit");
-  // Best ranks the home listing; a single subreddit is offered Hot in its place.
-  if (![subreddit ? "hot" : "best", "top", "new"].includes(sort)) throw new Error("Invalid Reddit sort");
+  // Reddit answers 403 to a single subreddit's other sorts, so it only has Top.
+  if (!(subreddit ? ["top"] : ["best", "top", "new"]).includes(sort)) throw new Error("Invalid Reddit sort");
   if (!["hour", "day", "week", "month", "year", "all"].includes(timeframe)) throw new Error("Invalid Reddit timeframe");
   await requireSubscriptions();
 
   const params = new URLSearchParams({ limit: "100", raw_json: "1" });
-  // Only Top uses `t`. A single subreddit sends it on every sort: Reddit answered 403 to
-  // that subreddit's Hot and New without it, while its Top worked.
-  if (sort === "top" || subreddit) params.set("t", timeframe);
+  if (sort === "top") params.set("t", timeframe);
   // Logged-in home listings cover subscriptions. Reddit now redirects combined
   // r/a+b+c listings to its home page instead of returning JSON.
   const path = subreddit ? `/r/${subreddit}/${sort}` : `/${sort}`;

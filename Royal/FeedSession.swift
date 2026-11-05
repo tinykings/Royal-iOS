@@ -335,8 +335,8 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         case .reddit(let sort, let timeframe):
             arguments["sort"] = sort
             arguments["timeframe"] = timeframe
-        case .subreddit(let name, let sort):
-            arguments["sort"] = sort
+        case .subreddit(let name):
+            arguments["sort"] = "top"
             arguments["timeframe"] = "day"
             arguments["subreddit"] = name
         case .hn(let list):

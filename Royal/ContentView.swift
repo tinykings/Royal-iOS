@@ -79,22 +79,22 @@ struct RedditFeedView: View {
     @State private var subreddit: String?
 
     var body: some View {
-        // Top is always today's, so it uses the same feed as the All page.
-        // The first sort is Best across everything followed and Hot in a single subreddit; it's
-        // remembered as "best" either way, so moving between them stays on that first sort.
-        let key: FeedKey = subreddit.map { FeedKey.subreddit(name: $0, sort: sort == "best" ? "hot" : sort) }
+        // Top is always today's, so it uses the same feed as the All page. A single subreddit
+        // only has Top, since Reddit refuses its Hot and New; the sort picked for everything
+        // followed is kept for coming back.
+        let key: FeedKey = subreddit.map { FeedKey.subreddit(name: $0) }
             ?? .reddit(sort: sort, timeframe: "day")
         FeedListView(title: "Reddit", tab: .reddit, keys: [key],
                      // A subreddit's name takes up the room the sort's name would use.
                      subtitle: subreddit != nil ? nil : sort == "top" ? "Top Today" : sort.capitalized,
                      titleMenu: AnyView(subredditMenu)) {
-            HeaderPicker(title: "Sort", selection: $sort, options: [
-                subreddit == nil
-                    ? HeaderOption(value: "best", icon: "rosette", title: "Best")
-                    : HeaderOption(value: "best", icon: "flame", title: "Hot"),
-                HeaderOption(value: "top", icon: "trophy", title: "Top"),
-                HeaderOption(value: "new", icon: "clock", title: "New"),
-            ])
+            if subreddit == nil {
+                HeaderPicker(title: "Sort", selection: $sort, options: [
+                    HeaderOption(value: "best", icon: "rosette", title: "Best"),
+                    HeaderOption(value: "top", icon: "trophy", title: "Top"),
+                    HeaderOption(value: "new", icon: "clock", title: "New"),
+                ])
+            }
         }
         .task { if store.subreddits.isEmpty { await store.loadSubreddits() } }
         // Back to everything if the subreddit leaves the list, as an NSFW one does when
@@ -125,8 +125,7 @@ struct RedditFeedView: View {
         .accessibilityLabel(subreddit.map { "Subreddit: \($0)" } ?? "Reddit, all subreddits")
     }
 
-    // Shortened by hand since the header sizes its title to fit, and the sort control beside it
-    // leaves room for about this much.
+    // Shortened by hand since the header sizes its title to fit.
     private var subredditTitle: String {
         guard let subreddit else { return "Reddit" }
         return "r/" + (subreddit.count > 14 ? String(subreddit.prefix(13)) + "…" : subreddit)
