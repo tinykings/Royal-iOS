@@ -176,13 +176,13 @@ test("A single subreddit uses its own listing, sorts by Hot rather than Best, an
   try {
     assert.equal((await fetchReddit(100, { sort: "hot", subreddit: "swift" })).length, 8);
     assert.equal(requests.at(-1).pathname, "/r/swift/hot.json");
-    assert.equal(requests.at(-1).searchParams.get("t"), "day");
+    assert.equal(requests.at(-1).searchParams.get("t"), null);
     await fetchReddit(100, { sort: "top", timeframe: "day", subreddit: "swift" });
     assert.equal(requests.at(-1).pathname, "/r/swift/top.json");
     assert.equal(requests.at(-1).searchParams.get("t"), "day");
     await fetchReddit(100, { sort: "new", subreddit: "swift" });
     assert.equal(requests.at(-1).pathname, "/r/swift/new.json");
-    assert.equal(requests.at(-1).searchParams.get("t"), "day");
+    assert.equal(requests.at(-1).searchParams.get("t"), null);
     await assert.rejects(fetchReddit(100, { sort: "hot", subreddit: "../evil" }), /Invalid subreddit/);
     await assert.rejects(fetchReddit(100, { sort: "best", subreddit: "swift" }), /Invalid Reddit sort/);
     await assert.rejects(fetchReddit(100, { sort: "hot" }), /Invalid Reddit sort/);
@@ -190,6 +190,72 @@ test("A single subreddit uses its own listing, sorts by Hot rather than Best, an
     assert.equal((await fetchReddit(100, { sort: "new" })).length, 5);
     assert.equal(requests.at(-1).pathname, "/new.json");
     assert.equal(requests.at(-1).searchParams.get("t"), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+function atomEntry(id, title, content, thumbnail = "") {
+  return `<entry><author><name>/u/a</name></author><category term="swift" label="r/swift"/>`
+    + `<content type="html">${content}</content><id>${id}</id>`
+    + `<link href="https://www.reddit.com/r/swift/comments/${id}/" />`
+    + `<updated>2026-11-05T21:55:17+00:00</updated><published>2026-11-05T21:55:17+00:00</published>`
+    + `${thumbnail}<title>${title}</title></entry>`;
+}
+
+test("A refused subreddit listing falls back to its feed, without counts", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const feed = `<feed><title>hot : swift</title>${
+    atomEntry("t3_self", "Q&amp;A &amp;lt;today&amp;gt;", "&lt;a href=&quot;https://www.reddit.com/r/swift/comments/t3_self/&quot;&gt;[link]&lt;/a&gt;")
+  }${
+    atomEntry("t3_out", "Out", "&lt;a href=&quot;https://example.com/a?b=1&amp;amp;c=2&quot;&gt;[link]&lt;/a&gt;",
+      '<media:thumbnail url="https://preview.redd.it/x.png?width=640&amp;s=y" />')
+  }</feed>`;
+  globalThis.fetch = async (url) => {
+    requests.push(new URL(url));
+    if (url.includes("/subreddits/mine/")) {
+      return { ok: true, status: 200, json: async () => ({ data: { children: [{ data: { display_name: "test" } }] } }) };
+    }
+    if (url.includes(".rss")) return { ok: true, status: 200, text: async () => feed };
+    return { ok: false, status: 403 };
+  };
+  try {
+    const posts = await fetchReddit(100, { sort: "hot", subreddit: "swift" });
+    assert.equal(requests.at(-1).pathname, "/r/swift/hot.rss");
+    assert.deepEqual(posts.map((post) => post.id), ["t3_self", "t3_out"]);
+    assert.equal(posts[0].title, "Q&A &lt;today&gt;");
+    assert.equal(posts[0].url, "https://www.reddit.com/r/swift/comments/t3_self/");
+    assert.equal(posts[0].score, null);
+    assert.equal(posts[0].comments, null);
+    assert.equal(posts[0].created, Date.parse("2026-11-05T21:55:17Z") / 1000);
+    assert.equal(posts[0].label, "r/swift");
+    assert.equal(posts[1].url, "https://example.com/a?b=1&c=2");
+    assert.equal(posts[1].commentsUrl, "https://www.reddit.com/r/swift/comments/t3_out/");
+    assert.equal(posts[1].image, "https://preview.redd.it/x.png?width=640&s=y");
+    assert.equal((await fetchReddit(1, { sort: "new", subreddit: "swift" })).length, 1);
+    assert.equal(requests.at(-1).pathname, "/r/swift/new.rss");
+    await fetchReddit(100, { sort: "top", timeframe: "day", subreddit: "swift" });
+    assert.equal(requests.at(-1).pathname, "/r/swift/top.rss");
+    assert.equal(requests.at(-1).searchParams.get("t"), "day");
+    // The home listing has no feed to fall back to.
+    await assert.rejects(fetchReddit(100, { sort: "new" }), NotLoggedInError);
+    assert.equal(requests.at(-1).pathname, "/new.json");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("A subreddit keeps reporting the refusal when its feed fails too", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (url.includes("/subreddits/mine/")) {
+      return { ok: true, status: 200, json: async () => ({ data: { children: [{ data: { display_name: "test" } }] } }) };
+    }
+    return { ok: false, status: url.includes(".rss") ? 429 : 403 };
+  };
+  try {
+    await assert.rejects(fetchReddit(100, { sort: "hot", subreddit: "swift" }), /403 from www\.reddit\.com/);
   } finally {
     globalThis.fetch = originalFetch;
   }

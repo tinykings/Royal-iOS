@@ -17,7 +17,9 @@ export class NotLoggedInError extends Error {}
 async function getJson(url) {
   const res = await fetch(url, { credentials: "include" });
   if (res.status === 401 || res.status === 403) {
-    throw new NotLoggedInError(`${res.status} from ${new URL(url).host}`);
+    const error = new NotLoggedInError(`${res.status} from ${new URL(url).host}`);
+    error.status = res.status;
+    throw error;
   }
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
   return res.json();
@@ -69,6 +71,51 @@ function redditImage(post) {
     ?? sizedImage(post.thumbnail, post.thumbnail_width, post.thumbnail_height);
 }
 
+// Replaces XML entities in a single pass, so `&amp;lt;` stays the text `&lt;`.
+function xmlText(value) {
+  const named = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+  return value.replace(/&(?:#(\d+)|#x([\da-f]+)|(amp|lt|gt|quot|apos));/gi, (_, decimal, hex, name) =>
+    name ? named[name.toLowerCase()] : String.fromCodePoint(decimal ? Number(decimal) : parseInt(hex, 16)));
+}
+
+// A subreddit's listing from its Atom feed, for when Reddit refuses the JSON. The feed has
+// no scores, comment counts, pinned or NSFW flags, so those can't be shown or filtered.
+async function fetchRedditFeed(limit, subreddit, sort, timeframe) {
+  const params = new URLSearchParams({ limit: "100" });
+  if (sort === "top") params.set("t", timeframe);
+  const url = `${REDDIT}/r/${subreddit}/${sort}.rss?${params}`;
+  const res = await fetch(url, { credentials: "include" });
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
+  const posts = [];
+  for (const [, entry] of (await res.text()).matchAll(/<entry>([\s\S]*?)<\/entry>/g)) {
+    const id = entry.match(/<id>(t3_\w+)<\/id>/)?.[1];
+    const title = entry.match(/<title>([\s\S]*?)<\/title>/)?.[1];
+    const commentsUrl = entry.match(/<link href="([^"]+)"/)?.[1];
+    if (!id || title === undefined || !commentsUrl) continue;
+    // The post's content is HTML escaped inside the XML; its [link] is what the post links to.
+    const content = xmlText(entry.match(/<content[^>]*>([\s\S]*?)<\/content>/)?.[1] ?? "");
+    const link = content.match(/<a href="([^"]+)">\[link\]<\/a>/)?.[1];
+    const published = Date.parse(entry.match(/<published>([^<]+)<\/published>/)?.[1] ?? "");
+    const comments = xmlText(commentsUrl);
+    posts.push({
+      source: "reddit",
+      id,
+      title: xmlText(title),
+      url: link ? xmlText(link) : comments,
+      commentsUrl: comments,
+      score: null,
+      comments: null,
+      created: Number.isNaN(published) ? null : published / 1000,
+      label: `r/${subreddit}`,
+      image: imageUrl(entry.match(/<media:thumbnail url="([^"]+)"/)?.[1]),
+      imageAspect: null,
+      nsfw: null,
+    });
+    if (posts.length >= limit) break;
+  }
+  return posts;
+}
+
 // The followed subreddits, A to Z. Followed people are left out, and NSFW subreddits unless
 // `nsfw` is set.
 export async function fetchSubscribedSubreddits({ nsfw = false } = {}) {
@@ -96,13 +143,23 @@ export async function fetchReddit(limit, { sort = "best", timeframe = CONFIG.red
   await requireSubscriptions();
 
   const params = new URLSearchParams({ limit: "100", raw_json: "1" });
-  // Only Top uses `t`. A single subreddit sends it on every sort: Reddit answered 403 to
-  // that subreddit's Hot and New without it, while its Top worked.
-  if (sort === "top" || subreddit) params.set("t", timeframe);
+  if (sort === "top") params.set("t", timeframe);
   // Logged-in home listings cover subscriptions. Reddit now redirects combined
   // r/a+b+c listings to its home page instead of returning JSON.
   const path = subreddit ? `/r/${subreddit}/${sort}` : `/${sort}`;
-  const listing = await getJson(`${REDDIT}${path}.json?${params}`);
+  let listing;
+  try {
+    listing = await getJson(`${REDDIT}${path}.json?${params}`);
+  } catch (error) {
+    // Reddit can refuse a subreddit's JSON listing to a logged-in session. If the feed fails
+    // too, the refusal is the error worth reporting.
+    if (!subreddit || error.status !== 403) throw error;
+    try {
+      return await fetchRedditFeed(limit, subreddit, sort, timeframe);
+    } catch {
+      throw error;
+    }
+  }
 
   const posts = listing.data.children
     .map((c) => c.data)

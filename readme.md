@@ -29,6 +29,8 @@ Select your signing team, then build and run on a simulator or device.
 
 Fetching and parsing lives in `sources.js`. A build phase copies it into the app bundle, and `FeedSession` runs it in a hidden `WKWebView`, routing its `fetch()` calls through `URLSession` with the web view's login cookies. Requests go directly to Reddit, Hacker News, and YouTube; there is no backend.
 
+When Reddit answers 403 to a single subreddit's JSON listing, `sources.js` reads the subreddit's RSS feed instead. That feed has no scores, comment counts, or pinned and NSFW flags, so those posts show none and can't be filtered by them.
+
 YouTube access relies on undocumented page data and may break when YouTube changes its layout.
 
 ## Configuration
