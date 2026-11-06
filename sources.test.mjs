@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { fetchHackerNews, fetchHackerNewsPage, fetchReddit, fetchSubscribedSubreddits, NotLoggedInError } from "./sources.js";
 
-test("Reddit sort uses personalized Best, score-ranked Top with timeframe, and chronological New", async () => {
+test("Reddit sort uses personalized Best and score-ranked Top with timeframe, and has no New", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];
   globalThis.fetch = async (url) => {
@@ -30,11 +30,7 @@ test("Reddit sort uses personalized Best, score-ranked Top with timeframe, and c
       assert.equal(requests.at(-1).pathname, "/top.json");
       assert.equal(requests.at(-1).searchParams.get("t"), timeframe);
     }
-    requests.length = 0;
-    // New merges the listings Reddit allows, without repeating a post they share.
-    assert.deepEqual((await fetchReddit(10, { sort: "new" })).map((post) => post.id), ["newest", "popular", "first"]);
-    assert.deepEqual(requests.slice(1).map((r) => `${r.pathname} ${r.searchParams.get("t")}`),
-      ["/top.json hour", "/top.json day", "/best.json null"]);
+    await assert.rejects(fetchReddit(3, { sort: "new" }), /Invalid Reddit sort/);
     await assert.rejects(fetchReddit(3, { sort: "invalid" }), /Invalid Reddit sort/);
     await assert.rejects(fetchReddit(3, { sort: "top", timeframe: "invalid" }), /Invalid Reddit timeframe/);
   } finally {
@@ -185,7 +181,7 @@ test("A single subreddit uses its own listing, only sorts by Top, and isn't capp
     }
     await assert.rejects(fetchReddit(100, { sort: "hot" }), /Invalid Reddit sort/);
     // Without a subreddit, the home listing keeps its cap.
-    assert.equal((await fetchReddit(100, { sort: "new" })).length, 5);
+    assert.equal((await fetchReddit(100, { sort: "top" })).length, 5);
   } finally {
     globalThis.fetch = originalFetch;
   }

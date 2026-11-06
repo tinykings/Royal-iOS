@@ -94,29 +94,22 @@ export async function fetchSubscribedSubreddits({ nsfw = false } = {}) {
 // Without `subreddit`, the home listing of everything followed. With it, that subreddit alone.
 export async function fetchReddit(limit, { sort = "best", timeframe = CONFIG.redditTimeWindow, subreddit = "", nsfw = false } = {}) {
   if (subreddit && !/^\w+$/.test(subreddit)) throw new Error("Invalid subreddit");
-  // Reddit answers 403 to a single subreddit's other sorts, so it only has Top.
-  if (!(subreddit ? ["top"] : ["best", "top", "new"]).includes(sort)) throw new Error("Invalid Reddit sort");
+  // Reddit's network security refuses Hot and New everywhere. A single subreddit only has Top.
+  if (!(subreddit ? ["top"] : ["best", "top"]).includes(sort)) throw new Error("Invalid Reddit sort");
   if (!["hour", "day", "week", "month", "year", "all"].includes(timeframe)) throw new Error("Invalid Reddit timeframe");
   await requireSubscriptions();
 
-  const listing = (path, extra = {}) => {
-    const params = new URLSearchParams({ limit: "100", raw_json: "1", ...extra });
-    return getJson(`${REDDIT}${path}.json?${params}`);
-  };
+  const params = new URLSearchParams({ limit: "100", raw_json: "1" });
+  if (sort === "top") params.set("t", timeframe);
   // Logged-in home listings cover subscriptions. Reddit now redirects combined
   // r/a+b+c listings to its home page instead of returning JSON.
   const path = subreddit ? `/r/${subreddit}/${sort}` : `/${sort}`;
-  // Reddit's network security refuses /new.json, and other listings ignore `sort=new`, so
-  // New is the newest of what the listings it does allow return. The sort below orders them.
-  const listings = await Promise.all(sort === "new"
-    ? [listing("/top", { t: "hour" }), listing("/top", { t: "day" }), listing("/best")]
-    : [listing(path, sort === "top" ? { t: timeframe } : {})]);
+  const listing = await getJson(`${REDDIT}${path}.json?${params}`);
 
-  const unique = new Map(listings.flatMap((l) => l.data.children).map((c) => [c.data.name, c.data]));
-  const posts = [...unique.values()]
+  const posts = listing.data.children
+    .map((c) => c.data)
     .filter((p) => !p.stickied && (nsfw || !p.over_18));
   if (sort === "top") posts.sort((a, b) => b.score - a.score);
-  if (sort === "new") posts.sort((a, b) => b.created_utc - a.created_utc);
 
   const perSub = new Map();
   const picked = [];

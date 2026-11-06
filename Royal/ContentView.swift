@@ -92,7 +92,6 @@ struct RedditFeedView: View {
                 HeaderPicker(title: "Sort", selection: $sort, options: [
                     HeaderOption(value: "best", icon: "rosette", title: "Best"),
                     HeaderOption(value: "top", icon: "trophy", title: "Top"),
-                    HeaderOption(value: "new", icon: "clock", title: "New"),
                 ])
             }
         }
