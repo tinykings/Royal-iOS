@@ -145,7 +145,15 @@ final class FeedStore: ObservableObject {
         let state = state(key)
         do {
             let page = try await session.posts(key)
-            feeds[key] = FeedState(posts: page.posts, loaded: true, next: page.next, loadedAt: Date())
+            var posts = page.posts
+            // YouTube's Home mostly reshuffles below its first videos, which is all that fits on
+            // screen, so videos the last fetch didn't have go first. This only orders this feed;
+            // the All feed's new posts are tracked apart and never include recommendations.
+            if key == .youtubeHome {
+                let known = Set(state.posts.map(\.id))
+                posts = posts.filter { !known.contains($0.id) } + posts.filter { known.contains($0.id) }
+            }
+            feeds[key] = FeedState(posts: posts, loaded: true, next: page.next, loadedAt: Date())
         } catch {
             // Keep earlier posts visible when a refresh fails.
             feeds[key] = FeedState(posts: state.posts, error: error.localizedDescription, loaded: true, loadedAt: state.loadedAt)
