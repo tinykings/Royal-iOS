@@ -30,9 +30,11 @@ test("Reddit sort uses personalized Best, score-ranked Top with timeframe, and c
       assert.equal(requests.at(-1).pathname, "/top.json");
       assert.equal(requests.at(-1).searchParams.get("t"), timeframe);
     }
-    assert.deepEqual((await fetchReddit(3, { sort: "new" })).map((post) => post.id), ["newest", "popular", "first"]);
-    assert.equal(requests.at(-1).pathname, "/new.json");
-    assert.equal(requests.at(-1).searchParams.has("t"), false);
+    requests.length = 0;
+    // New merges the listings Reddit allows, without repeating a post they share.
+    assert.deepEqual((await fetchReddit(10, { sort: "new" })).map((post) => post.id), ["newest", "popular", "first"]);
+    assert.deepEqual(requests.slice(1).map((r) => `${r.pathname} ${r.searchParams.get("t")}`),
+      ["/top.json hour", "/top.json day", "/best.json null"]);
     await assert.rejects(fetchReddit(3, { sort: "invalid" }), /Invalid Reddit sort/);
     await assert.rejects(fetchReddit(3, { sort: "top", timeframe: "invalid" }), /Invalid Reddit timeframe/);
   } finally {
@@ -184,8 +186,6 @@ test("A single subreddit uses its own listing, only sorts by Top, and isn't capp
     await assert.rejects(fetchReddit(100, { sort: "hot" }), /Invalid Reddit sort/);
     // Without a subreddit, the home listing keeps its cap.
     assert.equal((await fetchReddit(100, { sort: "new" })).length, 5);
-    assert.equal(requests.at(-1).pathname, "/new.json");
-    assert.equal(requests.at(-1).searchParams.get("t"), null);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -230,6 +230,19 @@ test("NSFW posts and subreddits are left out unless asked for, and posts say whi
       [["clean", false], ["mature", true]]);
     assert.deepEqual(await fetchSubscribedSubreddits(), ["safe"]);
     assert.deepEqual(await fetchSubscribedSubreddits({ nsfw: true }), ["adult", "safe"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("A Reddit block page isn't reported as being logged out, but other refusals are", async () => {
+  const originalFetch = globalThis.fetch;
+  let body = "You've been blocked by network security.";
+  globalThis.fetch = async () => ({ ok: false, status: 403, text: async () => body });
+  try {
+    await assert.rejects(fetchReddit(3), (error) => !(error instanceof NotLoggedInError) && /Reddit blocked/.test(error.message));
+    body = "Forbidden";
+    await assert.rejects(fetchReddit(3), NotLoggedInError);
   } finally {
     globalThis.fetch = originalFetch;
   }

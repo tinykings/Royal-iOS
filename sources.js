@@ -17,6 +17,10 @@ export class NotLoggedInError extends Error {}
 async function getJson(url) {
   const res = await fetch(url, { credentials: "include" });
   if (res.status === 401 || res.status === 403) {
+    // Reddit serves this page to some paths whatever the session, so logging in won't help.
+    if ((await res.text()).includes("blocked by network security")) {
+      throw new Error(`Reddit blocked ${new URL(url).pathname}`);
+    }
     throw new NotLoggedInError(`${res.status} from ${new URL(url).host}`);
   }
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
@@ -95,15 +99,21 @@ export async function fetchReddit(limit, { sort = "best", timeframe = CONFIG.red
   if (!["hour", "day", "week", "month", "year", "all"].includes(timeframe)) throw new Error("Invalid Reddit timeframe");
   await requireSubscriptions();
 
-  const params = new URLSearchParams({ limit: "100", raw_json: "1" });
-  if (sort === "top") params.set("t", timeframe);
+  const listing = (path, extra = {}) => {
+    const params = new URLSearchParams({ limit: "100", raw_json: "1", ...extra });
+    return getJson(`${REDDIT}${path}.json?${params}`);
+  };
   // Logged-in home listings cover subscriptions. Reddit now redirects combined
   // r/a+b+c listings to its home page instead of returning JSON.
   const path = subreddit ? `/r/${subreddit}/${sort}` : `/${sort}`;
-  const listing = await getJson(`${REDDIT}${path}.json?${params}`);
+  // Reddit's network security refuses /new.json, and other listings ignore `sort=new`, so
+  // New is the newest of what the listings it does allow return. The sort below orders them.
+  const listings = await Promise.all(sort === "new"
+    ? [listing("/top", { t: "hour" }), listing("/top", { t: "day" }), listing("/best")]
+    : [listing(path, sort === "top" ? { t: timeframe } : {})]);
 
-  const posts = listing.data.children
-    .map((c) => c.data)
+  const unique = new Map(listings.flatMap((l) => l.data.children).map((c) => [c.data.name, c.data]));
+  const posts = [...unique.values()]
     .filter((p) => !p.stickied && (nsfw || !p.over_18));
   if (sort === "top") posts.sort((a, b) => b.score - a.score);
   if (sort === "new") posts.sort((a, b) => b.created_utc - a.created_utc);
