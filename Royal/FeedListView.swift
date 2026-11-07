@@ -134,9 +134,12 @@ struct FeedListView<Trailing: View>: View {
                         ForEach(split.new) { postRow($0, nearEnd: endIDs.contains($0.id)) }
                         if collapsed {
                             if hasUnread {
-                                MarkReadButton(pullable: Self.canPull) { markRead(proxy) }
+                                MarkReadButton(pullable: Self.canPull, pullProgress: pullUp / Self.pullThreshold) {
+                                    markRead(proxy)
+                                }
                             } else {
-                                EarlierPostsButton(date: store.previousRefresh, pullable: Self.canPull) {
+                                EarlierPostsButton(date: store.previousRefresh, pullable: Self.canPull,
+                                                   pullProgress: pullUp / Self.pullThreshold) {
                                     revealEarlier(proxy)
                                 }
                             }
@@ -994,6 +997,8 @@ struct MarkReadButton: View {
     // The feed marks its posts read when pulled up past here, so this is just a hint;
     // VoiceOver still offers it as a button.
     var pullable = false
+    // How far the feed is pulled up, from 0 to the threshold at 1.
+    var pullProgress: CGFloat = 0
     let action: () -> Void
 
     var body: some View {
@@ -1016,6 +1021,7 @@ struct MarkReadButton: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
+        .pullHintFade(pullProgress)
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
     }
@@ -1028,6 +1034,8 @@ struct EarlierPostsButton: View {
     // The feed shows the earlier posts when pulled up past here, so this is just a hint;
     // VoiceOver still offers it as a button.
     var pullable = false
+    // How far the feed is pulled up, from 0 to the threshold at 1.
+    var pullProgress: CGFloat = 0
     let action: () -> Void
 
     var body: some View {
@@ -1058,8 +1066,21 @@ struct EarlierPostsButton: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 32)
+        .pullHintFade(pullProgress)
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
+    }
+}
+
+extension View {
+    // The pull indicator rising from the bottom says the same thing as the hint at the end
+    // of the feed, so the hint fades and drifts back as the pull begins, gone well before
+    // the horse arrives, so the two never overlap.
+    func pullHintFade(_ progress: CGFloat) -> some View {
+        let fade = min(max(progress / 0.4, 0), 1)
+        return opacity(1 - fade)
+            .scaleEffect(1 - 0.06 * fade)
+            .blur(radius: 3 * fade)
     }
 }
 
