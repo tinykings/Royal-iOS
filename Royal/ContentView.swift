@@ -65,7 +65,8 @@ struct CombinedFeedView: View {
                      subtitle: showSaved ? "Saved" : "All") {
             HeaderPicker(title: "Show", selection: $showSaved, options: [
                 HeaderOption(value: false, icon: "square.stack", title: "All"),
-                HeaderOption(value: true, icon: "heart", title: "Saved"),
+                HeaderOption(value: true, icon: "heart", title: "Saved",
+                             selectedIcon: "heart.fill", selectedColor: .systemPink),
             ])
         }
     }
