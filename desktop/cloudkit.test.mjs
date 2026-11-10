@@ -135,3 +135,16 @@ test("empty/oversized messages and writes with no valid revision never reach the
   await assert.rejects(f.client.writeProbe("hi", { ...record, recordChangeTag: undefined }));
   assert.equal(f.calls.length, 0);
 });
+
+test("default fetcher invokes the global fetch unbound, as browsers require", async () => {
+  const original = globalThis.fetch;
+  // Browsers throw "Illegal invocation" when native fetch is called as a method.
+  globalThis.fetch = function (url) {
+    if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+    return Promise.resolve({ ok: true, status: 200, json: async () => ({ users: [{ userRecordName: "_abc" }] }) });
+  };
+  try {
+    const client = new CloudKitClient(config, { getToken: async () => null, setToken: async () => {} });
+    assert.equal(await client.currentUser(), "_abc");
+  } finally { globalThis.fetch = original; }
+});

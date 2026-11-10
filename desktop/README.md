@@ -100,6 +100,10 @@ files, close its old tab, and reopen it from the toolbar. Version 0.1.1 corrects
 the identity request to Apple's documented `public/users/caller` endpoint;
 probe reads/writes continue to use the private database. It also separates
 network failures from timeouts and actual CloudKit HTTP responses.
+Version 0.1.2 fixes the cause of the `NETWORK_ERROR`: the client called the
+browser's native `fetch` as a method of its own object, and Chromium refuses that
+call ("Illegal invocation") before sending any request. Node's `fetch` accepts it,
+so the mocked tests missed it. A regression test now covers this.
 
 Click **Check connection**. This uses an intentionally invalid token; HTTP 401
 (`AUTHENTICATION_FAILED`) is an expected successful reachability check. It does

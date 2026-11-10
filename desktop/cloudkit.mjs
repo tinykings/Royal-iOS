@@ -57,9 +57,11 @@ export function callbackToken(value, expectedCallback) {
 }
 
 export class CloudKitClient {
-  constructor(config, { fetcher = fetch, getToken, setToken } = {}) {
+  constructor(config, { fetcher, getToken, setToken } = {}) {
     this.config = validateConfig(config);
-    this.fetcher = fetcher;
+    // Browsers reject native fetch called as a method of another object
+    // ("Illegal invocation"), which would surface as NETWORK_ERROR.
+    this.fetcher = fetcher ?? ((...args) => globalThis.fetch(...args));
     this.getToken = getToken;
     this.setToken = setToken;
   }
