@@ -1,7 +1,7 @@
 const status = document.querySelector("#status");
 
 async function run(request) {
-  const buttons = [...document.querySelectorAll("main > section:not(#feeds) button")];
+  const buttons = [...document.querySelectorAll("#tab-icloud button")];
   buttons.forEach(button => { button.disabled = true; });
   status.textContent = "Working…";
   try {

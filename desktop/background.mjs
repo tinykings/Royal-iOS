@@ -1,4 +1,5 @@
 import { fetchFeed } from "./feeds.mjs";
+import { createLibrary } from "./store.mjs";
 import { CloudKitClient, CloudKitError, appleSignInURL, callbackToken, validateConfig, describeCloudKitError } from "./cloudkit.mjs";
 
 const pageURL = chrome.runtime.getURL("index.html");
@@ -105,14 +106,25 @@ async function handle(request) {
   }
 }
 
+const feedContext = { hasHostAccess: origin => chrome.permissions.contains({ origins: [origin] }) };
+const library = createLibrary({ storage: chrome.storage.local, fetchFeed: request => fetchFeed(request, feedContext) });
+
 chrome.runtime.onMessage.addListener((request, sender, respond) => {
   if (sender.id !== chrome.runtime.id || sender.url !== pageURL) return false;
-  // Feed requests don't touch CloudKit state, so they bypass the CloudKit queue
-  // and run concurrently, one message per source.
-  if (request?.action === "feed") {
-    fetchFeed(request, { hasHostAccess: origin => chrome.permissions.contains({ origins: [origin] }) })
+  // Feed and library requests don't touch CloudKit state, so they bypass the
+  // CloudKit queue. The library serializes its own storage updates.
+  const libraryOperations = {
+    feed: () => fetchFeed(request, feedContext),
+    library: () => library.view(),
+    refreshAll: () => library.refreshAll(),
+    markAllRead: () => library.markAllRead(),
+    setSaved: () => library.setSaved(request.post, request.saved),
+  };
+  const libraryOperation = Object.hasOwn(libraryOperations, request?.action) ? libraryOperations[request.action] : null;
+  if (libraryOperation) {
+    storageReady.then(libraryOperation)
       .then(result => respond({ ok: true, ...result }), error => {
-        console.warn(`[Royal feeds] ${error?.message}`);
+        console.warn(`[Royal feeds] ${request.action}: ${error?.message}`);
         respond({ ok: false, message: /^(Unknown feed|Invalid )/.test(error?.message ?? "") ? error.message : "Feed request failed." });
       });
     return true;

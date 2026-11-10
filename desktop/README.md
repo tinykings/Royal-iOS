@@ -2,9 +2,10 @@
 
 This unpacked Chromium extension opens a full tab with two experiments:
 
-1. **Feeds** (version 0.2.0): Reddit, Hacker News and YouTube lists fetched with
-   the shared root `sources.js` and the desktop browser's own Reddit/YouTube
-   logins. Nothing is synced. See [Feeds](#feeds).
+1. **Feeds** (version 0.3.0): All, Reddit, Hacker News, YouTube and Saved tabs,
+   fetched with the shared root `sources.js` and the desktop browser's own
+   Reddit/YouTube logins. State is stored in this browser only; nothing is
+   synced yet. See [Feeds](#feeds) and [All, seen, and saved](#all-seen-and-saved).
 2. **CloudKit sign-in and private-record probe** (below). It uses Apple's HTTP
    endpoints directly; it does not load a remote JavaScript SDK or require a
    hosted website.
@@ -39,6 +40,32 @@ It does not migrate saves or sync timeline/seen/saved data. Existing iOS storage
 - States per source: a list, **Log into <site> in this browser** (from
   `NotLoggedInError`, with a link to the site), **no access** (host permission
   withheld via Site access), or an error message.
+
+### All, seen, and saved
+
+Added in 0.3.0 (`library.mjs`, `store.mjs`); a port of `Royal/FeedStore.swift`:
+
+- **All** is a stored snapshot of Reddit Top today, Hacker News Top, and YouTube
+  Subscriptions (iOS `FeedKey.combined`), alternated per source with repeated
+  links kept once. It changes only on **Refresh All** (and automatically the
+  first time, when nothing is stored). Opening Royal or using the source tabs
+  never changes it. A source that fails keeps its posts from the previous refresh
+  and shows why above the list.
+- **New vs. earlier** follows `splitByRefresh`: posts not shown by an earlier
+  refresh are new; YouTube's are those above the newest already-seen video, or
+  published after the previous refresh when none was seen; a source new to All
+  isn't marked new. **Mark all read** moves everything to Earlier. Seen ids are
+  capped at 3000, like iOS. Unlike iOS, Earlier is always shown below New.
+- **Saved**: ♡ Save on any post, in any tab. One entry per post id with a
+  sanitized post snapshot, an ISO 8601 `savedAt`, and `isSaved`; unsaving keeps a
+  tombstone, as the sync design requires. Newest first.
+- The worker stores all of this in `chrome.storage.local` (key `royalLibrary`,
+  trusted contexts only) and serializes updates, so a save during a refresh is
+  kept. Source tabs are fetched on first open and on their Refresh button, and are
+  not stored.
+- Verified in Chrome for Testing 156 with the fake hosts: first-open refresh,
+  save from All → Saved, source tabs leaving All unchanged, mark all read, a
+  refresh afterwards, state surviving a browser restart, and unsave from Saved.
 
 ### Worker vs. page: what was verified
 
@@ -95,15 +122,20 @@ by unit tests).
 ### Live test
 
 1. On `chrome://extensions` or `edge://extensions`, **Reload** Royal (now
-   0.2.0) and accept the new site access if asked. Close old Royal tabs and
+   0.3.0) and accept the new site access if asked. Close old Royal tabs and
    reopen from the toolbar. The extension ID and CloudKit callback don't change.
 2. In normal tabs of the same browser profile, log into reddit.com and
    youtube.com. Finish any cookie/consent prompts.
-3. Open Royal. Feeds load automatically; **Refresh feeds** reloads them. Try
-   Reddit **Best** and **Top today**, and YouTube **Subscriptions** and **Home**.
-4. Log out of one site (or use a profile where you're logged out) and refresh:
-   that source should say which site to log into, and the others still load.
-5. Confirm the iCloud probe still signs in and reads/writes as before.
+3. Open Royal. All refreshes the first time. Check the Reddit (**Best**, **Top
+   today**), Hacker News, and YouTube (**Subscriptions**, **Home**) tabs.
+4. Save a post from All and one from a source tab; both appear in **Saved**.
+   Unsave one. Close and reopen the browser: All and Saved are unchanged.
+5. Switch between source tabs and refresh them, then return to All: it must not
+   have changed. **Mark all read**, then **Refresh All**: only posts that arrived
+   since are under New.
+6. Log out of one site and **Refresh All**: that source should say which site to
+   log into while keeping its previous posts, and the others still refresh.
+7. Confirm the **iCloud probe** tab still signs in and reads/writes as before.
 
 Report for each source: post count or the exact status text. Then, from the
 extensions page, **Details → Inspect views: service worker → Console**, send

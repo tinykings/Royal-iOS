@@ -11,19 +11,39 @@
 <body>
   <main>
     <header><span class="crown" aria-hidden="true">♛</span><div><h1>Royal</h1><p>Desktop experiment</p></div></header>
-    <section id="feeds" aria-labelledby="feeds-title">
-      <h2 id="feeds-title">Feeds</h2>
-      <p>Fetched with this browser’s own Reddit and YouTube logins. Nothing here is synced.</p>
-      <form id="feed-options" class="actions">
-        <label>Reddit <select name="reddit"><option value="best">Best</option><option value="top">Top today</option></select></label>
-        <label>YouTube <select name="youtube"><option value="subscriptions">Subscriptions</option><option value="home">Home</option></select></label>
-        <button id="refresh-feeds">Refresh feeds</button>
-      </form>
-      <div class="feed" data-source="reddit"><h3>Reddit</h3><p class="feed-status" role="status">Not loaded</p><ol></ol></div>
-      <div class="feed" data-source="hn"><h3>Hacker News</h3><p class="feed-status" role="status">Not loaded</p><ol></ol></div>
-      <div class="feed" data-source="youtube"><h3>YouTube</h3><p class="feed-status" role="status">Not loaded</p><ol></ol></div>
+    <nav class="tabs" role="tablist" aria-label="Royal">
+      <button role="tab" data-tab="all" aria-selected="true">All</button>
+      <button role="tab" data-tab="reddit">Reddit</button>
+      <button role="tab" data-tab="hn">Hacker News</button>
+      <button role="tab" data-tab="youtube">YouTube</button>
+      <button role="tab" data-tab="saved">Saved</button>
+      <button role="tab" data-tab="icloud">iCloud probe</button>
+    </nav>
+    <p class="note">Fetched with this browser’s own Reddit and YouTube logins. Stored in this browser only; nothing is synced yet.</p>
+    <section id="tab-all" class="tab-panel" role="tabpanel">
+      <div class="actions"><button id="refresh-all">Refresh All</button><button id="mark-read" class="secondary">Mark all read</button></div>
+      <p class="feed-status" id="all-status" role="status">Loading…</p>
+      <ul class="problems" id="all-problems"></ul>
+      <ol id="all-new" class="posts"></ol>
+      <h3 id="all-earlier-title" hidden></h3>
+      <ol id="all-seen" class="posts"></ol>
     </section>
-    <h2>iCloud sync probe</h2>
+    <section id="tab-reddit" class="tab-panel source-tab" role="tabpanel" data-source="reddit" hidden>
+      <form class="actions source-options"><label>Sort <select name="sort"><option value="best">Best</option><option value="top">Top today</option></select></label><button>Refresh</button></form>
+      <p class="feed-status" role="status">Not loaded</p><ol class="posts"></ol>
+    </section>
+    <section id="tab-hn" class="tab-panel source-tab" role="tabpanel" data-source="hn" hidden>
+      <form class="actions source-options"><label>List <select name="list"><option value="top">Top</option><option value="new">New</option></select></label><button>Refresh</button></form>
+      <p class="feed-status" role="status">Not loaded</p><ol class="posts"></ol>
+    </section>
+    <section id="tab-youtube" class="tab-panel source-tab" role="tabpanel" data-source="youtube" hidden>
+      <form class="actions source-options"><label>Feed <select name="feed"><option value="subscriptions">Subscriptions</option><option value="home">Home</option></select></label><button>Refresh</button></form>
+      <p class="feed-status" role="status">Not loaded</p><ol class="posts"></ol>
+    </section>
+    <section id="tab-saved" class="tab-panel" role="tabpanel" hidden>
+      <p class="feed-status" id="saved-status" role="status"></p><ol id="saved-list" class="posts"></ol>
+    </section>
+    <div id="tab-icloud" class="tab-panel" role="tabpanel" hidden>
     <p>Test a private message between Royal on iOS and this browser. Feed, seen-state, and saved-item sync are not connected yet.</p>
     <section aria-labelledby="setup-title">
       <h2 id="setup-title">1. Configure CloudKit</h2>
@@ -56,6 +76,7 @@
       <p>For a browser network error, open this extension’s Details in the browser’s extensions page, inspect its service worker, then retry Sign in. Note the browser error code; request addresses can contain tokens, so do not share full URLs.</p>
     </section>
     <p id="status" role="status" aria-live="polite">Loading configuration…</p>
+    </div>
   </main>
 </body>
 </html>

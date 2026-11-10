@@ -1,7 +1,9 @@
 // Worker-side feed operations. Runs the shared root sources.js (copied byte-for-byte
 // to desktop/sources.js) with the browser's own cookies for each provider host.
-// The page receives normalized posts or a short error, never cookies or raw pages.
+// The page receives type-checked normalized posts (http(s) links only) or a short
+// error, never cookies or raw pages.
 import { fetchReddit, fetchHackerNews, fetchYouTube, NotLoggedInError } from "./sources.js";
+import { normalizePost } from "./library.mjs";
 
 export const FEED_LIMIT = 50;
 
@@ -34,25 +36,6 @@ function validOptions(source, options = {}) {
   return result;
 }
 
-const httpURL = value => {
-  try { const url = new URL(value); return ["https:", "http:"].includes(url.protocol) ? url.href : null; }
-  catch { return null; }
-};
-
-// Only what the list displays; links must be http(s).
-function displayPost(post) {
-  const url = httpURL(post.url);
-  if (!url || typeof post.title !== "string") return null;
-  return {
-    id: String(post.id), title: post.title, url, commentsUrl: httpURL(post.commentsUrl) ?? url,
-    label: String(post.label ?? ""), score: Number.isFinite(post.score) ? post.score : null,
-    comments: Number.isFinite(post.comments) ? post.comments : null,
-    created: Number.isFinite(post.created) ? post.created : Number.isFinite(post.publishedAt) ? post.publishedAt : null,
-    published: typeof post.published === "string" ? post.published : null,
-    nsfw: Boolean(post.nsfw),
-  };
-}
-
 function loginMessage(source, error) {
   if (source === "reddit" && /no followed subreddits/.test(error.message)) {
     return "Reddit returned no followed subreddits. Log into Reddit in this browser and follow at least one subreddit, then refresh.";
@@ -70,7 +53,7 @@ export async function fetchFeed({ source, options } = {}, { hasHostAccess, log =
     return { source, state: "noAccess", message: `Royal doesn't have access to ${new URL(spec.origin.replace("/*", "/")).host}. In the browser's extension Details, set Site access to allow it, then refresh.` };
   }
   try {
-    const posts = (await spec.fetch(chosen)).map(displayPost).filter(Boolean);
+    const posts = (await spec.fetch(chosen)).map(normalizePost).filter(Boolean);
     log.info(`[Royal feeds] ${source}: ${posts.length} posts in ${Date.now() - started} ms`);
     return { source, state: "ok", posts };
   } catch (error) {

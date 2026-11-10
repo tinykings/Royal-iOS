@@ -15,9 +15,17 @@ button:disabled { opacity: .5; cursor: wait; } :focus-visible { outline: 3px sol
 code { display: block; overflow-wrap: anywhere; user-select: all; }
 a { color: light-dark(#806000, #fed655); } dt { font-weight: 600; } dd { margin: 0 0 12px; overflow-wrap: anywhere; white-space: pre-wrap; }
 .actions { display: flex; gap: 12px; flex-wrap: wrap; } #status { position: sticky; bottom: 0; background: light-dark(#fbfaf6, #101114); padding: 12px 0; border-top: 2px solid var(--gold); }
-.feed ol { padding-left: 1.5rem; }
-.feed li { margin: .45rem 0; }
-.feed li a.title { font-weight: 600; }
-.feed .meta { display: block; font-size: .85em; opacity: .75; }
-.feed-status.problem { font-weight: 600; }
-#feed-options { align-items: end; } #feed-options label { margin: 0; }
+nav.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 24px; }
+nav.tabs button { background: transparent; color: inherit; border-color: #888; }
+nav.tabs button[aria-selected="true"] { background: #fed655; color: #16181d; border-color: transparent; }
+.note { font-size: .9em; opacity: .75; }
+.source-options { align-items: end; } .source-options label { margin: 0; }
+ol.posts { padding-left: 0; list-style: none; }
+ol.posts li { display: flex; gap: 10px; align-items: start; padding: 8px 0; border-bottom: 1px solid light-dark(#eee9dc, #2a2c33); }
+ol.posts li > div { flex: 1; min-width: 0; }
+ol.posts a.title { font-weight: 600; }
+ol.posts .meta { display: block; font-size: .85em; opacity: .75; }
+button.save { background: transparent; color: inherit; border-color: #888; padding: 4px 10px; flex: none; }
+button.save[aria-pressed="true"] { color: #e0457b; border-color: #e0457b; }
+.feed-status.problem, .problems { font-weight: 600; }
+#all-earlier-title { border-top: 2px solid var(--gold); padding-top: 12px; font-size: 16px; }
