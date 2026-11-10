@@ -23,8 +23,8 @@ logins: Reddit Best/Top, HN, and YouTube Subscriptions/Home all load. See the
 desktop README.
 Sync (extension 0.4.1): All snapshot, seen, and saved sync
 between desktop clients through a custom private zone; see
-[`sync-schema.md`](sync-schema.md). Tested against a fake CloudKit, not yet
-against Apple's servers or iOS.
+[`sync-schema.md`](sync-schema.md). Turning sync on works live in Production
+(zone, changes, and writes); two-client sync and iOS are not yet verified.
 Only All's explicit-refresh snapshot, seen state, and saved items will sync;
 individual source sections remain local. The probe does not connect real data yet.
 

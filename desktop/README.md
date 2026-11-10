@@ -97,8 +97,13 @@ it yet, so this syncs between desktop browsers only.
   (not loaded by the extension): in unit tests with two devices (import vs.
   tombstones, both-ways saves, same-post conflict, All refresh vs. Mark all read,
   seen union, offline, account isolation, deleted zone), and with the real
-  extension in Chrome for Testing syncing to a second Node client. **Not verified
-  against real CloudKit**: zone creation and `records/changes` are untested.
+  extension in Chrome for Testing syncing to a second Node client.
+- **Live (2026-11-10, Production):** after the 0.4.2 extension-ID change and a
+  token whose redirect URL matches the new callback, Apple sign-in works again
+  and **Turn on sync** succeeds. Zone creation, `records/changes`, and
+  conditional `records/modify` against the deployed schema all work on Apple's
+  servers. Not yet confirmed live: syncing between two profiles (steps 4–7
+  below): saves/unsaves, All refresh and Mark all read, conflicts, and offline.
 
 #### Sync live test (two browser profiles, Production)
 
