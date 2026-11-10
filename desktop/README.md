@@ -34,10 +34,15 @@ data. Existing iOS storage remains authoritative and unchanged.
 5. Copy the exact callback URL shown in the extension, of the form
    `https://<extension-id>.chromiumapp.org/cloudkit`.
 6. In CloudKit Console, create a web API token for the same container. Set its
-   URL redirect/sign-in callback to that exact HTTPS address. Configure allowed
-   origins for the displayed extension origin if Console accepts it. Origin
-   support and the callback behavior are **the experiment**, not verified facts.
-   Do not relax restrictions to all websites just to get the test working.
+   URL redirect/sign-in callback to that exact HTTPS address. Set **Allowed
+   Origins** to **Any Domain**. Verified: Console prefixes every restricted
+   domain with `https://`, so `chrome-extension://<id>` can never match and the
+   token returns `AUTHENTICATION_FAILED` (HTTP 401). A web API token is not a
+   secret, and private data still requires the user's Apple sign-in; the cost is
+   that other sites could use the token to show sign-in for this container.
+   A possible later hardening is rewriting the extension's `Origin` header to its
+   `https://<extension-id>.chromiumapp.org` host and allowing only that domain;
+   this is untested.
 7. Enter the container identifier, web API token, and **Production** environment
    in the extension for TestFlight testing (**Development** for local Debug
    builds). These are application configuration, not an Apple password
