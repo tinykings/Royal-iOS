@@ -18,8 +18,9 @@ fallback is needed for authentication.
 Feeds (2026-11-10, extension 0.2.0): the extension fetches Reddit, Hacker News
 and YouTube with the shared `sources.js` from its service worker. In Chromium
 156, worker and page fetches to host-permitted origins send all unpartitioned
-cookies, even with third-party cookies blocked. Logged-in real-site fetching is
-not yet confirmed; see the desktop README.
+cookies, even with third-party cookies blocked. Verified live with desktop
+logins: Reddit Best/Top, HN, and YouTube Subscriptions/Home all load. See the
+desktop README.
 Only All's explicit-refresh snapshot, seen state, and saved items will sync;
 individual source sections remain local. The probe does not connect real data yet.
 

@@ -80,9 +80,17 @@ Live, logged out (real sites, from this Linux machine):
   403 even on public `.json` listings, whatever the user agent, so this network is
   blocked for anonymous JSON. It says nothing yet about a logged-in desktop session.
 
-**Not verified:** feeds with a real logged-in Reddit or YouTube session, Edge,
-Windows/macOS, and the "Site access: on click / specific sites" path (handled
-by `chrome.permissions.contains`, but only covered by unit tests).
+**Live, logged in (verified 2026-11-10 by the owner):** after logging into
+reddit.com and youtube.com in the same desktop browser profile (Chrome/Edge),
+Reddit Best and Top today, Hacker News, and YouTube Subscriptions and Home all
+loaded in the extension. Reddit's network-security block seen above does not
+apply to the logged-in desktop session's requests from the extension.
+
+**Not yet confirmed:** the logged-out state with a real session (step 4 of the
+live test), the iCloud probe re-check after the 0.2.0 update (step 5), which
+browser/OS combinations beyond the owner's, and the "Site access: on click /
+specific sites" path (handled by `chrome.permissions.contains`, but only covered
+by unit tests).
 
 ### Live test
 
@@ -241,8 +249,8 @@ database or application server would be needed; CloudKit would supply storage.
 
 - Add the extension's feed adapters with explicit Reddit/YouTube permissions and
   desktop logins, reusing the root `sources.js`. Prove authenticated fetching.
-  **Started in 0.2.0:** see [Feeds](#feeds). Authenticated fetching against the
-  real sites has not been confirmed yet.
+  **Done in 0.2.0:** see [Feeds](#feeds). Authenticated fetching from the
+  extension worker was verified live with desktop logins on 2026-11-10.
 - Keep All as a separate ordered snapshot, replaced only on explicit refresh.
   Individual source refreshes must not mutate it. Sync seen/unseen changes and
   per-post saved/unsaved records independently, with durable offline operations.
