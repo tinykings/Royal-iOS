@@ -27,6 +27,7 @@ document.querySelector("#configuration").addEventListener("submit", event => {
 document.querySelector("#sign-in").addEventListener("click", () => run({ action: "signIn" }));
 document.querySelector("#sign-out").addEventListener("click", () => run({ action: "signOut" }));
 document.querySelector("#read").addEventListener("click", () => run({ action: "read" }));
+document.querySelector("#diagnose").addEventListener("click", () => run({ action: "diagnose" }));
 document.querySelector("#write").addEventListener("submit", event => {
   event.preventDefault();
   run({ action: "write", message: new FormData(event.target).get("message") });

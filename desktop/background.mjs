@@ -1,4 +1,4 @@
-import { CloudKitClient, CloudKitError, appleSignInURL, callbackToken, validateConfig } from "./cloudkit.mjs";
+import { CloudKitClient, CloudKitError, appleSignInURL, callbackToken, validateConfig, describeCloudKitError } from "./cloudkit.mjs";
 
 const pageURL = chrome.runtime.getURL("index.html");
 chrome.action.onClicked.addListener(() => { chrome.tabs.create({ url: pageURL }); });
@@ -40,6 +40,22 @@ async function handle(request) {
       const { cloudKitConfig } = await chrome.storage.local.get("cloudKitConfig");
       return { config: cloudKitConfig ?? null, callback: chrome.identity.getRedirectURL("cloudkit"), origin: `chrome-extension://${chrome.runtime.id}` };
     }
+    case "diagnose": {
+      // Intentionally invalid API token: this checks HTTP reachability without
+      // sending the user's configuration or changing their sign-in session.
+      const granted = await chrome.permissions.contains({ origins: ["https://api.apple-cloudkit.com/*"] });
+      if (!granted) return { message: "CloudKit host access is not granted. In the browser's extension Details, allow Royal access to api.apple-cloudkit.com, then retry." };
+      const api = new CloudKitClient({ container: "iCloud.com.tinykings.Royal", environment: "production", apiToken: "royal-connectivity-check-not-a-real-token" }, {
+        getToken: async () => null, setToken: async () => {},
+      });
+      try { await api.currentUser(); }
+      catch (error) {
+        if (!(error instanceof CloudKitError)) throw error;
+        if (error.httpStatus) return { message: `Connection check: CloudKit returned HTTP ${error.httpStatus} (${error.code}) to an intentionally invalid test token. HTTP reachability works. If Sign in still fails, inspect that request in the service worker; check the real token's environment and allowed origin. This check does not verify your token or Apple login.` };
+        return { message: `Connection check: host permission is granted, but the browser delivered no HTTP response. ${describeCloudKitError(error)} No real API token was used.` };
+      }
+      return { message: "Connection check reached CloudKit. This does not verify your configured token or Apple login." };
+    }
     case "configure": {
       const config = validateConfig(request.config);
       await setToken(null);
@@ -57,7 +73,7 @@ async function handle(request) {
         await setToken(callbackToken(result, chrome.identity.getRedirectURL("cloudkit")));
       }
       currentAccount = await api.currentUser();
-      return { message: "Signed in to your private CloudKit database. Read the probe next." };
+      return { message: "Signed in to CloudKit. Read the probe next to verify private database access." };
     }
     case "signOut":
       await setToken(null);
@@ -95,7 +111,7 @@ chrome.runtime.onMessage.addListener((request, sender, respond) => {
   operation.then(result => respond({ ok: true, ...result }), error => {
     // Browser identity errors can include the redirect URL. Never echo them.
     const message = error instanceof CloudKitError
-      ? `CloudKit: ${error.code}. Check the setup guide; conflicts require reading again.`
+      ? describeCloudKitError(error)
       : /^Enter |^Choose |^Read |^Apple Account changed|^Unknown Royal|^Configuration|^CloudKit returned|^Apple sign-in/.test(error.message ?? "")
         ? error.message : "Operation failed. Check Apple sign-in, callback configuration, and connectivity.";
     respond({ ok: false, message });

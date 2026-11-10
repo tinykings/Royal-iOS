@@ -35,6 +35,12 @@
       <form id="write"><label>New message <input name="message" maxlength="500" required value="Hello from Royal desktop"></label><button>Write probe</button></form>
       <p>Read before writing. A conflicting write will stop so you can read the newer version.</p>
     </section>
+    <section aria-labelledby="connection-title">
+      <h2 id="connection-title">Connection troubleshooting</h2>
+      <button id="diagnose" class="secondary">Check connection</button>
+      <p>This checks extension host access and CloudKit reachability with an invalid test token. It does not send your real token or change your sign-in session.</p>
+      <p>For a browser network error, open this extension’s Details in the browser’s extensions page, inspect its service worker, then retry Sign in. Note the browser error code; request addresses can contain tokens, so do not share full URLs.</p>
+    </section>
     <p id="status" role="status" aria-live="polite">Loading configuration…</p>
   </main>
 </body>

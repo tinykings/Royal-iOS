@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Royal — iCloud sync experiment",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Test Royal's private CloudKit sign-in and cross-device records. Does not sync feeds yet.",
   "minimum_chrome_version": "120",
   "permissions": ["identity", "storage"],

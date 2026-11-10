@@ -93,6 +93,37 @@ and adopts rotated web auth tokens. Configuration changes clear the local sessio
 
 ## If extension-only authentication fails
 
+### Immediate NETWORK_ERROR before an Apple login window
+
+Reload Royal on `edge://extensions` or `chrome://extensions` after updating these
+files, close its old tab, and reopen it from the toolbar. Version 0.1.1 corrects
+the identity request to Apple's documented `public/users/caller` endpoint;
+probe reads/writes continue to use the private database. It also separates
+network failures from timeouts and actual CloudKit HTTP responses.
+
+Click **Check connection**. This uses an intentionally invalid token; HTTP 401
+(`AUTHENTICATION_FAILED`) is an expected successful reachability check. It does
+not validate your configured token or clear an existing sign-in session.
+
+- If host access is missing, allow Royal access to `api.apple-cloudkit.com` in
+  the browser's extension Details and retry.
+- If the check reaches CloudKit but Sign in fails, verify that your real token
+  matches the container/environment and allowed extension origin. An HTTP error
+  provides more evidence than a browser fetch failure; don't change callback
+  settings at random before Apple login even opens.
+- If there is still no HTTP response, open Royal's **service worker** inspector
+  from its extensions-page Details. In its Console/Network panel, retry Sign in
+  and note the browser error code (for example `net::ERR_BLOCKED_BY_CLIENT`, a
+  CSP error, or a DNS/TLS error). Requests contain tokens in their query strings:
+  share only the error code/status, not complete request URLs or an exported HAR.
+
+`NETWORK_ERROR` alone cannot identify an origin, connectivity, browser policy, or
+redirect failure. The local tests mock responses; a live Edge login has not yet
+been verified. The connection check neither relaxes allowed origins nor follows
+credential-bearing requests to other hosts.
+
+### Hosted fallback
+
 Use a small static HTTPS page for CloudKit authentication/the UI, with the
 extension supplying authenticated provider requests. This is a fallback, not an
 existing deployment. Keep callback/bridge origins explicit, and validate sender
@@ -124,6 +155,7 @@ References: [Apple web authentication](https://developer.apple.com/library/archi
 [record writes](https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/ModifyRecords.html),
 [Chrome identity callbacks](https://developer.chrome.com/docs/extensions/reference/api/identity),
 [remote-code restrictions](https://developer.chrome.com/docs/extensions/develop/migrate/remote-hosted-code).
+Identity endpoint: [Apple's users/caller reference](https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/FetchCurrentUserIdentity.html).
 See also [iCloud configuration](https://developer.apple.com/documentation/xcode/configuring-icloud-services/),
 [schema deployment](https://developer.apple.com/documentation/cloudkit/deploying-an-icloud-container-s-schema),
 and [CloudKit testing environments](https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitQuickStart/TestingYourApp/TestingYourApp.html).

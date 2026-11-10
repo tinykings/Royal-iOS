@@ -1,14 +1,31 @@
 // No remote SDK: this module uses CloudKit Web Services from the extension worker.
 export const PROBE = { recordName: "royal-sync-probe-v1", recordType: "RoyalSyncProbe" };
+const DATABASES = { "users/caller": "public", "records/lookup": "private", "records/modify": "private" };
 
 export class CloudKitError extends Error {
-  constructor(code, redirectURL) {
+  constructor(code, redirectURL, context = {}) {
     // Never propagate Apple's reason/response URL: these can contain credentials.
     const safeCode = /^[A-Z_]{1,60}$/.test(code) ? code : "REQUEST_FAILED";
     super(safeCode);
     this.code = safeCode;
     this.redirectURL = redirectURL;
+    // Only operation identifiers and numeric status are safe to display. Never
+    // preserve browser error messages, full request URLs, or Apple's reason text.
+    this.operation = Object.hasOwn(DATABASES, context.operation) ? context.operation : undefined;
+    this.httpStatus = Number.isInteger(context.httpStatus) ? context.httpStatus : undefined;
   }
+}
+
+export function describeCloudKitError(error) {
+  const at = error.operation ? ` during ${DATABASES[error.operation]}/${error.operation}` : "";
+  const status = error.httpStatus ? ` (HTTP ${error.httpStatus})` : "";
+  const prefix = `CloudKit: ${error.code}${status}${at}.`;
+  if (error.code === "NETWORK_ERROR") return `${prefix} The browser did not deliver an HTTP response. Run Check connection below, then inspect the extension service worker for the browser's blocked-request or network error.`;
+  if (error.code === "TIMEOUT") return `${prefix} The request timed out. Check your network and retry.`;
+  if (["CONFLICT", "EXISTS"].includes(error.code)) return `${prefix} Another client changed the probe. Read it again before writing.`;
+  if (["AUTHENTICATION_FAILED", "ACCESS_DENIED"].includes(error.code)) return `${prefix} Check the token's container, Production/Development environment, and allowed origin in CloudKit Console.`;
+  if (error.code === "AUTHENTICATION_REQUIRED") return `${prefix} Sign in again; if no Apple window opened, check the token's URL Redirect callback.`;
+  return `${prefix} Check the setup guide for this operation.`;
 }
 
 export function validateConfig({ container, apiToken, environment } = {}) {
@@ -48,9 +65,9 @@ export class CloudKitClient {
   }
 
   async request(operation, body) {
-    if (!["users/current", "records/lookup", "records/modify"].includes(operation)) throw new Error("Unsupported CloudKit operation.");
+    if (!Object.hasOwn(DATABASES, operation)) throw new Error("Unsupported CloudKit operation.");
     const { container, environment, apiToken } = this.config;
-    const url = new URL(`https://api.apple-cloudkit.com/database/1/${container}/${environment}/private/${operation}`);
+    const url = new URL(`https://api.apple-cloudkit.com/database/1/${container}/${environment}/${DATABASES[operation]}/${operation}`);
     url.searchParams.set("ckAPIToken", apiToken);
     const token = await this.getToken();
     if (token) url.searchParams.set("ckWebAuthToken", token);
@@ -63,25 +80,30 @@ export class CloudKitClient {
         credentials: "omit", cache: "no-store", redirect: "error",
         signal: AbortSignal.timeout(20000),
       });
-    } catch {
-      throw new CloudKitError("NETWORK_ERROR");
+    } catch (error) {
+      const code = ["TimeoutError", "AbortError"].includes(error?.name) ? "TIMEOUT" : "NETWORK_ERROR";
+      throw new CloudKitError(code, undefined, { operation });
     }
     let result;
     try { result = await response.json(); }
-    catch { throw new CloudKitError("INVALID_RESPONSE"); }
-    if (!result || typeof result !== "object" || Array.isArray(result)) throw new CloudKitError("INVALID_RESPONSE");
+    catch { throw new CloudKitError("INVALID_RESPONSE", undefined, { operation, httpStatus: response.status }); }
+    if (!result || typeof result !== "object" || Array.isArray(result)) throw new CloudKitError("INVALID_RESPONSE", undefined, { operation, httpStatus: response.status });
     // CloudKit can rotate this token. The worker serializes all operations.
     if (typeof result.ckWebAuthToken === "string" && result.ckWebAuthToken) await this.setToken(result.ckWebAuthToken);
     if (result.serverErrorCode) {
       if (["AUTHENTICATION_REQUIRED", "AUTHENTICATION_FAILED"].includes(result.serverErrorCode)) await this.setToken(null);
-      throw new CloudKitError(result.serverErrorCode, result.redirectURL);
+      throw new CloudKitError(result.serverErrorCode, result.redirectURL, { operation, httpStatus: response.status });
     }
-    if (!response.ok) throw new CloudKitError("REQUEST_FAILED");
+    if (!response.ok) throw new CloudKitError("REQUEST_FAILED", undefined, { operation, httpStatus: response.status });
     return result;
   }
 
   async currentUser() {
-    const user = await this.request("users/current");
+    const response = await this.request("users/caller");
+    // Apple documents a one-element users array. Some deployments return the
+    // identity directly; accept that representation without collecting names.
+    const user = Array.isArray(response.users) && response.users.length === 1 ? response.users[0] : response;
+    if (!user || typeof user !== "object") throw new CloudKitError("INVALID_RESPONSE");
     if (typeof user.userRecordName !== "string" || !user.userRecordName) throw new CloudKitError("INVALID_RESPONSE");
     return user.userRecordName;
   }

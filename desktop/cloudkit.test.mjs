@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CloudKitClient, CloudKitError, PROBE, appleSignInURL, callbackToken, validateConfig } from "./cloudkit.mjs";
+import { CloudKitClient, CloudKitError, PROBE, appleSignInURL, callbackToken, validateConfig, describeCloudKitError } from "./cloudkit.mjs";
 
 const config = { container: "iCloud.com.tinykings.Royal", apiToken: "public-api-token", environment: "development" };
 const record = { ...PROBE, recordChangeTag: "revision-1", fields: { message: { value: "Hello" } } };
@@ -38,17 +38,27 @@ test("callback accepts only the configured origin/path and one non-empty token",
     `${callback}?ckWebAuthToken=`, `${callback}?ckWebAuthToken=a&ckWebAuthToken=b`]) assert.throws(() => callbackToken(value, callback));
 });
 
-test("private requests encode tokens, disable redirects/cache/cookies, and adopt rotated tokens", async () => {
+test("identity uses public/users/caller while record requests remain private and adopt rotated tokens", async () => {
   const f = fixture([reply({ userRecordName: "user", ckWebAuthToken: "rotated" }), reply({ records: [record] })]);
   assert.equal(await f.client.currentUser(), "user");
   assert.equal(f.token(), "rotated");
   await f.client.readProbe();
   assert.equal(f.calls[0].url.searchParams.get("ckWebAuthToken"), "user+/=token");
   assert.equal(f.calls[1].url.searchParams.get("ckWebAuthToken"), "rotated");
+  assert.match(f.calls[0].url.pathname, /\/development\/public\/users\/caller$/);
+  assert.equal(f.calls[0].options.method, "GET");
   assert.match(f.calls[1].url.pathname, /\/development\/private\/records\/lookup$/);
   assert.equal(f.calls[0].options.redirect, "error");
   assert.equal(f.calls[0].options.cache, "no-store");
   assert.equal(f.calls[0].options.credentials, "omit");
+});
+
+test("caller accepts Apple's documented identity array and rejects missing/ambiguous identities", async () => {
+  const f = fixture([reply({ users: [{ userRecordName: "documented-user", nameComponents: { givenName: "unused" } }] })]);
+  assert.equal(await f.client.currentUser(), "documented-user");
+  for (const value of [{ users: [] }, { users: [null] }, { users: [{ userRecordName: "a" }, { userRecordName: "b" }] }]) {
+    await assert.rejects(fixture([reply(value)]).client.currentUser(), CloudKitError);
+  }
 });
 
 test("authentication failure clears the prior session and retains only the redirect internally", async () => {
@@ -94,7 +104,29 @@ test("malformed responses cannot become a valid read or successful write", async
 test("network errors never leak credential-bearing request URLs", async () => {
   const client = new CloudKitClient(config, { getToken: async () => "secret-token", setToken: async () => {},
     fetcher: async url => { throw new Error(`failed ${url}`); } });
-  await assert.rejects(client.currentUser(), error => error.message === "NETWORK_ERROR");
+  await assert.rejects(client.currentUser(), error => {
+    assert.equal(error.message, "NETWORK_ERROR");
+    const description = describeCloudKitError(error);
+    assert.match(description, /public\/users\/caller/);
+    assert.match(description, /Check connection/);
+    assert.ok(!description.includes("secret-token"));
+    assert.ok(!description.includes("conflict"));
+    return true;
+  });
+});
+
+test("timeouts and HTTP failures get distinct safe diagnostics", async () => {
+  const client = new CloudKitClient(config, { getToken: async () => null, setToken: async () => {},
+    fetcher: async () => { throw Object.assign(new Error("secret URL"), { name: "TimeoutError" }); } });
+  await assert.rejects(client.currentUser(), error => error.code === "TIMEOUT" && !describeCloudKitError(error).includes("secret URL"));
+  const f = fixture([{ ok: false, status: 403, json: async () => ({ serverErrorCode: "ACCESS_DENIED", reason: "secret-token" }) }]);
+  await assert.rejects(f.client.currentUser(), error => {
+    const description = describeCloudKitError(error);
+    assert.match(description, /HTTP 403/);
+    assert.match(description, /allowed origin/);
+    assert.ok(!description.includes("secret-token"));
+    return true;
+  });
 });
 
 test("empty/oversized messages and writes with no valid revision never reach the network", async () => {
