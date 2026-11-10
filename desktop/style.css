@@ -15,3 +15,9 @@ button:disabled { opacity: .5; cursor: wait; } :focus-visible { outline: 3px sol
 code { display: block; overflow-wrap: anywhere; user-select: all; }
 a { color: light-dark(#806000, #fed655); } dt { font-weight: 600; } dd { margin: 0 0 12px; overflow-wrap: anywhere; white-space: pre-wrap; }
 .actions { display: flex; gap: 12px; flex-wrap: wrap; } #status { position: sticky; bottom: 0; background: light-dark(#fbfaf6, #101114); padding: 12px 0; border-top: 2px solid var(--gold); }
+.feed ol { padding-left: 1.5rem; }
+.feed li { margin: .45rem 0; }
+.feed li a.title { font-weight: 600; }
+.feed .meta { display: block; font-size: .85em; opacity: .75; }
+.feed-status.problem { font-weight: 600; }
+#feed-options { align-items: end; } #feed-options label { margin: 0; }

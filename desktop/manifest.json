@@ -1,14 +1,19 @@
 {
   "manifest_version": 3,
-  "name": "Royal — iCloud sync experiment",
-  "version": "0.1.2",
-  "description": "Test Royal's private CloudKit sign-in and cross-device records. Does not sync feeds yet.",
+  "name": "Royal — desktop experiment",
+  "version": "0.2.0",
+  "description": "Royal's feeds with your desktop Reddit and YouTube logins, plus a private CloudKit sync probe. Does not sync feeds yet.",
   "minimum_chrome_version": "120",
   "permissions": ["identity", "storage"],
-  "host_permissions": ["https://api.apple-cloudkit.com/*"],
+  "host_permissions": [
+    "https://api.apple-cloudkit.com/*",
+    "https://www.reddit.com/*",
+    "https://hacker-news.firebaseio.com/*",
+    "https://www.youtube.com/*"
+  ],
   "background": { "service_worker": "background.mjs", "type": "module" },
-  "action": { "default_title": "Open Royal sync experiment" },
+  "action": { "default_title": "Open Royal" },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'none'; connect-src https://api.apple-cloudkit.com"
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src https://api.apple-cloudkit.com https://www.reddit.com https://hacker-news.firebaseio.com https://www.youtube.com"
   }
 }

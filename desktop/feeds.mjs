@@ -1,0 +1,90 @@
+// Worker-side feed operations. Runs the shared root sources.js (copied byte-for-byte
+// to desktop/sources.js) with the browser's own cookies for each provider host.
+// The page receives normalized posts or a short error, never cookies or raw pages.
+import { fetchReddit, fetchHackerNews, fetchYouTube, NotLoggedInError } from "./sources.js";
+
+export const FEED_LIMIT = 50;
+
+// One entry per source: the host it needs, where the user logs in, and the bounded
+// options the page may choose. sources.js validates the same values again.
+export const SOURCES = {
+  reddit: {
+    name: "Reddit", origin: "https://www.reddit.com/*", login: "https://www.reddit.com/login/",
+    options: { sort: ["best", "top"], timeframe: ["hour", "day", "week", "month", "year", "all"] },
+    fetch: options => fetchReddit(FEED_LIMIT, options),
+  },
+  hn: {
+    name: "Hacker News", origin: "https://hacker-news.firebaseio.com/*", login: null,
+    options: { list: ["top", "new"] },
+    fetch: options => fetchHackerNews(FEED_LIMIT, options),
+  },
+  youtube: {
+    name: "YouTube", origin: "https://www.youtube.com/*", login: "https://www.youtube.com/",
+    options: { feed: ["subscriptions", "home"] },
+    fetch: options => fetchYouTube(FEED_LIMIT, options),
+  },
+};
+
+function validOptions(source, options = {}) {
+  const allowed = SOURCES[source].options, result = {};
+  for (const [key, value] of Object.entries(options ?? {})) {
+    if (!allowed[key]?.includes(value)) throw new Error(`Invalid ${SOURCES[source].name} option.`);
+    result[key] = value;
+  }
+  return result;
+}
+
+const httpURL = value => {
+  try { const url = new URL(value); return ["https:", "http:"].includes(url.protocol) ? url.href : null; }
+  catch { return null; }
+};
+
+// Only what the list displays; links must be http(s).
+function displayPost(post) {
+  const url = httpURL(post.url);
+  if (!url || typeof post.title !== "string") return null;
+  return {
+    id: String(post.id), title: post.title, url, commentsUrl: httpURL(post.commentsUrl) ?? url,
+    label: String(post.label ?? ""), score: Number.isFinite(post.score) ? post.score : null,
+    comments: Number.isFinite(post.comments) ? post.comments : null,
+    created: Number.isFinite(post.created) ? post.created : Number.isFinite(post.publishedAt) ? post.publishedAt : null,
+    published: typeof post.published === "string" ? post.published : null,
+    nsfw: Boolean(post.nsfw),
+  };
+}
+
+function loginMessage(source, error) {
+  if (source === "reddit" && /no followed subreddits/.test(error.message)) {
+    return "Reddit returned no followed subreddits. Log into Reddit in this browser and follow at least one subreddit, then refresh.";
+  }
+  return `Log into ${SOURCES[source].name} in this browser (open ${new URL(SOURCES[source].login).host} in a normal tab), then refresh.`;
+}
+
+export async function fetchFeed({ source, options } = {}, { hasHostAccess, log = console } = {}) {
+  if (!Object.hasOwn(SOURCES, source)) throw new Error("Unknown feed source.");
+  const spec = SOURCES[source];
+  const chosen = validOptions(source, options);
+  const started = Date.now();
+  if (hasHostAccess && !(await hasHostAccess(spec.origin))) {
+    log.warn(`[Royal feeds] ${source}: host access not granted for ${spec.origin}`);
+    return { source, state: "noAccess", message: `Royal doesn't have access to ${new URL(spec.origin.replace("/*", "/")).host}. In the browser's extension Details, set Site access to allow it, then refresh.` };
+  }
+  try {
+    const posts = (await spec.fetch(chosen)).map(displayPost).filter(Boolean);
+    log.info(`[Royal feeds] ${source}: ${posts.length} posts in ${Date.now() - started} ms`);
+    return { source, state: "ok", posts };
+  } catch (error) {
+    log.warn(`[Royal feeds] ${source}: ${error?.constructor?.name ?? "Error"}: ${error?.message ?? error} (${Date.now() - started} ms)`);
+    if (error instanceof NotLoggedInError) return { source, state: "notLoggedIn", login: spec.login, message: loginMessage(source, error) };
+    if (error instanceof TypeError) {
+      // Browser network failures, including redirects to hosts Royal can't access
+      // (for example YouTube consent or Google sign-in pages).
+      const hint = source === "youtube" ? " YouTube may have redirected to a sign-in or consent page. Open youtube.com in a normal tab, finish any prompt, then refresh." : " Check your connection and refresh.";
+      return { source, state: "error", message: `Couldn't reach ${spec.name}.${hint}` };
+    }
+    if (source === "reddit" && /^Reddit blocked /.test(error?.message ?? "")) {
+      return { source, state: "error", message: `Reddit's network security refused ${error.message.slice("Reddit blocked ".length)}. This is not a login prompt: Reddit blocks some networks and request types.` };
+    }
+    return { source, state: "error", message: `${spec.name}: ${error?.message ?? "fetch failed"}` };
+  }
+}

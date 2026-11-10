@@ -3,13 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Royal — iCloud experiment</title>
+  <title>Royal — desktop experiment</title>
   <link rel="stylesheet" href="style.css">
   <script type="module" src="app.mjs"></script>
+  <script type="module" src="feeds-ui.mjs"></script>
 </head>
 <body>
   <main>
-    <header><span class="crown" aria-hidden="true">♛</span><div><h1>Royal</h1><p>iCloud sync experiment</p></div></header>
+    <header><span class="crown" aria-hidden="true">♛</span><div><h1>Royal</h1><p>Desktop experiment</p></div></header>
+    <section id="feeds" aria-labelledby="feeds-title">
+      <h2 id="feeds-title">Feeds</h2>
+      <p>Fetched with this browser’s own Reddit and YouTube logins. Nothing here is synced.</p>
+      <form id="feed-options" class="actions">
+        <label>Reddit <select name="reddit"><option value="best">Best</option><option value="top">Top today</option></select></label>
+        <label>YouTube <select name="youtube"><option value="subscriptions">Subscriptions</option><option value="home">Home</option></select></label>
+        <button id="refresh-feeds">Refresh feeds</button>
+      </form>
+      <div class="feed" data-source="reddit"><h3>Reddit</h3><p class="feed-status" role="status">Not loaded</p><ol></ol></div>
+      <div class="feed" data-source="hn"><h3>Hacker News</h3><p class="feed-status" role="status">Not loaded</p><ol></ol></div>
+      <div class="feed" data-source="youtube"><h3>YouTube</h3><p class="feed-status" role="status">Not loaded</p><ol></ol></div>
+    </section>
+    <h2>iCloud sync probe</h2>
     <p>Test a private message between Royal on iOS and this browser. Feed, seen-state, and saved-item sync are not connected yet.</p>
     <section aria-labelledby="setup-title">
       <h2 id="setup-title">1. Configure CloudKit</h2>

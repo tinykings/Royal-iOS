@@ -1,15 +1,110 @@
-# CloudKit authentication and private-record spike
+# Royal desktop extension (experiment)
 
-This unpacked Chromium extension opens a full tab with a CloudKit sign-in and a
-small private read/write probe. It uses Apple's HTTP endpoints directly; it does
-not load a remote JavaScript SDK or require a hosted website.
+This unpacked Chromium extension opens a full tab with two experiments:
+
+1. **Feeds** (version 0.2.0): Reddit, Hacker News and YouTube lists fetched with
+   the shared root `sources.js` and the desktop browser's own Reddit/YouTube
+   logins. Nothing is synced. See [Feeds](#feeds).
+2. **CloudKit sign-in and private-record probe** (below). It uses Apple's HTTP
+   endpoints directly; it does not load a remote JavaScript SDK or require a
+   hosted website.
 
 **Status:** verified live on 2026-11-10 in the Production environment. Apple
 sign-in completed inside the extension (no hosted page), and the private probe
 record synced both ways between the extension and a TestFlight iOS build. This
 needs a web API token whose Allowed Origins is Any Domain (see setup step 6).
-It does not yet fetch desktop feeds, migrate saves, or sync timeline/seen/saved
-data. Existing iOS storage remains authoritative and unchanged.
+It does not migrate saves or sync timeline/seen/saved data. Existing iOS storage remains authoritative and unchanged.
+
+## Feeds
+
+### How it works
+
+- `desktop/sources.js` is a **byte-for-byte copy** of the root `sources.js`,
+  because an unpacked extension can only load files inside its own folder. It is
+  not a fork: `desktop/feeds.test.mjs` fails if the two differ. After changing
+  the root file, run `cp sources.js desktop/sources.js` and `node --test`. (A
+  symlink loads in Chrome on Linux, but git checkouts on Windows without
+  symlink support turn it into a text file, so the copy is safer.)
+- The service worker runs the fetches (`feeds.mjs`) and returns only display
+  fields for each post (title, http(s) links, label, score, comments, age). The
+  page (`feeds-ui.mjs`) sends one bounded message per source: `reddit`
+  (`sort` best/top, `timeframe`), `hn` (`list` top/new), `youtube` (`feed`
+  subscriptions/home). Any other source or option is refused; there is no URL
+  proxy. Feed requests bypass the CloudKit queue, so they don't block the probe.
+- Host permissions: `www.reddit.com`, `hacker-news.firebaseio.com`,
+  `www.youtube.com`, plus the separate `api.apple-cloudkit.com` entry for
+  CloudKit. CSP `connect-src` lists the same four hosts. There is still no
+  `cookies` permission: cookies come from the browser's normal cookie jar
+  because `sources.js` uses `credentials: "include"`.
+- States per source: a list, **Log into <site> in this browser** (from
+  `NotLoggedInError`, with a link to the site), **no access** (host permission
+  withheld via Site access), or an error message.
+
+### Worker vs. page: what was verified
+
+Checked on 2026-11-10 with Chrome for Testing 156 (headless, Linux), loading this
+`desktop/` folder unpacked. Fake Reddit/YouTube/HN servers were mapped onto the
+real hostnames (`--host-resolver-rules`). Cookies were set by visiting those
+hosts as top-level pages, the same way a real login sets them:
+
+- From **both** the service worker and the extension page, `fetch(...,
+  { credentials: "include" })` to a host-permitted origin sent every unpartitioned
+  cookie: `SameSite=Strict`, `Lax`, `None`, unspecified (Lax by default), and
+  `HttpOnly`. Only a `Partitioned` (CHIPS) cookie was not sent. Requests had
+  `Sec-Fetch-Site: none` and no `Origin` header.
+- The same held with **third-party cookies blocked** (`cookie_controls_mode: 1`).
+  A control confirmed the blocking was on: a YouTube iframe inside a Reddit page
+  received no cookies.
+- The shared `sources.js` fetched and parsed fake logged-in Reddit Best/Top, HN,
+  and YouTube Subscriptions from the worker, and the list rendered in the page.
+  The YouTube HTML parse (`parseYouTubeFeed`) is plain string/JSON work, so it
+  needs no DOM and runs in the worker.
+- A redirect from YouTube to an unpermitted host (for example
+  `consent.youtube.com`) fails as `TypeError: Failed to fetch` in both contexts
+  (CORS/CSP), never as a readable page. Royal reports it as "YouTube may have
+  redirected to a sign-in or consent page". The host list was deliberately not
+  widened to Google sign-in/consent hosts.
+
+Since both contexts behave the same, fetching runs in the **worker**. It keeps
+provider responses out of the UI, it is where the CloudKit client already
+lives, and it is what a later hosted UI or bridge would need anyway. Edge was
+not tested; it uses the same Chromium networking.
+
+Live, logged out (real sites, from this Linux machine):
+
+- Hacker News: 50 stories loaded from the worker.
+- YouTube Subscriptions: `NotLoggedInError` ("YouTube session is logged out"),
+  shown as "Log into YouTube in this browser".
+- Reddit: HTTP 403 "blocked by network security" on
+  `/subreddits/mine/subscriber.json`. Plain `curl` from the same IP gets the same
+  403 even on public `.json` listings, whatever the user agent, so this network is
+  blocked for anonymous JSON. It says nothing yet about a logged-in desktop session.
+
+**Not verified:** feeds with a real logged-in Reddit or YouTube session, Edge,
+Windows/macOS, and the "Site access: on click / specific sites" path (handled
+by `chrome.permissions.contains`, but only covered by unit tests).
+
+### Live test
+
+1. On `chrome://extensions` or `edge://extensions`, **Reload** Royal (now
+   0.2.0) and accept the new site access if asked. Close old Royal tabs and
+   reopen from the toolbar. The extension ID and CloudKit callback don't change.
+2. In normal tabs of the same browser profile, log into reddit.com and
+   youtube.com. Finish any cookie/consent prompts.
+3. Open Royal. Feeds load automatically; **Refresh feeds** reloads them. Try
+   Reddit **Best** and **Top today**, and YouTube **Subscriptions** and **Home**.
+4. Log out of one site (or use a profile where you're logged out) and refresh:
+   that source should say which site to log into, and the others still load.
+5. Confirm the iCloud probe still signs in and reads/writes as before.
+
+Report for each source: post count or the exact status text. Then, from the
+extensions page, **Details → Inspect views: service worker → Console**, send
+every line starting with `[Royal feeds]` (they contain only the source, error
+class, message, and timing; no cookies or tokens), plus any red errors, such as
+CSP violations (`violates the following Content Security Policy directive`),
+`net::ERR_…` codes, or `Illegal invocation`. In the Network panel, the status
+code of a failing `www.reddit.com` or `www.youtube.com` request is useful.
+Don't export a HAR or copy request headers: they contain your session cookies.
 
 ## Apple setup (once, on the developer account)
 
@@ -92,8 +187,9 @@ configuration, so the experiment is not gated by the installation channel.
    web auth token is session-only and another Apple sign-in may be needed.
 
 The native probe writes only the probe record and uses revision-checked saves.
-The extension is also bounded to the probe operations;
-it has no Reddit, YouTube, cookies, content-script, or external messaging access.
+The extension's CloudKit operations are bounded to the probe. Its only other
+network access is the feed hosts listed under [Feeds](#feeds); it has no
+`cookies` permission, content scripts, or external messaging.
 User tokens never return to the tab UI or console; the worker serializes requests
 and adopts rotated web auth tokens. Configuration changes clear the local session.
 “Clear Royal session” clears local credentials, not the global Apple login.
@@ -145,6 +241,8 @@ database or application server would be needed; CloudKit would supply storage.
 
 - Add the extension's feed adapters with explicit Reddit/YouTube permissions and
   desktop logins, reusing the root `sources.js`. Prove authenticated fetching.
+  **Started in 0.2.0:** see [Feeds](#feeds). Authenticated fetching against the
+  real sites has not been confirmed yet.
 - Keep All as a separate ordered snapshot, replaced only on explicit refresh.
   Individual source refreshes must not mutate it. Sync seen/unseen changes and
   per-post saved/unsaved records independently, with durable offline operations.
@@ -155,7 +253,9 @@ database or application server would be needed; CloudKit would supply storage.
 
 ## Local checks
 
-Run `node --test` at the repository root. Tests mock CloudKit protocol behavior;
+Run `node --test` at the repository root. It also checks that
+`desktop/sources.js` matches the root `sources.js`, and that feed code calls
+`fetch` as a plain function. Tests mock CloudKit protocol behavior;
 they cannot establish Apple login compatibility, provisioning, or record access.
 This workspace is Linux and has no Xcode/iOS Simulator, so native compilation
 requires a Mac; the phone acceptance test can use Xcode Cloud

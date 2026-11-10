@@ -1,3 +1,4 @@
+import { fetchFeed } from "./feeds.mjs";
 import { CloudKitClient, CloudKitError, appleSignInURL, callbackToken, validateConfig, describeCloudKitError } from "./cloudkit.mjs";
 
 const pageURL = chrome.runtime.getURL("index.html");
@@ -106,6 +107,16 @@ async function handle(request) {
 
 chrome.runtime.onMessage.addListener((request, sender, respond) => {
   if (sender.id !== chrome.runtime.id || sender.url !== pageURL) return false;
+  // Feed requests don't touch CloudKit state, so they bypass the CloudKit queue
+  // and run concurrently, one message per source.
+  if (request?.action === "feed") {
+    fetchFeed(request, { hasHostAccess: origin => chrome.permissions.contains({ origins: [origin] }) })
+      .then(result => respond({ ok: true, ...result }), error => {
+        console.warn(`[Royal feeds] ${error?.message}`);
+        respond({ ok: false, message: /^(Unknown feed|Invalid )/.test(error?.message ?? "") ? error.message : "Feed request failed." });
+      });
+    return true;
+  }
   const operation = queue.then(() => handle(request));
   queue = operation.catch(() => {});
   operation.then(result => respond({ ok: true, ...result }), error => {
