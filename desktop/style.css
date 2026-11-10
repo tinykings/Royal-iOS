@@ -29,3 +29,4 @@ button.save { background: transparent; color: inherit; border-color: #888; paddi
 button.save[aria-pressed="true"] { color: #e0457b; border-color: #e0457b; }
 .feed-status.problem, .problems { font-weight: 600; }
 #all-earlier-title { border-top: 2px solid var(--gold); padding-top: 12px; font-size: 16px; }
+code.inline { display: inline; }

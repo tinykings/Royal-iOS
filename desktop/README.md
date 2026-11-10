@@ -5,8 +5,8 @@ This unpacked Chromium extension opens a full tab with two experiments:
 1. **Feeds** (version 0.4.0): All, Reddit, Hacker News, YouTube and Saved tabs,
    fetched with the shared root `sources.js` and the desktop browser's own
    Reddit/YouTube logins. See [Feeds](#feeds) and [All, seen, and saved](#all-seen-and-saved).
-   Optional CloudKit sync of All, seen and saved, **Development environment
-   only** and desktop-to-desktop for now: see [Sync experiment](#sync-experiment).
+   Optional CloudKit sync of All, seen and saved, desktop-to-desktop for now:
+   see [Sync experiment](#sync-experiment).
 2. **CloudKit sign-in and private-record probe** (below). It uses Apple's HTTP
    endpoints directly; it does not load a remote JavaScript SDK or require a
    hosted website.
@@ -74,9 +74,12 @@ Added in 0.4.0 (`sync.mjs`, `sync-runner.mjs`); the wire format and conflict
 rules are in [docs/sync-schema.md](../docs/sync-schema.md). iOS doesn't implement
 it yet, so this syncs between desktop browsers only.
 
-- Opt-in, in **iCloud probe → 4. Sync All, seen, and saved**. Refused unless the
-  configured environment is **Development**, so it can't touch Production data
-  that TestFlight builds use.
+- Opt-in, in **iCloud probe → 4. Sync All, seen, and saved**, in whichever
+  environment step 1 selects (Production or Development). It reads and writes
+  only its own zone, so it can't change the iOS app's data: iOS keeps saved
+  posts in iCloud key-value storage and never reads `RoyalSync` yet. Production
+  rejects record types that haven't been deployed, so set up the schema first
+  (live test step 1).
 - Records live in a custom private zone `RoyalSync`: one `RoyalSavedPost` per
   post (unsaves are tombstones), one `RoyalSeen` (union-merged), and one
   `RoyalAllSnapshot`. Writes are conditional on the change tag; conflicts pull
@@ -95,23 +98,33 @@ it yet, so this syncs between desktop browsers only.
   tombstones, both-ways saves, same-post conflict, All refresh vs. Mark all read,
   seen union, offline, account isolation, deleted zone), and with the real
   extension in Chrome for Testing syncing to a second Node client. **Not verified
-  against real CloudKit**: zone creation, `records/changes`, and Development's
-  automatic record-type creation by the web API are untested.
+  against real CloudKit**: zone creation and `records/changes` are untested.
 
-#### Sync live test (two browser profiles, Development)
+#### Sync live test (two browser profiles, Production)
 
-1. In CloudKit Console, select **Development**. Use a web API token that works
-   for Development (create one there if the Production token is refused), with
-   the same callback URL and Any Domain. No manual schema is expected: Development
-   normally creates record types on first write. If **Turn on sync** fails with a
-   `BAD_REQUEST`/schema error, create the three record types from
-   `docs/sync-schema.md` (all String fields except `isSaved` and
-   `schemaVersion`, which are Int(64)) and retry.
-2. Load Royal in two browser profiles (or Chrome and Edge). Each profile has a
-   different extension ID, so add each callback URL to the token's redirect, or
-   use one token per profile.
-3. In each: iCloud probe tab → Development → Save → Sign in with Apple (same
-   Apple Account) → **Turn on sync**. Expect "Synced. Received …, sent …".
+1. **Schema (once).** Production never creates record types on its own; they
+   must be made in Development and deployed. In CloudKit Console, choose
+   container `iCloud.com.tinykings.Royal` → **Development** → Schema → Record
+   Types, and create:
+   - `RoyalSavedPost`: `postID` String, `post` String, `savedAt` String,
+     `isSaved` Int(64), `schemaVersion` Int(64)
+   - `RoyalSeen`: `ids` String, `sources` String, `schemaVersion` Int(64)
+   - `RoyalAllSnapshot`: `snapshot` String, `schemaVersion` Int(64)
+
+   No indexes are needed: Royal never queries, it fetches zone changes. Then
+   **Deploy Schema Changes…** to Production. This only adds record types; it
+   doesn't change existing records, the probe, or the TestFlight app. The
+   `RoyalSync` zone is created by Royal itself. Keep the existing Production web
+   API token.
+2. Load the **same `desktop/` folder** unpacked in a second browser profile (or
+   in both Chrome and Edge). An unpacked extension's ID comes from its folder
+   path, so it should match and the token's existing callback works. Check that
+   the callback URL shown in the iCloud probe tab is the same in both; if it
+   isn't, that profile needs its own token or callback.
+3. In each: iCloud probe tab → Production → Save → Sign in with Apple (same
+   Apple Account) → **Turn on sync**. Expect "Synced. Received …, sent …". An
+   error naming a record type, or `BAD_REQUEST` on `records/modify`, means the
+   schema from step 1 isn't deployed to Production yet.
 4. Save a post in profile 1; in profile 2 press **Sync now** (or reopen Royal): it
    appears in Saved. Unsave it in 2; sync 1: it's gone.
 5. **Refresh All** in 1, sync 2: identical All list and "Refreshed" time.
@@ -180,7 +193,7 @@ by unit tests).
 ### Live test
 
 1. On `chrome://extensions` or `edge://extensions`, **Reload** Royal (now
-   0.4.0) and accept the new site access if asked. Close old Royal tabs and
+   0.4.1) and accept the new site access if asked. Close old Royal tabs and
    reopen from the toolbar. The extension ID and CloudKit callback don't change.
 2. In normal tabs of the same browser profile, log into reddit.com and
    youtube.com. Finish any cookie/consent prompts.

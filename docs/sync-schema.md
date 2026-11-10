@@ -2,8 +2,12 @@
 
 Status: implemented by the desktop extension (`desktop/sync.mjs`) and tested
 against a fake CloudKit and between two desktop clients. **Not implemented on iOS
-yet**, and limited to the CloudKit **Development** environment until it is. iOS
-must read and write exactly this format before the schema is deployed to Production.
+yet**. The desktop syncs in either environment; for Production the record types
+below must be created in Development and deployed (Production never creates
+them). iOS must read and write exactly this format before relying on it.
+
+Console field types: every field is String except `isSaved` and
+`schemaVersion`, which are Int(64). No indexes are required.
 
 ## Zone
 
@@ -104,4 +108,4 @@ intentions apart, never pushing them to the new account.
   API terms require removing deleted content).
 - Whether iOS's YouTube "videos above the newest seen" rule stays per device or
   uses the synced snapshot's YouTube list (desktop uses the snapshot).
-- When to deploy to Production and retire the `NSUbiquitousKeyValueStore` saved list.
+- When to retire the `NSUbiquitousKeyValueStore` saved list on iOS.

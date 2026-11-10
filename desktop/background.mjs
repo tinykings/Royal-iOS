@@ -109,7 +109,6 @@ async function handle(request) {
     }
     case "enableSync": {
       const api = await client();
-      if (api.config.environment !== "development") throw new Error("Sync is limited to the Development environment in this experiment. Choose Development in step 1, save, and sign in again.");
       const account = await api.currentUser();
       const { container, environment } = api.config;
       await library.useSync({ account, container, environment }, startSync);
