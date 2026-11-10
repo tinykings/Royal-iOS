@@ -15,7 +15,7 @@ test("worker isolates callers/accounts, serializes token use, and requires rerea
   let messageListener;
   let hostAccess = true, networkFails = false;
   globalThis.chrome = {
-    runtime: { id: "royal-test", getURL: () => pageURL, onMessage: { addListener: fn => { messageListener = fn; } } },
+    runtime: { id: "royal-test", getURL: () => pageURL, sendMessage: async () => {}, onMessage: { addListener: fn => { messageListener = fn; } } },
     action: { onClicked: { addListener: fn => listeners.push(fn) } },
     tabs: { create: async () => {} },
     permissions: { contains: async () => hostAccess },

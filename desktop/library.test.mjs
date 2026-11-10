@@ -76,7 +76,7 @@ test("saves are newest first, unsaves leave tombstones, and posts are sanitized"
 
 function memoryStorage() {
   const values = {};
-  return { values, get: async key => ({ [key]: structuredClone(values[key]) }), set: async entries => { Object.assign(values, structuredClone(entries)); } };
+  return { values, get: async key => ({ [key]: structuredClone(values[key]) }), set: async entries => { Object.assign(values, structuredClone(entries)); }, remove: async key => { delete values[key]; } };
 }
 
 test("the store serializes updates, shares one refresh, and keeps All apart from source fetches", async () => {

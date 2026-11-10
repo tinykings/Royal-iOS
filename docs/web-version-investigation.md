@@ -21,6 +21,10 @@ and YouTube with the shared `sources.js` from its service worker. In Chromium
 cookies, even with third-party cookies blocked. Verified live with desktop
 logins: Reddit Best/Top, HN, and YouTube Subscriptions/Home all load. See the
 desktop README.
+Sync (extension 0.4.0, Development only): All snapshot, seen, and saved sync
+between desktop clients through a custom private zone; see
+[`sync-schema.md`](sync-schema.md). Tested against a fake CloudKit, not yet
+against Apple's servers or iOS.
 Only All's explicit-refresh snapshot, seen state, and saved items will sync;
 individual source sections remain local. The probe does not connect real data yet.
 

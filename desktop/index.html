@@ -19,7 +19,7 @@
       <button role="tab" data-tab="saved">Saved</button>
       <button role="tab" data-tab="icloud">iCloud probe</button>
     </nav>
-    <p class="note">Fetched with this browser’s own Reddit and YouTube logins. Stored in this browser only; nothing is synced yet.</p>
+    <p class="note">Fetched with this browser’s own Reddit and YouTube logins. <span id="sync-note">Stored in this browser only.</span></p>
     <section id="tab-all" class="tab-panel" role="tabpanel">
       <div class="actions"><button id="refresh-all">Refresh All</button><button id="mark-read" class="secondary">Mark all read</button></div>
       <p class="feed-status" id="all-status" role="status">Loading…</p>
@@ -68,6 +68,13 @@
       <dl><dt>Cloud message</dt><dd id="message">Not read</dd><dt>Written at</dt><dd id="written-at">—</dd></dl>
       <form id="write"><label>New message <input name="message" maxlength="500" required value="Hello from Royal desktop"></label><button>Write probe</button></form>
       <p>Read before writing. A conflicting write will stop so you can read the newer version.</p>
+    </section>
+    <section aria-labelledby="sync-title">
+      <h2 id="sync-title">4. Sync All, seen, and saved (experiment)</h2>
+      <p>Development environment only, so it can't touch the iOS app's real data. Sign in first (step 2) with Development selected in step 1.</p>
+      <div class="actions"><button id="sync-enable">Turn on sync</button><button id="sync-now" class="secondary">Sync now</button><button id="sync-disable" class="secondary">Turn off sync</button></div>
+      <p id="sync-status" role="status">Sync is off.</p>
+      <p>Turning sync on copies this browser’s library to the signed-in Apple Account without overwriting anything already there. Each Apple Account keeps its own copy in this browser.</p>
     </section>
     <section aria-labelledby="connection-title">
       <h2 id="connection-title">Connection troubleshooting</h2>

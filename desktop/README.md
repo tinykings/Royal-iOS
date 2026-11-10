@@ -2,10 +2,11 @@
 
 This unpacked Chromium extension opens a full tab with two experiments:
 
-1. **Feeds** (version 0.3.0): All, Reddit, Hacker News, YouTube and Saved tabs,
+1. **Feeds** (version 0.4.0): All, Reddit, Hacker News, YouTube and Saved tabs,
    fetched with the shared root `sources.js` and the desktop browser's own
-   Reddit/YouTube logins. State is stored in this browser only; nothing is
-   synced yet. See [Feeds](#feeds) and [All, seen, and saved](#all-seen-and-saved).
+   Reddit/YouTube logins. See [Feeds](#feeds) and [All, seen, and saved](#all-seen-and-saved).
+   Optional CloudKit sync of All, seen and saved, **Development environment
+   only** and desktop-to-desktop for now: see [Sync experiment](#sync-experiment).
 2. **CloudKit sign-in and private-record probe** (below). It uses Apple's HTTP
    endpoints directly; it does not load a remote JavaScript SDK or require a
    hosted website.
@@ -67,6 +68,63 @@ Added in 0.3.0 (`library.mjs`, `store.mjs`); a port of `Royal/FeedStore.swift`:
   save from All → Saved, source tabs leaving All unchanged, mark all read, a
   refresh afterwards, state surviving a browser restart, and unsave from Saved.
 
+### Sync experiment
+
+Added in 0.4.0 (`sync.mjs`, `sync-runner.mjs`); the wire format and conflict
+rules are in [docs/sync-schema.md](../docs/sync-schema.md). iOS doesn't implement
+it yet, so this syncs between desktop browsers only.
+
+- Opt-in, in **iCloud probe → 4. Sync All, seen, and saved**. Refused unless the
+  configured environment is **Development**, so it can't touch Production data
+  that TestFlight builds use.
+- Records live in a custom private zone `RoyalSync`: one `RoyalSavedPost` per
+  post (unsaves are tombstones), one `RoyalSeen` (union-merged), and one
+  `RoyalAllSnapshot`. Writes are conditional on the change tag; conflicts pull
+  and reapply the pending intention.
+- Pending changes are stored with the library, so they survive being offline and
+  browser restarts, and are sent on the next sync. Royal syncs when the page opens,
+  about 1.5 s after each change, and on **Sync now**. There's no background timer.
+- Turning sync on imports this browser's library into the signed-in account
+  without overwriting existing records or tombstones. Each account/container/
+  environment has its own copy in this browser; another Apple Account pauses sync
+  until you turn it on for that account. **Turn off sync** (or saving a new
+  configuration) switches back to the local library and keeps the synced copy.
+  Clearing the browser's extension data removes both.
+- Verified only against `fake-cloudkit.mjs`, a test-only in-memory CloudKit
+  (not loaded by the extension): in unit tests with two devices (import vs.
+  tombstones, both-ways saves, same-post conflict, All refresh vs. Mark all read,
+  seen union, offline, account isolation, deleted zone), and with the real
+  extension in Chrome for Testing syncing to a second Node client. **Not verified
+  against real CloudKit**: zone creation, `records/changes`, and Development's
+  automatic record-type creation by the web API are untested.
+
+#### Sync live test (two browser profiles, Development)
+
+1. In CloudKit Console, select **Development**. Use a web API token that works
+   for Development (create one there if the Production token is refused), with
+   the same callback URL and Any Domain. No manual schema is expected: Development
+   normally creates record types on first write. If **Turn on sync** fails with a
+   `BAD_REQUEST`/schema error, create the three record types from
+   `docs/sync-schema.md` (all String fields except `isSaved` and
+   `schemaVersion`, which are Int(64)) and retry.
+2. Load Royal in two browser profiles (or Chrome and Edge). Each profile has a
+   different extension ID, so add each callback URL to the token's redirect, or
+   use one token per profile.
+3. In each: iCloud probe tab → Development → Save → Sign in with Apple (same
+   Apple Account) → **Turn on sync**. Expect "Synced. Received …, sent …".
+4. Save a post in profile 1; in profile 2 press **Sync now** (or reopen Royal): it
+   appears in Saved. Unsave it in 2; sync 1: it's gone.
+5. **Refresh All** in 1, sync 2: identical All list and "Refreshed" time.
+   **Mark all read** in 2, sync 1: everything is under Earlier.
+6. Conflict: with both synced, unsave a post in 1 and sync; then without syncing
+   2 first, save something else in 2 and toggle the same post in 2; Sync now in 2,
+   then in 1. Both end with 2's last choice.
+7. Offline: turn off the network, save a post, note "1 change pending"; reconnect
+   and Sync now: pending returns to 0.
+
+Report the sync status text, and service-worker console lines starting with
+`[Royal sync]` (they hold counts and CloudKit error codes only, no tokens).
+
 ### Worker vs. page: what was verified
 
 Checked on 2026-11-10 with Chrome for Testing 156 (headless, Linux), loading this
@@ -122,7 +180,7 @@ by unit tests).
 ### Live test
 
 1. On `chrome://extensions` or `edge://extensions`, **Reload** Royal (now
-   0.3.0) and accept the new site access if asked. Close old Royal tabs and
+   0.4.0) and accept the new site access if asked. Close old Royal tabs and
    reopen from the toolbar. The extension ID and CloudKit callback don't change.
 2. In normal tabs of the same browser profile, log into reddit.com and
    youtube.com. Finish any cookie/consent prompts.
@@ -227,7 +285,8 @@ configuration, so the experiment is not gated by the installation channel.
    web auth token is session-only and another Apple sign-in may be needed.
 
 The native probe writes only the probe record and uses revision-checked saves.
-The extension's CloudKit operations are bounded to the probe. Its only other
+The extension's CloudKit operations are bounded to the probe and the opt-in
+sync zone described under [Sync experiment](#sync-experiment). Its only other
 network access is the feed hosts listed under [Feeds](#feeds); it has no
 `cookies` permission, content scripts, or external messaging.
 User tokens never return to the tab UI or console; the worker serializes requests

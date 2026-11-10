@@ -1,5 +1,7 @@
 import { fetchFeed } from "./feeds.mjs";
 import { createLibrary } from "./store.mjs";
+import { startSync } from "./sync.mjs";
+import { runSync, SyncPausedError } from "./sync-runner.mjs";
 import { CloudKitClient, CloudKitError, appleSignInURL, callbackToken, validateConfig, describeCloudKitError } from "./cloudkit.mjs";
 
 const pageURL = chrome.runtime.getURL("index.html");
@@ -62,6 +64,9 @@ async function handle(request) {
       const config = validateConfig(request.config);
       await setToken(null);
       await chrome.storage.local.set({ cloudKitConfig: config });
+      // Synced libraries belong to one container/environment/account.
+      await library.useSync(null);
+      chrome.runtime.sendMessage({ event: "libraryChanged" }).catch(() => {});
       return { message: "Configuration saved. Sign in with Apple next." };
     }
     case "signIn": {
@@ -102,12 +107,55 @@ async function handle(request) {
       catch (error) { hasRead = false; throw error; }
       return { record: displayRecord(probe), message: "Private probe written. Read it from iOS to verify sync." };
     }
+    case "enableSync": {
+      const api = await client();
+      if (api.config.environment !== "development") throw new Error("Sync is limited to the Development environment in this experiment. Choose Development in step 1, save, and sign in again.");
+      const account = await api.currentUser();
+      const { container, environment } = api.config;
+      await library.useSync({ account, container, environment }, startSync);
+      return syncNow(api);
+    }
+    case "disableSync":
+      return { ...(await library.useSync(null)), message: "Sync is off. Showing this browser's local library; the synced copy and its pending changes are kept for when you turn sync on again." };
+    case "sync":
+      return syncNow(await client());
     default: throw new Error("Unknown Royal operation.");
   }
 }
 
+async function syncNow(api, { notify = false } = {}) {
+  syncTimer = clearTimeout(syncTimer);
+  let message;
+  try {
+    const result = await runSync({ api, library });
+    message = `Synced. Received ${result.pulled}, sent ${result.pushed}${result.failed ? `, ${result.failed} refused` : ""}; ${result.pending} pending.`;
+    console.info(`[Royal sync] ${message}`);
+  } catch (error) {
+    message = error instanceof SyncPausedError ? `Sync paused: ${error.message}`
+      : error instanceof CloudKitError ? `Sync failed: ${describeCloudKitError(error)} Changes stay pending.`
+        : "Sync failed. Changes stay pending.";
+    console.warn(`[Royal sync] ${error instanceof CloudKitError ? `${error.code}${error.httpStatus ? ` HTTP ${error.httpStatus}` : ""}${error.operation ? ` ${error.operation}` : ""}` : error?.message}`);
+  }
+  const view = await library.view();
+  // After a background sync, let an open Royal page redraw with what arrived.
+  // (A page that asked for this sync gets the result as its reply.)
+  if (notify) chrome.runtime.sendMessage({ event: "libraryChanged" }).catch(() => {});
+  return { ...view, message, syncMessage: message };
+}
+
+// After a local change, sync shortly, once, through the CloudKit queue. If the
+// worker stops first, the change stays pending until the next sync.
+let syncTimer;
+function scheduleSync() {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => {
+    syncTimer = undefined;
+    queue = queue.then(async () => { await storageReady; await syncNow(await client(), { notify: true }); }).catch(() => {});
+  }, 1500);
+}
+
 const feedContext = { hasHostAccess: origin => chrome.permissions.contains({ origins: [origin] }) };
-const library = createLibrary({ storage: chrome.storage.local, fetchFeed: request => fetchFeed(request, feedContext) });
+const library = createLibrary({ storage: chrome.storage.local, fetchFeed: request => fetchFeed(request, feedContext), onChange: scheduleSync });
 
 chrome.runtime.onMessage.addListener((request, sender, respond) => {
   if (sender.id !== chrome.runtime.id || sender.url !== pageURL) return false;
@@ -135,7 +183,7 @@ chrome.runtime.onMessage.addListener((request, sender, respond) => {
     // Browser identity errors can include the redirect URL. Never echo them.
     const message = error instanceof CloudKitError
       ? describeCloudKitError(error)
-      : /^Enter |^Choose |^Read |^Apple Account changed|^Unknown Royal|^Configuration|^CloudKit returned|^Apple sign-in/.test(error.message ?? "")
+      : /^Enter |^Choose |^Read |^Sync |^Apple Account changed|^Unknown Royal|^Configuration|^CloudKit returned|^Apple sign-in/.test(error.message ?? "")
         ? error.message : "Operation failed. Check Apple sign-in, callback configuration, and connectivity.";
     respond({ ok: false, message });
   });

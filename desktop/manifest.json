@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Royal — desktop experiment",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Royal's feeds with your desktop Reddit and YouTube logins, plus a private CloudKit sync probe. Does not sync feeds yet.",
   "minimum_chrome_version": "120",
   "permissions": ["identity", "storage"],

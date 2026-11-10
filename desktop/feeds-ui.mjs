@@ -85,7 +85,22 @@ function renderSaved(saved) {
   document.querySelector("#saved-status").textContent = saved.length ? `${saved.length} saved` : "Nothing saved yet. Use ♡ Save on any post.";
 }
 
+function renderSync(sync, message) {
+  const note = document.querySelector("#sync-note");
+  const status = document.querySelector("#sync-status");
+  if (!sync?.enabled) {
+    note.textContent = "Stored in this browser only.";
+    status.textContent = message ?? "Sync is off.";
+    return;
+  }
+  const last = sync.lastSync ? `last synced ${when(sync.lastSync)}` : "not synced yet";
+  const pending = sync.pending ? `, ${sync.pending} change${sync.pending === 1 ? "" : "s"} pending` : "";
+  note.textContent = `Synced through iCloud (${sync.environment}): ${last}${pending}.`;
+  status.textContent = message ?? `Sync is on (${sync.environment}): ${last}${pending}.`;
+}
+
 function applyLibrary(result, { all = true } = {}) {
+  renderSync(result.sync, result.syncMessage);
   savedIDs = new Set(result.saved.map(post => post.id));
   if (all) renderAll(result.all);
   renderSaved(result.saved);
@@ -142,10 +157,31 @@ function show(tab) {
 }
 for (const button of document.querySelectorAll("nav.tabs button")) button.addEventListener("click", () => show(button.dataset.tab));
 
+// --- Sync ---
+async function syncAction(action) {
+  const buttons = document.querySelectorAll("#sync-title ~ .actions button");
+  buttons.forEach(button => { button.disabled = true; });
+  document.querySelector("#sync-status").textContent = "Syncing…";
+  const result = await send({ action });
+  buttons.forEach(button => { button.disabled = false; });
+  if (result.ok) applyLibrary(result);
+  else document.querySelector("#sync-status").textContent = result.message ?? "Sync failed.";
+  return result;
+}
+document.querySelector("#sync-enable").addEventListener("click", () => syncAction("enableSync"));
+document.querySelector("#sync-now").addEventListener("click", () => syncAction("sync"));
+document.querySelector("#sync-disable").addEventListener("click", () => syncAction("disableSync"));
+// The worker syncs after local changes and tells open pages when it's done.
+chrome.runtime.onMessage.addListener(message => {
+  if (message?.event === "libraryChanged") send({ action: "library" }).then(result => { if (result.ok) applyLibrary(result); });
+});
+
 // Opening Royal shows the stored All snapshot; it refreshes only when asked,
 // except the very first time, when there's nothing stored.
 const initial = await send({ action: "library" });
 if (initial.ok) {
   applyLibrary(initial);
-  if (!initial.all.refreshedAt) library("refreshAll");
+  // Opening Royal checks for changes from other devices first.
+  const current = initial.sync.enabled ? await syncAction("sync") : initial;
+  if (current.ok && !current.all.refreshedAt) library("refreshAll");
 } else allStatus.textContent = initial.message ?? "Failed to load.";

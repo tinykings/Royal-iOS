@@ -1,6 +1,9 @@
 // No remote SDK: this module uses CloudKit Web Services from the extension worker.
 export const PROBE = { recordName: "royal-sync-probe-v1", recordType: "RoyalSyncProbe" };
-const DATABASES = { "users/caller": "public", "records/lookup": "private", "records/modify": "private" };
+const DATABASES = { "users/caller": "public", "records/lookup": "private", "records/modify": "private", "zones/modify": "private", "records/changes": "private" };
+// Royal's synced data lives in one custom private zone, so clients can fetch
+// incremental changes with a sync token (the default zone can't).
+export const SYNC_ZONE = { zoneName: "RoyalSync" };
 
 export class CloudKitError extends Error {
   constructor(code, redirectURL, context = {}) {
@@ -137,6 +140,29 @@ export class CloudKitClient {
     const saved = this.resultRecord(result);
     this.checkRecord(saved);
     return saved;
+  }
+
+  // Creates the sync zone; saving an existing zone leaves it unchanged.
+  async ensureSyncZone() {
+    const result = await this.request("zones/modify", { operations: [{ operationType: "create", zone: { zoneID: SYNC_ZONE } }] });
+    const zone = Array.isArray(result.zones) ? result.zones[0] : null;
+    if (!zone) throw new CloudKitError("INVALID_RESPONSE", undefined, { operation: "zones/modify" });
+    if (zone.serverErrorCode && zone.serverErrorCode !== "EXISTS") throw new CloudKitError(zone.serverErrorCode, undefined, { operation: "zones/modify" });
+  }
+
+  // One page of changes in the sync zone since `syncToken` (all records when absent).
+  async zoneChanges(syncToken) {
+    const result = await this.request("records/changes", { zoneID: SYNC_ZONE, ...(syncToken ? { syncToken } : {}), resultsLimit: 200 });
+    if (!Array.isArray(result.records) || typeof result.syncToken !== "string") throw new CloudKitError("INVALID_RESPONSE", undefined, { operation: "records/changes" });
+    return { records: result.records, syncToken: result.syncToken, moreComing: Boolean(result.moreComing) };
+  }
+
+  // Non-atomic conditional writes in the sync zone. Returns one result per
+  // operation, in order: a saved record or { recordName, serverErrorCode }.
+  async modifySyncRecords(operations) {
+    const result = await this.request("records/modify", { zoneID: SYNC_ZONE, atomic: false, operations });
+    if (!Array.isArray(result.records) || result.records.length !== operations.length) throw new CloudKitError("INVALID_RESPONSE", undefined, { operation: "records/modify" });
+    return result.records;
   }
 
   resultRecord(result) {
