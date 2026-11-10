@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Royal — iCloud experiment</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.mjs"></script>
+</head>
+<body>
+  <main>
+    <header><span class="crown" aria-hidden="true">♛</span><div><h1>Royal</h1><p>iCloud sync experiment</p></div></header>
+    <p>Test a private message between Royal on iOS and this browser. Feed, seen-state, and saved-item sync are not connected yet.</p>
+    <section aria-labelledby="setup-title">
+      <h2 id="setup-title">1. Configure CloudKit</h2>
+      <p>Use the same container and environment as the iOS build. See <a href="README.md">the setup guide</a> in this extension’s source folder.</p>
+      <form id="configuration">
+        <label>Container <input name="container" placeholder="iCloud.com.tinykings.Royal" required autocomplete="off" spellcheck="false"></label>
+        <label>Web API token <input name="apiToken" required autocomplete="off" spellcheck="false"></label>
+        <label>Environment <select name="environment"><option value="development">Development</option><option value="production">Production</option></select></label>
+        <button>Save configuration</button>
+      </form>
+      <p>Configure Apple’s sign-in callback to this exact URL:</p><code id="callback"></code>
+      <p>Extension origin:</p><code id="origin"></code>
+    </section>
+    <section aria-labelledby="account-title">
+      <h2 id="account-title">2. Sign in to iCloud</h2>
+      <p>Use the Apple Account signed into iCloud on your iPhone. Apple handles the login.</p>
+      <div class="actions"><button id="sign-in">Sign in with Apple</button><button id="sign-out" class="secondary">Clear Royal session</button></div>
+    </section>
+    <section aria-labelledby="probe-title">
+      <h2 id="probe-title">3. Test a shared private record</h2>
+      <button id="read" class="secondary">Read probe</button>
+      <dl><dt>Cloud message</dt><dd id="message">Not read</dd><dt>Written at</dt><dd id="written-at">—</dd></dl>
+      <form id="write"><label>New message <input name="message" maxlength="500" required value="Hello from Royal desktop"></label><button>Write probe</button></form>
+      <p>Read before writing. A conflicting write will stop so you can read the newer version.</p>
+    </section>
+    <p id="status" role="status" aria-live="polite">Loading configuration…</p>
+  </main>
+</body>
+</html>

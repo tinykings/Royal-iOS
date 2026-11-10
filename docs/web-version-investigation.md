@@ -5,6 +5,13 @@ Royal's saved items with iOS. A browser extension is acceptable to the owner.
 This is a proposed design; authenticated browser fetching and cross-platform
 sync have not been prototyped.
 
+Implementation update: the selected first experiment is now an extension-only
+CloudKit HTTP client, with a debug native private-record probe. See
+[`desktop/README.md`](../desktop/README.md) for setup, acceptance checks, and the
+unverified Apple origin/callback requirements. A hosted web UI remains a fallback.
+Only All's explicit-refresh snapshot, seen state, and saved items will sync;
+individual source sections remain local. The probe does not connect real data yet.
+
 ## Recommendation
 
 Build a responsive web app with a small browser extension for authenticated feed
