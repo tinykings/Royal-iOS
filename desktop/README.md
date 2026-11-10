@@ -116,11 +116,9 @@ it yet, so this syncs between desktop browsers only.
    doesn't change existing records, the probe, or the TestFlight app. The
    `RoyalSync` zone is created by Royal itself. Keep the existing Production web
    API token.
-2. Load the **same `desktop/` folder** unpacked in a second browser profile (or
-   in both Chrome and Edge). An unpacked extension's ID comes from its folder
-   path, so it should match and the token's existing callback works. Check that
-   the callback URL shown in the iCloud probe tab is the same in both; if it
-   isn't, that profile needs its own token or callback.
+2. Load `desktop/` unpacked in a second browser profile (or in both Chrome and
+   Edge). The manifest key gives it the same extension ID and callback URL
+   everywhere, so one token works for both.
 3. In each: iCloud probe tab → Production → Save → Sign in with Apple (same
    Apple Account) → **Turn on sync**. Expect "Synced. Received …, sent …". An
    error naming a record type, or `BAD_REQUEST` on `records/modify`, means the
@@ -193,8 +191,8 @@ by unit tests).
 ### Live test
 
 1. On `chrome://extensions` or `edge://extensions`, **Reload** Royal (now
-   0.4.1) and accept the new site access if asked. Close old Royal tabs and
-   reopen from the toolbar. The extension ID and CloudKit callback don't change.
+   0.4.2) and accept the new site access if asked. Close old Royal tabs and
+   reopen from the toolbar.
 2. In normal tabs of the same browser profile, log into reddit.com and
    youtube.com. Finish any cookie/consent prompts.
 3. Open Royal. All refreshes the first time. Check the Reddit (**Best**, **Top
@@ -239,8 +237,13 @@ Don't export a HAR or copy request headers: they contain your session cookies.
    fresh test message in the production environment.
 4. Load this directory as an unpacked extension in Chrome/Edge's extensions
    developer mode. Click its toolbar action to open the experiment.
-5. Copy the exact callback URL shown in the extension, of the form
-   `https://<extension-id>.chromiumapp.org/cloudkit`.
+5. Copy the exact callback URL shown in the extension. Since 0.4.2 it is always
+   `https://mddlclgijonpcbbehfggjpijpjlnakcp.chromiumapp.org/cloudkit`:
+   `manifest.json` has a public `key`, which fixes the extension ID in every
+   folder, profile, and Chromium browser. Before 0.4.2 the ID came from the
+   folder's path, so moving or re-cloning the folder changed it and broke the
+   token's redirect. The matching private key isn't needed (it's only used to
+   pack a `.crx`) and isn't in the repository.
 6. In CloudKit Console, create a web API token for the same container. Set its
    URL redirect/sign-in callback to that exact HTTPS address. Set **Allowed
    Origins** to **Any Domain**. Verified: Console prefixes every restricted
@@ -307,6 +310,14 @@ and adopts rotated web auth tokens. Configuration changes clear the local sessio
 “Clear Royal session” clears local credentials, not the global Apple login.
 
 ## If extension-only authentication fails
+
+### Apple login completes, then "Apple sign-in didn't come back"
+
+Apple redirected to a different callback than this extension's. Set the token's
+redirect URL to the callback shown in the iCloud probe tab (see setup step 5).
+Version 0.4.2 fixed the extension ID, so this changes once from older versions;
+before that, the ID followed the folder path. Older versions reported this only
+as "Operation failed".
 
 ### Immediate NETWORK_ERROR before an Apple login window
 
