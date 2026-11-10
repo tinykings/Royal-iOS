@@ -102,8 +102,9 @@ it yet, so this syncs between desktop browsers only.
   token whose redirect URL matches the new callback, Apple sign-in works again
   and **Turn on sync** succeeds. Zone creation, `records/changes`, and
   conditional `records/modify` against the deployed schema all work on Apple's
-  servers. Not yet confirmed live: syncing between two profiles (steps 4–7
-  below): saves/unsaves, All refresh and Mark all read, conflicts, and offline.
+  servers. The owner then confirmed sync working between two browser profiles
+  on the same Apple Account. Which of steps 4–7 below were covered (in
+  particular the conflict and offline cases) wasn't itemized.
 
 #### Sync live test (two browser profiles, Production)
 
