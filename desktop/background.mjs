@@ -76,6 +76,7 @@ async function handle(request) {
       catch (error) {
         if (!(error instanceof CloudKitError) || error.code !== "AUTHENTICATION_REQUIRED" || !error.redirectURL) throw error;
         const callback = chrome.identity.getRedirectURL("cloudkit");
+        console.info(`[Royal sign-in] ${callbackHint(error.redirectURL)}`);
         let result;
         try { result = await chrome.identity.launchWebAuthFlow({ url: appleSignInURL(error.redirectURL), interactive: true }); }
         catch (flowError) {
@@ -160,6 +161,17 @@ function scheduleSync() {
     syncTimer = undefined;
     queue = queue.then(async () => { await storageReady; await syncNow(await client(), { notify: true }); }).catch(() => {});
   }, 1500);
+}
+
+// Which extension callback Apple's login link names, if it names one. Only
+// extension IDs are reported (they aren't secret), never the link itself.
+function callbackHint(loginURL) {
+  let text = String(loginURL);
+  for (let i = 0; i < 3; i++) { try { text = decodeURIComponent(text); } catch { break; } }
+  const ids = [...new Set([...text.matchAll(/([a-p]{32})\.chromiumapp\.org/g)].map(match => match[1]))];
+  if (ids.length === 0) return "Apple's login link names no chromiumapp.org callback; it can't be checked before login.";
+  const mine = ids.includes(chrome.runtime.id);
+  return `Apple's login link returns to ${ids.join(", ")}; this extension is ${chrome.runtime.id}${mine ? " (match)." : ". MISMATCH: the token's redirect URL isn't in effect yet."}`;
 }
 
 const feedContext = { hasHostAccess: origin => chrome.permissions.contains({ origins: [origin] }) };
