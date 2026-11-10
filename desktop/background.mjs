@@ -78,9 +78,12 @@ async function handle(request) {
         const callback = chrome.identity.getRedirectURL("cloudkit");
         let result;
         try { result = await chrome.identity.launchWebAuthFlow({ url: appleSignInURL(error.redirectURL), interactive: true }); }
-        catch {
-          // The browser's own error can include Apple's redirect address; don't echo it.
-          throw new Error(`Apple sign-in didn't come back to this extension. If you finished logging in, set the web API token's redirect URL in CloudKit Console to exactly ${callback} and try again.`);
+        catch (flowError) {
+          // The browser's own error could include an address with a token; keep
+          // only its wording.
+          const reason = String(flowError?.message ?? flowError).replace(/\b[a-z][\w+.-]*:\/\/\S+/gi, "[address]").slice(0, 200);
+          console.warn(`[Royal sign-in] Browser web auth flow failed: ${reason}`);
+          throw new Error(`Apple sign-in didn't come back to this extension (browser said: "${reason}"). If you finished logging in, check that the web API token's redirect URL in CloudKit Console is saved as exactly ${callback}, then try again.`);
         }
         if (!result) throw new Error("Apple sign-in was cancelled.");
         await setToken(callbackToken(result, chrome.identity.getRedirectURL("cloudkit")));
