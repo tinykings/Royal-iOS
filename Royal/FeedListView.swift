@@ -205,8 +205,10 @@ struct FeedListView<Trailing: View>: View {
                     withAnimation { proxy.scrollTo(Self.topID, anchor: .top) }
                     scrolledAway = false
                 }
+                // Keep header visibility changes out of the list's animation transaction.
+                // Animating the whole List can fade/reposition its lazily measured rows
+                // when the navigation bar changes the scroll view's insets.
                 .toolbar(headerHidden ? .hidden : .visible, for: .navigationBar)
-                .animation(.easeInOut(duration: 0.2), value: headerHidden)
                 .navigationTitle(Trailing.self == EmptyView.self ? title : "")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
