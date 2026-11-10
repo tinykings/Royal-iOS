@@ -1,4 +1,3 @@
-#if DEBUG
 import CloudKit
 import SwiftUI
 
@@ -28,6 +27,7 @@ struct CloudKitProbeView: View {
             if let identifier = containerIdentifier {
                 Section("CloudKit") {
                     LabeledContent("Container", value: identifier)
+                    LabeledContent("Environment", value: environment)
                     Text("Use the same Apple Account and CloudKit environment on desktop.")
                     Button("Read Private Probe") { Task { await read(identifier) } }
                         .disabled(busy)
@@ -48,7 +48,7 @@ struct CloudKitProbeView: View {
                 }
             } else {
                 Section("Setup required") {
-                    Text("Enable the CloudKit capability and set RoyalCloudKitProbeContainer in this debug build’s Info.plist. See desktop/README.md in the repository for setup.")
+                    Text("CloudKit is not configured for this build. See desktop/README.md in the repository for setup.")
                 }
             }
             Section { Text(status).textSelection(.enabled) }
@@ -62,6 +62,10 @@ struct CloudKitProbeView: View {
             hasRead = false
             status = "Apple Account changed. Read the probe again."
         }
+    }
+
+    private var environment: String {
+        Bundle.main.object(forInfoDictionaryKey: "RoyalCloudKitProbeEnvironment") as? String ?? "Unknown"
     }
 
     @MainActor
@@ -131,4 +135,3 @@ struct CloudKitProbeView: View {
         }
     }
 }
-#endif

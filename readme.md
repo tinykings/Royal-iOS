@@ -44,7 +44,8 @@ Edit `CONFIG` in `sources.js`:
 ## Tests
 
 A desktop CloudKit sign-in/private-record experiment is available in
-[`desktop/`](desktop/README.md), paired with a debug-only iOS Settings probe.
+[`desktop/`](desktop/README.md), paired with an iOS Settings probe available in
+Debug and Release/TestFlight builds.
 It needs Apple container setup and live validation; it does not sync feeds or
 replace the existing saved-post storage yet.
 

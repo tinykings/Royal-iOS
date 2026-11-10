@@ -6,7 +6,8 @@ This is a proposed design; authenticated browser fetching and cross-platform
 sync have not been prototyped.
 
 Implementation update: the selected first experiment is now an extension-only
-CloudKit HTTP client, with a debug native private-record probe. See
+CloudKit HTTP client, with a native private-record probe in Debug and
+Release/TestFlight builds. See
 [`desktop/README.md`](../desktop/README.md) for setup, acceptance checks, and the
 unverified Apple origin/callback requirements. A hosted web UI remains a fallback.
 Only All's explicit-refresh snapshot, seen state, and saved items will sync;

@@ -107,10 +107,10 @@ struct SettingsView: View {
                 } footer: {
                     Text("Royal has no server. It talks directly to Reddit, Hacker News, and YouTube with your logins, and collects nothing.")
                 }
-                #if DEBUG
                 Section("Web Sync Experiment") {
                     NavigationLink("Test iCloud Sync") { CloudKitProbeView() }
                 }
+                #if DEBUG
                 Section("Diagnostics") {
                     Button("Run diagnostics") {
                         Task {
