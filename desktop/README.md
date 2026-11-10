@@ -4,8 +4,10 @@ This unpacked Chromium extension opens a full tab with a CloudKit sign-in and a
 small private read/write probe. It uses Apple's HTTP endpoints directly; it does
 not load a remote JavaScript SDK or require a hosted website.
 
-**Status:** implementation with mocked protocol tests, not a proven live Apple
-integration. No CloudKit container or token was provisioned during development.
+**Status:** verified live on 2026-11-10 in the Production environment. Apple
+sign-in completed inside the extension (no hosted page), and the private probe
+record synced both ways between the extension and a TestFlight iOS build. This
+needs a web API token whose Allowed Origins is Any Domain (see setup step 6).
 It does not yet fetch desktop feeds, migrate saves, or sync timeline/seen/saved
 data. Existing iOS storage remains authoritative and unchanged.
 
@@ -127,8 +129,8 @@ not validate your configured token or clear an existing sign-in session.
   share only the error code/status, not complete request URLs or an exported HAR.
 
 `NETWORK_ERROR` alone cannot identify an origin, connectivity, browser policy, or
-redirect failure. The local tests mock responses; a live Edge login has not yet
-been verified. The connection check neither relaxes allowed origins nor follows
+redirect failure. The local tests mock responses; live login was verified later
+(see Status). The connection check neither relaxes allowed origins nor follows
 credential-bearing requests to other hosts.
 
 ### Hosted fallback

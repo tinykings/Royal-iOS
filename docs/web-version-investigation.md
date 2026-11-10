@@ -9,7 +9,12 @@ Implementation update: the selected first experiment is now an extension-only
 CloudKit HTTP client, with a native private-record probe in Debug and
 Release/TestFlight builds. See
 [`desktop/README.md`](../desktop/README.md) for setup, acceptance checks, and the
-unverified Apple origin/callback requirements. A hosted web UI remains a fallback.
+Apple origin/callback requirements. A hosted web UI remains a fallback.
+
+Result (2026-11-10): extension-only sign-in works with the
+`chromiumapp.org` callback and an Any Domain web API token, and the private
+probe record syncs both ways with a Production TestFlight build. No hosted
+fallback is needed for authentication.
 Only All's explicit-refresh snapshot, seen state, and saved items will sync;
 individual source sections remain local. The probe does not connect real data yet.
 
