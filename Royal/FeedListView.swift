@@ -78,9 +78,6 @@ struct FeedListView<Trailing: View>: View {
                     if !loggedOut.isEmpty {
                         LoginCard(sources: loggedOut, keys: keys)
                     }
-                    if savedOnly {
-                        SavedOnWebLink()
-                    }
                     ForEach(savedOnly ? [] : keys, id: \.self) { key in
                         // A feed reloading after an error, such as just after logging in, shows
                         // that it's refreshing rather than the error it's about to replace.
@@ -254,6 +251,9 @@ struct FeedListView<Trailing: View>: View {
                                         Text(subtitle)
                                             .font(.subheadline.weight(.medium))
                                             .foregroundStyle(.secondary)
+                                    }
+                                    if savedOnly {
+                                        SavedOnWebLink()
                                     }
                                     // The All feed's latest refresh.
                                     if isAll, let refresh = store.lastRefresh, !posts.isEmpty {
@@ -874,27 +874,23 @@ enum SafariView {
 }
 
 // Login buttons for logged-out feeds; the feed reloads once a login sticks.
-// Tops the Saved list: the Royal Saved website shows the same saved posts, synced
-// through iCloud, in a browser. Opens in Safari, where its Apple sign-in stays.
+// Sits beside "Saved" in the header: the Royal Saved website shows the same saved
+// posts, synced through iCloud, in a browser. Opens in Safari, where its Apple
+// sign-in stays.
 struct SavedOnWebLink: View {
     static let url = URL(string: "https://royal.tinyk.ing/saved/")!
 
     var body: some View {
         Link(destination: Self.url) {
-            HStack(spacing: 6) {
-                Image(systemName: "globe")
+            HStack(spacing: 3) {
                 Text("On the web")
                 Image(systemName: "arrow.up.right")
-                    .font(.caption.weight(.semibold))
+                    .font(.caption2.weight(.bold))
             }
             .font(.subheadline.weight(.medium))
             .foregroundStyle(.tint)
-            .frame(maxWidth: .infinity)
         }
         .accessibilityHint("Opens your saved posts at royal.tinyk.ing in Safari")
-        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
     }
 }
 
