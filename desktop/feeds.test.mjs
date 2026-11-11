@@ -50,6 +50,16 @@ test("Reddit, Hacker News and YouTube posts reach the page as display-only posts
   assert.deepEqual(youtube.posts.map(post => [post.title, post.label, post.published]), [["Video", "Channel", "2 hours ago"]]);
 }));
 
+test("Hacker News loads the same first 30 stories iOS shows", () => withFetch(async url => {
+  if (url.pathname === "/v0/topstories.json") return jsonResponse(Array.from({ length: 100 }, (_, i) => i + 1));
+  const id = Number(url.pathname.match(/^\/v0\/item\/(\d+)\.json$/)?.[1]);
+  if (id) return jsonResponse({ id, title: `HN ${id}`, time: 9, score: 2, descendants: 0 });
+  throw new Error(`unexpected ${url}`);
+}, async () => {
+  const hn = await fetchFeed({ source: "hn", options: { list: "top" } }, { log: quiet });
+  assert.deepEqual(hn.posts.map(post => post.id), Array.from({ length: 30 }, (_, i) => `hn_${i + 1}`));
+}));
+
 test("logged-out, redirected, and unpermitted feeds report which site to fix", () => withFetch(async url => {
   if (url.host === "www.reddit.com") return jsonResponse({ message: "Forbidden" }, 403);
   if (url.pathname === "/") throw new TypeError("Failed to fetch");

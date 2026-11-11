@@ -6,6 +6,9 @@ import { fetchReddit, fetchHackerNews, fetchYouTube, NotLoggedInError } from "./
 import { normalizePost } from "./library.mjs";
 
 export const FEED_LIMIT = 50;
+// iOS shows Hacker News a page of 30 at a time (FeedSession.hackerNewsPageSize), so
+// the desktop takes the same first page; more would count old stories as New.
+export const HN_LIMIT = 30;
 
 // One entry per source: the host it needs, where the user logs in, and the bounded
 // options the page may choose. sources.js validates the same values again.
@@ -18,7 +21,7 @@ export const SOURCES = {
   hn: {
     name: "Hacker News", origin: "https://hacker-news.firebaseio.com/*", login: null,
     options: { list: ["top", "new"] },
-    fetch: options => fetchHackerNews(FEED_LIMIT, options),
+    fetch: options => fetchHackerNews(HN_LIMIT, options),
   },
   youtube: {
     name: "YouTube", origin: "https://www.youtube.com/*", login: "https://www.youtube.com/",

@@ -81,6 +81,9 @@ Added in 0.3.0 (`library.mjs`, `store.mjs`); a port of `Royal/FeedStore.swift`:
   published after the previous refresh when none was seen; a source new to All
   isn't marked new. **Mark all read** moves everything to Earlier. Seen ids are
   capped at 3000, like iOS. Unlike iOS, Earlier is always shown below New.
+- **How many posts**: Hacker News loads its top 30 stories, the first page iOS
+  shows (since 0.5.3; it was 50, so stories 31–50 showed as New on the desktop
+  though iOS had never shown them). Reddit and YouTube load 50.
 - **Saved**: ♡ Save on any post, in any tab. One entry per post id with a
   sanitized post snapshot, an ISO 8601 `savedAt`, and `isSaved`; unsaving keeps a
   tombstone, as the sync design requires. Newest first.
@@ -434,15 +437,7 @@ devices, 2026-11-11). Remaining, roughly in order:
    [Page design and video](#page-design-and-video-050)). Remaining: check it
    with real feeds, Settings-like choices (card/list per source, open link vs.
    comments), NSFW handling for saved posts, and the iCloud tab's design.
-3. **Match Hacker News's load count to iOS.** In All, iOS shows Hacker News's
-   first page of 30 stories (`FeedSession.hackerNewsPageSize`, then more on
-   scrolling), but the desktop fetches 50 (`FEED_LIMIT` in `feeds.mjs`). So after
-   refreshing and marking all read on iOS, a desktop Refresh All shows stories
-   31–50 as New though they're old, unless they were scrolled to on iOS. Give
-   Hacker News its own limit of 30 in `SOURCES.hn` (Reddit and YouTube stay at 50;
-   iOS fetches 100 of those, which only means more of them count as seen), and
-   add a test for it in `feeds.test.mjs`.
-4. **All snapshot on iOS.** Read and write `RoyalAllSnapshot` so a refresh or
+3. **All snapshot on iOS.** Read and write `RoyalAllSnapshot` so a refresh or
    Mark all read on one device shows on the other. Leaning towards not doing
    it: seen sync already keeps posts one device showed from coming back as New
    on the other. Adopting it would make iOS's All a stored snapshot (refreshing
@@ -450,9 +445,9 @@ devices, 2026-11-11). Remaining, roughly in order:
    with the snapshot's own `previouslySeen`/`previousRefresh` and YouTube list,
    not its merged seen ids, or everything the desktop just showed would land
    under Earlier on iOS unread.
-5. **Out of experiment.** Move the toggle out of Web Sync Experiment, retire the
+4. **Out of experiment.** Move the toggle out of Web Sync Experiment, retire the
    probe, and decide when iOS stops mirroring saves into iCloud key-value storage.
-6. **Policy and polish.** Retention for saved snapshots of content deleted
+5. **Policy and polish.** Retention for saved snapshots of content deleted
    upstream (Reddit's terms), and extension packaging.
 
 ## Local checks
