@@ -307,7 +307,7 @@ function rerender() {
 }
 
 // --- Settings: like iOS Settings, for this browser only. ---
-const settingsForm = document.querySelector("#tab-settings");
+const settingsForm = document.querySelector("#settings-form");
 function showPreferences() {
   for (const field of settingsForm.elements) {
     if (!(field.name in preferences)) continue;

@@ -32,7 +32,7 @@ export function describeCloudKitError(error) {
   const at = error.operation ? ` during ${DATABASES[error.operation]}/${error.operation}` : "";
   const status = error.httpStatus ? ` (HTTP ${error.httpStatus})` : "";
   const prefix = `CloudKit: ${error.code}${status}${at}.`;
-  if (error.code === "NETWORK_ERROR") return `${prefix} The browser did not deliver an HTTP response. Run Check connection below, then inspect the extension service worker for the browser's blocked-request or network error.`;
+  if (error.code === "NETWORK_ERROR") return `${prefix} The browser did not deliver an HTTP response. Check that Royal has access to api.apple-cloudkit.com in the extension's Details, then inspect the extension service worker for the browser's blocked-request or network error.`;
   if (error.code === "TIMEOUT") return `${prefix} The request timed out. Check your network and retry.`;
   if (["CONFLICT", "EXISTS"].includes(error.code)) return `${prefix} Another client changed the record; the next sync merges it.`;
   if (["AUTHENTICATION_FAILED", "ACCESS_DENIED"].includes(error.code)) return `${prefix} Check the token's container, Production/Development environment, and allowed origin in CloudKit Console.`;

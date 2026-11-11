@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Royal</title>
   <link rel="stylesheet" href="style.css">
-  <script type="module" src="app.mjs"></script>
   <script type="module" src="feeds-ui.mjs"></script>
 </head>
 <body>
@@ -29,7 +28,6 @@
       <button role="tab" data-tab="youtube">YouTube</button>
       <button role="tab" data-tab="saved">Saved</button>
       <button role="tab" data-tab="settings">Settings</button>
-      <button role="tab" data-tab="icloud">iCloud Sync</button>
     </nav>
     <p class="note">Fetched with this browser’s own Reddit and YouTube logins. <span id="sync-note">Stored in this browser only.</span> <button id="sync-sign-in" class="inline-button" hidden>Sign in to iCloud</button></p>
     <section id="tab-all" class="tab-panel" role="tabpanel">
@@ -55,8 +53,17 @@
     <section id="tab-saved" class="tab-panel" role="tabpanel" hidden>
       <p class="feed-status" id="saved-status" role="status"></p><ol id="saved-list" class="posts"></ol>
     </section>
-    <form id="tab-settings" class="tab-panel settings" role="tabpanel" hidden>
-      <p>Saved in this browser only; they don’t sync.</p>
+    <div id="tab-settings" class="tab-panel settings" role="tabpanel" hidden>
+    <section aria-labelledby="account-title">
+      <h2 id="account-title">iCloud Sync</h2>
+      <p>Sync saved posts, which posts All has shown, and the All feed itself with Royal on iOS and in other browsers, through your private iCloud database. Optional: without it, Royal keeps everything in this browser.</p>
+      <p>Sign in with the Apple Account on your iPhone and Royal syncs; sign out and it stops. Apple handles the login. On iOS, Royal syncs on its own with the Apple Account signed in to iCloud; use the same one. iOS syncs saved posts and seen posts; the All feed itself syncs between browsers.</p>
+      <div class="actions"><button id="account">Sign in with Apple</button></div>
+      <p id="sync-status" role="status">Not signed in.</p>
+      <p class="hint">Signing in adds this browser’s library to the Apple Account without overwriting anything already there. Signing out goes back to this browser’s own library; each Apple Account’s copy stays here for its next sign-in. Sign out on a shared computer.</p>
+    </section>
+    <form id="settings-form">
+      <p class="hint">The choices below are saved in this browser only; they don’t sync.</p>
       <section>
         <h2>YouTube</h2>
         <label>View <select name="youtubeLayout"><option value="card">Cards</option><option value="row">List</option></select></label>
@@ -75,23 +82,6 @@
         <label>Clicking a post opens <select name="hnOpen"><option value="link">Link</option><option value="comments">Comments</option></select></label>
       </section>
     </form>
-    <div id="tab-icloud" class="tab-panel" role="tabpanel" hidden>
-    <p>Sync saved posts, which posts All has shown, and the All feed itself with Royal on iOS and in other browsers, through your private iCloud database. Optional: without it, Royal keeps everything in this browser.</p>
-    <section aria-labelledby="account-title">
-      <h2 id="account-title">iCloud</h2>
-      <p>Sign in with the Apple Account on your iPhone and Royal syncs; sign out and it stops. Apple handles the login. On iOS, Royal syncs on its own with the Apple Account signed in to iCloud; use the same one. iOS syncs saved posts and seen posts; the All feed itself syncs between browsers.</p>
-      <div class="actions"><button id="account">Sign in with Apple</button></div>
-      <p id="sync-status" role="status">Not signed in.</p>
-      <p>Signing in adds this browser’s library to the Apple Account without overwriting anything already there. Signing out goes back to this browser’s own library; each Apple Account’s copy stays here for its next sign-in. Sign out on a shared computer.</p>
-    </section>
-    <section aria-labelledby="connection-title">
-      <h2 id="connection-title">Connection troubleshooting</h2>
-      <button id="diagnose" class="secondary">Check connection</button>
-      <p>This checks extension host access and CloudKit reachability with an invalid test token. It does not change your sign-in session.</p>
-      <p>Apple’s sign-in returns to <code id="callback"></code> (extension origin <code id="origin"></code>); the CloudKit web API token’s redirect URL must match it.</p>
-      <p>For a browser network error, open this extension’s Details in the browser’s extensions page, inspect its service worker, then retry Sign in. Note the browser error code; request addresses can contain tokens, so do not share full URLs.</p>
-    </section>
-    <p id="status" role="status" aria-live="polite"></p>
     </div>
   </main>
 </body>

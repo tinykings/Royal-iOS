@@ -34,7 +34,7 @@ the record format and conflict rules are in
 
 - iOS: nothing to do. Royal syncs with the Apple Account signed in to iCloud;
   **Settings › Sync** shows its state.
-- Desktop: **iCloud Sync** tab → **Sign in with Apple** with the Apple Account on
+- Desktop: **Settings** tab → **iCloud Sync** → **Sign in with Apple** with the Apple Account on
   the iPhone. Being signed in is what turns sync on (since 0.6.2; there are no
   separate sync buttons), so expect "Synced. Received …, sent …" straight away.
   **Sign out** (the same button) turns it off.
@@ -103,8 +103,7 @@ Recorded for rebuilding the setup; all of this is in place for
 3. **Callback.** The extension ID is fixed by the public `key` in
    `manifest.json`, so the callback is the same in every folder, profile and
    Chromium browser:
-   `https://mddlclgijonpcbbehfggjpijpjlnakcp.chromiumapp.org/cloudkit` (also shown
-   in the iCloud Sync tab). The private key is only for packing a `.crx` and isn't
+   `https://mddlclgijonpcbbehfggjpijpjlnakcp.chromiumapp.org/cloudkit`. The private key is only for packing a `.crx` and isn't
    in the repository.
 4. **Web API token.** In CloudKit Console, create a web API token for the
    container with that callback as its URL redirect and **Allowed Origins: Any
@@ -183,7 +182,8 @@ light and dark mode: cards or 96×54 rows for Reddit and YouTube, rows for Hacke
 News and Saved. A plain click on a YouTube post plays it in a player docked above
 the tabs; ⌘/Ctrl/middle click opens YouTube.
 
-The **Settings** tab has iOS Settings' feed choices (`preferences.mjs`, stored as
+The **Settings** tab starts with iCloud Sync (sign in or out, and sync status),
+then has iOS Settings' feed choices (`preferences.mjs`, stored as
 `royalPreferences` in `chrome.storage.local`, per browser, not synced): Cards or
 List for Reddit and YouTube; whether a click on a Reddit or Hacker News post opens
 the link or the comments (the details then link to the other); whether videos
@@ -211,10 +211,7 @@ redirected to a different callback. Set the token's redirect URL to exactly the
 callback in setup step 3. The worker console logs which extension ID Apple's
 login link names (`[Royal sign-in]`).
 
-**`NETWORK_ERROR` before an Apple window opens.** Click **Check connection** in
-the iCloud Sync tab. It uses an intentionally invalid token, so HTTP 401
-(`AUTHENTICATION_FAILED`) means CloudKit is reachable; it doesn't touch your real
-token or session.
+**`NETWORK_ERROR` before an Apple window opens.**
 
 - Host access missing: allow Royal access to `api.apple-cloudkit.com` in the
   extension's Details.

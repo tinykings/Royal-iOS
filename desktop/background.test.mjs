@@ -13,12 +13,11 @@ test("worker isolates callers, serializes CloudKit use, and syncs exactly while 
   });
   let active = 0, maximumActive = 0;
   let messageListener;
-  let hostAccess = true, networkFails = false;
   globalThis.chrome = {
     runtime: { id: "royal-test", getURL: () => pageURL, sendMessage: async () => {}, onMessage: { addListener: fn => { messageListener = fn; } } },
     action: { onClicked: { addListener: fn => listeners.push(fn) } },
     tabs: { create: async () => {} },
-    permissions: { contains: async () => hostAccess },
+    permissions: { contains: async () => true },
     storage: { local: storage(local), session: storage(session) },
     identity: { getRedirectURL: () => "https://royal-test.chromiumapp.org/cloudkit", launchWebAuthFlow: async () => "https://royal-test.chromiumapp.org/cloudkit?ckWebAuthToken=initial-token" },
   };
@@ -26,7 +25,6 @@ test("worker isolates callers, serializes CloudKit use, and syncs exactly while 
   const requests = [];
   globalThis.fetch = async (url, options) => {
     requests.push(`${new URL(url).host}${new URL(url).pathname}`);
-    if (networkFails) throw new TypeError(`Failed to fetch ${url}`);
     active++; maximumActive = Math.max(maximumActive, active);
     await new Promise(resolve => setTimeout(resolve, 1));
     active--;
@@ -70,18 +68,7 @@ test("worker isolates callers, serializes CloudKit use, and syncs exactly while 
     assert.equal((await send({ action: "configure", config: {} })).ok, false, "configuration can't be changed");
     assert.equal((await send({ action: "signIn" })).ok, true);
     assert.equal(local.cloudKitToken, "rotated-token");
-    const diagnosis = await send({ action: "diagnose" });
-    assert.match(diagnosis.message, /HTTP 401/);
-    assert.equal(local.cloudKitToken, "rotated-token", "connection diagnosis leaves the real session unchanged");
-    hostAccess = false;
-    assert.match((await send({ action: "diagnose" })).message, /host access is not granted/);
-    hostAccess = true;
-    networkFails = true;
-    const failedDiagnosis = await send({ action: "diagnose" });
-    assert.match(failedDiagnosis.message, /no HTTP response/);
-    assert.ok(!failedDiagnosis.message.includes("rotated-token"));
-    assert.ok(!failedDiagnosis.message.includes("ckAPIToken="));
-    networkFails = false;
+    assert.equal((await send({ action: "diagnose" })).ok, false, "the connection check is gone");
     assert.equal((await send({ action: "read" })).ok, false, "the old probe operation is gone");
     assert.equal((await send({ action: "enableSync" })).ok, false, "signing in is what turns sync on");
 

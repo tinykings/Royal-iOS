@@ -63,22 +63,6 @@ async function handle(request) {
   switch (request.action) {
     case "status":
       return { callback: chrome.identity.getRedirectURL("cloudkit"), origin: `chrome-extension://${chrome.runtime.id}` };
-    case "diagnose": {
-      // Intentionally invalid API token: this checks HTTP reachability without
-      // sending the user's configuration or changing their sign-in session.
-      const granted = await chrome.permissions.contains({ origins: ["https://api.apple-cloudkit.com/*"] });
-      if (!granted) return { message: "CloudKit host access is not granted. In the browser's extension Details, allow Royal access to api.apple-cloudkit.com, then retry." };
-      const api = new CloudKitClient({ ...ROYAL_CLOUDKIT, apiToken: "royal-connectivity-check-not-a-real-token" }, {
-        getToken: async () => null, setToken: async () => {},
-      });
-      try { await api.currentUser(); }
-      catch (error) {
-        if (!(error instanceof CloudKitError)) throw error;
-        if (error.httpStatus) return { message: `Connection check: CloudKit returned HTTP ${error.httpStatus} (${error.code}) to an intentionally invalid test token. HTTP reachability works. If Sign in still fails, inspect that request in the service worker; check the real token's environment and allowed origin. This check does not verify your token or Apple login.` };
-        return { message: `Connection check: host permission is granted, but the browser delivered no HTTP response. ${describeCloudKitError(error)} No real API token was used.` };
-      }
-      return { message: "Connection check reached CloudKit. This does not verify Royal's token or your Apple login." };
-    }
     case "signIn": {
       await setToken(null);
       const api = await client();

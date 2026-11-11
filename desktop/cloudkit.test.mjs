@@ -82,7 +82,7 @@ test("network errors never leak credential-bearing request URLs", async () => {
     assert.equal(error.message, "NETWORK_ERROR");
     const description = describeCloudKitError(error);
     assert.match(description, /public\/users\/caller/);
-    assert.match(description, /Check connection/);
+    assert.match(description, /api\.apple-cloudkit\.com/);
     assert.ok(!description.includes("secret-token"));
     assert.ok(!description.includes("conflict"));
     return true;
