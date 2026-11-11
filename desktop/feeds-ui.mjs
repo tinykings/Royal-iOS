@@ -55,6 +55,11 @@ const TALLEST_IMAGE_ASPECT = 1;
 
 // --- Player: YouTube plays in a player docked above the tabs, like iOS. ---
 const player = document.querySelector("#player");
+// The player sticks just below the sticky header, so it needs the header's height.
+const header = document.querySelector("header");
+new ResizeObserver(() => {
+  document.documentElement.style.setProperty("--header-height", `${header.offsetHeight}px`);
+}).observe(header);
 let playingID = null;
 function markPlaying() {
   for (const item of document.querySelectorAll("li.post")) item.classList.toggle("playing", item.dataset.postId === playingID);

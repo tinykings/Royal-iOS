@@ -26,13 +26,12 @@ p { overflow-wrap: anywhere; }
 :focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 
 /* Header: the crown, the name and the tabs in one bar that stays in reach while the
-   feed scrolls (unless the player has the top). */
+   feed scrolls, with the player docked right below it. */
 header {
   position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 12px;
   margin: 0 -16px; padding: 10px 16px; background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: blur(12px);
 }
-main:has(#player:not([hidden])) header { position: static; }
 header h1 { margin: 0; font-size: 24px; line-height: 1.1; letter-spacing: -0.01em; }
 .crown { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: var(--icon-bg); box-shadow: 0 4px 14px rgb(0 0 0 / .18); }
 .crown svg { width: 28px; height: auto; display: block; }
@@ -151,8 +150,9 @@ button.save[aria-pressed="true"]:hover { filter: brightness(1.2); }
 #all-seen[hidden], #show-earlier[hidden] { display: none; }
 .divider::before, .divider::after { content: ""; flex: 1; height: 2px; background: var(--gold); border-radius: 1px; }
 
-/* Docked player: stays at the top while the feed scrolls and tabs switch. */
-#player { position: sticky; top: 0; z-index: 3; margin: 16px -16px 0; background: #000; }
+/* Docked player: stays under the header while the feed scrolls and tabs switch.
+   --header-height is the header's measured height (feeds-ui.mjs). */
+#player { position: sticky; top: var(--header-height, 60px); z-index: 3; margin: 16px -16px 0; background: #000; }
 #player[hidden] { display: none; }
 .player-frame { max-width: calc(48vh * 16 / 9); margin: 0 auto; aspect-ratio: 16 / 9; }
 .player-frame iframe { display: block; width: 100%; height: 100%; border: 0; }
