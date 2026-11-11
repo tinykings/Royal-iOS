@@ -197,6 +197,18 @@ function renderProblem(target, result) {
 // --- All ---
 const allStatus = document.querySelector("#all-status");
 let shownAll = null, shownSaved = null;
+// Earlier (seen) posts stay hidden until asked for, and hide again on Refresh All
+// or Mark all read.
+let showsEarlier = false;
+const showEarlier = document.querySelector("#show-earlier");
+function renderEarlierToggle() {
+  const earlier = shownAll?.seen.length ?? 0;
+  showEarlier.hidden = earlier === 0;
+  showEarlier.setAttribute("aria-expanded", String(showsEarlier));
+  showEarlier.textContent = showsEarlier ? "Hide earlier posts" : `Show ${earlier} earlier post${earlier === 1 ? "" : "s"}`;
+  document.querySelector("#all-seen").hidden = !showsEarlier;
+}
+showEarlier.addEventListener("click", () => { showsEarlier = !showsEarlier; renderEarlierToggle(); });
 function renderAll(all) {
   shownAll = all;
   const earlierTitle = document.querySelector("#all-earlier-title");
@@ -204,6 +216,7 @@ function renderAll(all) {
   document.querySelector("#all-seen").replaceChildren(...all.seen.map(post => renderPost(post, { showsSource: true })));
   earlierTitle.hidden = all.seen.length === 0;
   earlierTitle.textContent = all.previousRefresh ? `Earlier · shown before ${when(all.previousRefresh)}` : "Earlier";
+  renderEarlierToggle();
   allStatus.textContent = all.refreshedAt
     ? `Refreshed ${when(all.refreshedAt)}: ${all.new.length} new, ${all.seen.length} earlier.`
     : "Not refreshed yet.";
@@ -265,8 +278,8 @@ async function library(action) {
   else allStatus.textContent = result.message ?? "Failed.";
 }
 
-document.querySelector("#refresh-all").addEventListener("click", () => library("refreshAll"));
-document.querySelector("#mark-read").addEventListener("click", () => library("markAllRead"));
+document.querySelector("#refresh-all").addEventListener("click", () => { showsEarlier = false; library("refreshAll"); });
+document.querySelector("#mark-read").addEventListener("click", () => { showsEarlier = false; library("markAllRead"); });
 
 // --- Source tabs: fetched on first open and on Refresh; never stored in All. ---
 async function loadSource(panel) {

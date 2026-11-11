@@ -158,7 +158,8 @@ A port of `Royal/FeedStore.swift` (`library.mjs`, `store.mjs`):
 - **New vs. earlier** follows `splitByRefresh`: posts not shown by an earlier
   refresh are new; YouTube's are those above the newest seen video, or published
   after the previous refresh when none was seen; a source new to All isn't marked
-  new. **Mark all read** moves everything to Earlier. Seen ids are capped at 3000.
+  new. Earlier posts are hidden under a **Show N earlier posts** button, which
+  hides them again on Refresh All or Mark all read. **Mark all read** moves everything to Earlier. Seen ids are capped at 3000.
 - **Saved**: ♡ on any post. One entry per post id with a sanitized snapshot, ISO
   8601 `savedAt`, and `isSaved`; unsaving keeps a tombstone. Newest first.
 - Stored in `chrome.storage.local` (`royalLibrary`, trusted contexts only);

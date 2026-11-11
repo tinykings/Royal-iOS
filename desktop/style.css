@@ -135,6 +135,9 @@ button.save[aria-pressed="true"] { color: var(--heart); }
 /* All: the divider between new and earlier posts. */
 .divider { display: flex; align-items: center; gap: 12px; margin: 22px 0 12px; font-size: 13px; font-weight: 600; color: var(--muted); }
 .divider[hidden] { display: none; }
+.earlier-toggle { justify-content: center; }
+.earlier-toggle:has(button[hidden]) { display: none; }
+#all-seen[hidden], #show-earlier[hidden] { display: none; }
 .divider::before, .divider::after { content: ""; flex: 1; height: 2px; background: var(--gold); border-radius: 1px; }
 
 /* Docked player: stays at the top while the feed scrolls and tabs switch. */
