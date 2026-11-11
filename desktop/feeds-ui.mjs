@@ -73,6 +73,7 @@ function play(post) {
   document.querySelector("#player-open").href = post.url;
   keepInPlace(post.id, () => {
     player.hidden = false;
+    fitPlayer();
     // Starting to play can switch every feed to rows (Settings › YouTube).
     if (!wasPlaying && preferences.listWhilePlaying) rerender();
   });
@@ -83,6 +84,7 @@ function closePlayer() {
   playingID = null;
   keepInPlace(id, () => {
     player.hidden = true;
+    fitPlayer();
     if (preferences.listWhilePlaying) rerender();
   });
   player.querySelector("iframe").src = "about:blank";
@@ -100,6 +102,18 @@ function keepInPlace(postID, change) {
   window.scrollBy(0, after.getBoundingClientRect().top - Math.max(before, below));
 }
 document.querySelector("#player-close").addEventListener("click", closePlayer);
+
+// Scrolling down past the video shrinks it to half size; back at the top it's full size
+// again. The gap between the two keeps the page's shift, as the player resizes, from
+// flipping it straight back.
+function fitPlayer() {
+  if (player.hidden) return player.classList.remove("compact");
+  const fullHeight = Math.min(player.offsetWidth, innerHeight * 0.48 * 16 / 9) * 9 / 16;
+  if (scrollY > fullHeight) player.classList.add("compact");
+  else if (scrollY < 40) player.classList.remove("compact");
+}
+addEventListener("scroll", fitPlayer, { passive: true });
+addEventListener("resize", fitPlayer);
 
 // A plain click on a video plays it here; modified and middle clicks open YouTube as links do.
 function playsHere(anchor, post) {
