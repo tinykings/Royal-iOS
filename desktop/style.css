@@ -154,10 +154,7 @@ button.save[aria-pressed="true"]:hover { filter: brightness(1.2); }
    --header-height is the header's measured height (feeds-ui.mjs). */
 #player { position: sticky; top: var(--header-height, 60px); z-index: 3; margin: 16px -16px 0; background: #000; }
 #player[hidden] { display: none; }
-.player-frame { max-width: calc(48vh * 16 / 9); margin: 0 auto; aspect-ratio: 16 / 9; }
-/* Scrolled down into the feed, the video shrinks to half size to leave more of the feed in view. */
-.player-frame { transition: max-width .2s ease; }
-#player.compact .player-frame { max-width: min(50%, calc(24vh * 16 / 9)); }
+.player-frame { width: 100%; max-width: calc(48vh * 16 / 9); margin: 0 auto; aspect-ratio: 16 / 9; transition: width .2s ease; }
 .player-frame iframe { display: block; width: 100%; height: 100%; border: 0; }
 .player-bar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
 .player-text { flex: 1; min-width: 0; display: grid; }
@@ -165,6 +162,17 @@ button.save[aria-pressed="true"]:hover { filter: brightness(1.2); }
 .player-text strong { font-size: 14px; }
 .player-text span { font-size: 12px; color: var(--muted); }
 #player-open { font-size: 13px; white-space: nowrap; }
+/* Scrolled down into the feed, the video shrinks to half size at the left, leaving more
+   of the feed in view, with its title, channel and links beside it on the right. */
+#player.compact { display: flex; background: var(--surface); border-bottom: 1px solid var(--line); }
+#player.compact .player-frame { flex: none; width: min(50%, calc(24vh * 16 / 9)); margin: 0; }
+#player.compact .player-bar {
+  flex: 1; min-width: 0; display: grid; grid-template-columns: 1fr auto; align-content: start;
+  gap: 6px 12px; padding: 10px 16px; border-bottom: 0;
+}
+#player.compact .player-text strong { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+#player.compact #player-open { grid-column: 1; grid-row: 2; justify-self: start; }
+#player.compact #player-close { grid-column: 2; grid-row: 1; }
 .icon-button { width: 32px; height: 32px; padding: 0; display: grid; place-items: center; background: var(--placeholder); color: var(--text); font-size: 14px; }
 
 /* Settings tab: grouped like iOS Settings. */
