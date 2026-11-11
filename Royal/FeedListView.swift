@@ -78,6 +78,9 @@ struct FeedListView<Trailing: View>: View {
                     if !loggedOut.isEmpty {
                         LoginCard(sources: loggedOut, keys: keys)
                     }
+                    if savedOnly {
+                        SavedOnWebLink()
+                    }
                     ForEach(savedOnly ? [] : keys, id: \.self) { key in
                         // A feed reloading after an error, such as just after logging in, shows
                         // that it's refreshing rather than the error it's about to replace.
@@ -871,6 +874,30 @@ enum SafariView {
 }
 
 // Login buttons for logged-out feeds; the feed reloads once a login sticks.
+// Tops the Saved list: the Royal Saved website shows the same saved posts, synced
+// through iCloud, in a browser. Opens in Safari, where its Apple sign-in stays.
+struct SavedOnWebLink: View {
+    static let url = URL(string: "https://royal.tinyk.ing/saved/")!
+
+    var body: some View {
+        Link(destination: Self.url) {
+            HStack(spacing: 6) {
+                Image(systemName: "globe")
+                Text("On the web")
+                Image(systemName: "arrow.up.right")
+                    .font(.caption.weight(.semibold))
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.tint)
+            .frame(maxWidth: .infinity)
+        }
+        .accessibilityHint("Opens your saved posts at royal.tinyk.ing in Safari")
+        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+    }
+}
+
 struct LoginCard: View {
     @EnvironmentObject private var store: FeedStore
     @State private var loggingIn: FeedSource?
