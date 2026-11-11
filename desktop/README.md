@@ -177,6 +177,11 @@ deleted zone is recreated and pending intentions pushed again. Service-worker
 console lines starting with `[Royal sync]` hold counts and CloudKit error codes
 only, never tokens.
 
+The Royal Saved website (royal.tinyk.ing, a separate `Royal-Saved` repository)
+reuses `cloudkit.mjs`, `library.mjs`, `store.mjs`, `sync.mjs`, `sync-runner.mjs`,
+`preferences.mjs`, `style.css` and `fake-cloudkit.mjs` as byte-for-byte copies.
+After changing them, run `scripts/update-shared.sh` there and its `node --test`.
+
 ### Page and video
 
 `feeds-ui.mjs` and `style.css` follow iOS `PostRow` and the site's palette in
