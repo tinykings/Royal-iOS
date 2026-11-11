@@ -2,7 +2,7 @@
 
 Status: in use. The desktop extension (`desktop/sync.mjs`) implements all three
 record types. iOS (`Royal/SavedSyncLibrary.swift`, `Royal/SavedSync.swift`,
-opt-in under Settings › Sync with Desktop) implements **`RoyalSavedPost` and
+always on, with the Apple Account signed in to iCloud) implements **`RoyalSavedPost` and
 `RoyalSeen`** and ignores `RoyalAllSnapshot`. Saved posts are verified live
 between iOS and desktop in Production; seen from iOS and the edge cases in
 [desktop/README.md](../desktop/README.md#still-to-do) are still to be checked live.
@@ -104,8 +104,9 @@ explicit All refresh or Mark all read changes this record; single-source tabs ne
     is reapplied on top of the newest remote snapshot instead.
 - Turning sync on with existing local data is an **import**: it creates records
   only where none exist and never overwrites a remote record or tombstone. (On
-  iOS this is the migration from `NSUbiquitousKeyValueStore` saved posts, including
-  any kept only locally above the old size limit.)
+  iOS this covers saves made before sync turned on for an account, including the
+  one-time read of the old `NSUbiquitousKeyValueStore` saved list, which iOS no
+  longer writes.)
 - Order competing devices by accepted writes, not by their clocks.
 
 ## Accounts
@@ -120,4 +121,3 @@ intentions apart, never pushing them to the new account.
   API terms require removing deleted content).
 - Whether iOS's YouTube "videos above the newest seen" rule stays per device or
   uses the synced snapshot's YouTube list (desktop uses the snapshot).
-- When to retire the `NSUbiquitousKeyValueStore` saved list on iOS.

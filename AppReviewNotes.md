@@ -11,7 +11,7 @@ SCREEN RECORDING
 Recorded on [iPhone model], iOS [version], starting from launch.
 
 1. PURPOSE AND AUDIENCE
-Royal is a reader for people who follow Reddit, Hacker News, and YouTube and want one place to catch up. It shows posts from the subreddits a user already follows, Hacker News top/new stories, and new uploads from the user's YouTube subscriptions, in separate tabs and in a combined "All" feed that marks what is new since the last visit. Users can save posts for later (synced with iCloud key-value storage) and play YouTube videos in the app. It is for adults who already use these services; it has no algorithmic recommendations, ads, or tracking.
+Royal is a reader for people who follow Reddit, Hacker News, and YouTube and want one place to catch up. It shows posts from the subreddits a user already follows, Hacker News top/new stories, and new uploads from the user's YouTube subscriptions, in separate tabs and in a combined "All" feed that marks what is new since the last visit. Users can save posts for later (synced through the user's private iCloud database) and play YouTube videos in the app. It is for adults who already use these services; it has no algorithmic recommendations, ads, or tracking.
 
 2. HOW TO USE / DEMO ACCOUNTS
 - Hacker News works with no login: open the Hacker News tab.
@@ -34,8 +34,7 @@ USER-GENERATED CONTENT: Royal does not host or let users post content of its own
 - Reddit (reddit.com): post listings for the user's followed subreddits, with the user's own login.
 - Hacker News (Firebase API, hacker-news.firebaseio.com): public stories.
 - YouTube / Google (youtube.com, accounts.google.com): the user's subscription feed and sign-in; videos play through YouTube's embedded player.
-- Apple iCloud key-value storage: syncs saved posts between the user's devices.
-- Apple CloudKit (the user's private iCloud database): optional, off by default. Settings > Sync with Desktop shares saved posts, and which posts the All feed has shown, with Royal's open-source desktop browser extension. Data stays in the user's own iCloud account; there is no Royal server.
+- Apple CloudKit (the user's private iCloud database): syncs saved posts, and which posts the All feed has shown, between the user's devices and with Royal's open-source desktop browser extension. It uses the Apple Account signed in to iCloud; Settings > Sync shows its state. Data stays in the user's own iCloud account; there is no Royal server.
 No analytics, ads, AI services, payment processors, or backend of our own. There are no in-app purchases.
 
 4. REGIONAL DIFFERENCES

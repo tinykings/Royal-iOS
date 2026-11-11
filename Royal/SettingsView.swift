@@ -97,7 +97,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Hacker News")
                 }
-                DesktopSyncSection(sync: store.savedSync)
+                SyncSection(sync: store.savedSync)
                 Section {
                     LabeledContent("Version", value: appVersion)
                     Link(destination: URL(string: "https://github.com/tinykings/Royal-iOS")!) {

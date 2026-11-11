@@ -7,30 +7,41 @@ struct SavedPost: Codable {
     let savedAt: Date
 }
 
-// Saved posts live in iCloud key-value storage so they follow the user across
-// devices, mirrored to UserDefaults so they persist when iCloud is unavailable.
-// Key-value storage holds up to 1 MB, roughly a couple of thousand posts; past that
-// the list is kept on this device only.
+// This device's own saved posts, used while CloudKit sync (SavedSync) isn't active
+// yet: before the first iCloud sign-in, or with no Apple Account signed in. When sync
+// turns on for an account, they're imported into its synced library. Kept in
+// UserDefaults on this device only.
+//
+// Royal used to sync this list through iCloud key-value storage. That copy is read
+// once, so saves that only reached this device that way aren't lost, and never
+// written again.
 enum SavedPostsStorage {
     private static let key = "savedPosts"
     private static let modifiedKey = "savedPostsModified"
     // Data that couldn't be read, kept so a later version can recover it.
     private static let unreadableKey = "savedPostsUnreadable"
-    private static let cloudLimit = 1_000_000 - 1_000
+    private static let keyValueImportedKey = "savedPostsKeyValueImported"
 
     static func load() -> [SavedPost] {
+        importKeyValueStoreOnce()
+        guard let data = UserDefaults.standard.data(forKey: key) else { return [] }
+        return decode(data)
+    }
+
+    // Takes the key-value copy when it's newer than this device's, as the old
+    // newest-wins rule did; a copy with no time recorded wins a tie.
+    private static func importKeyValueStoreOnce() {
+        let local = UserDefaults.standard
+        guard !local.bool(forKey: keyValueImportedKey) else { return }
         let cloud = NSUbiquitousKeyValueStore.default
         cloud.synchronize()
-        let local = UserDefaults.standard
-        // Each copy records when it was written; the newer wins. Copies from before that
-        // was recorded have no time, so a timed copy beats them, and iCloud wins a tie.
         let cloudModified = cloud.object(forKey: modifiedKey) as? Double ?? 0
         let localModified = local.object(forKey: modifiedKey) as? Double ?? 0
-        let newest = localModified > cloudModified
-            ? local.data(forKey: key) ?? cloud.data(forKey: key)
-            : cloud.data(forKey: key) ?? local.data(forKey: key)
-        guard let data = newest else { return [] }
-        return decode(data)
+        if let data = cloud.data(forKey: key), local.data(forKey: key) == nil || cloudModified >= localModified {
+            local.set(data, forKey: key)
+            local.set(cloudModified, forKey: modifiedKey)
+        }
+        local.set(true, forKey: keyValueImportedKey)
     }
 
     // Decodes each post on its own, so one that no longer fits FeedPost drops alone
@@ -55,13 +66,7 @@ enum SavedPostsStorage {
 
     static func save(_ saved: [SavedPost]) {
         guard let data = try? JSONEncoder().encode(saved) else { return }
-        let modified = Date().timeIntervalSince1970
         UserDefaults.standard.set(data, forKey: key)
-        UserDefaults.standard.set(modified, forKey: modifiedKey)
-        // Too big for iCloud: leave its older copy, which this device's newer one outranks.
-        guard data.count <= cloudLimit else { return }
-        let cloud = NSUbiquitousKeyValueStore.default
-        cloud.set(data, forKey: key)
-        cloud.set(modified, forKey: modifiedKey)
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: modifiedKey)
     }
 }

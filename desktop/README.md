@@ -19,7 +19,8 @@ After pulling changes, **Reload** Royal on the extensions page and reopen its ta
 
 ## Sync with iOS
 
-Opt-in on each device. Everything is in one custom private zone, `RoyalSync`;
+Always on in iOS; on the desktop, on while signed in. Everything is in one
+custom private zone, `RoyalSync`;
 the record format and conflict rules are in
 [docs/sync-schema.md](../docs/sync-schema.md).
 
@@ -31,7 +32,8 @@ the record format and conflict rules are in
 
 **Turning it on**
 
-- iOS: **Settings › Sync with Desktop**.
+- iOS: nothing to do. Royal syncs with the Apple Account signed in to iCloud;
+  **Settings › Sync** shows its state.
 - Desktop: **iCloud Sync** tab → **Sign in with Apple** with the Apple Account on
   the iPhone. Being signed in is what turns sync on (since 0.6.2; there are no
   separate sync buttons), so expect "Synced. Received …, sent …" straight away.
@@ -59,9 +61,12 @@ sign-in expired) keeps changes pending, in the library's storage, so they surviv
 restarts; Refresh All still runs.
 
 On iOS, sync runs when the app opens or returns to the foreground, after each
-change, and during an All refresh (which waits up to 4 s for it). While sync is
-on, iOS also mirrors saved posts into iCloud key-value storage, so devices
-without sync still see them, and imports saves it finds there.
+change, and during an All refresh (which waits up to 4 s for it). Until sync has
+turned on for an account (no iCloud account, or iCloud not ready), iOS keeps saves
+on the device and imports them when it does. If another Apple Account signs in to
+iCloud, iOS switches to it, keeping the previous account's copy and pending changes
+apart for its return. iOS no longer uses iCloud key-value storage: it reads the
+old saved list there once, imports it, and never writes it.
 
 **Sign-in:** the CloudKit web auth token is kept in `chrome.storage.local`
 (trusted contexts only), so it survives browser restarts and extension updates.
@@ -220,7 +225,7 @@ export a HAR or copy request headers: they contain session cookies.
 
 - **Live edge cases with iOS:** seen sync from iOS, concurrent saves on both
   sides, offline unsave then reconnect, same-post conflict, Apple Account switch,
-  an interrupted first import, and saves above the old key-value size limit.
+  an interrupted first import, and the one-time import of a large key-value list.
   Unit tests cover these against `fake-cloudkit.mjs` (test-only, not loaded by
   the extension).
 - **All snapshot on iOS:** leaning against. Seen sync already keeps posts one
@@ -228,8 +233,9 @@ export a HAR or copy request headers: they contain session cookies.
   iOS's All a stored snapshot, and iOS would have to split it with the
   snapshot's own `previouslySeen`/`previousRefresh` rather than its merged seen
   ids, or everything the desktop just showed would land under Earlier unread.
-- **Retiring key-value storage** for saved posts on iOS, and **retention** of
-  saved snapshots of content deleted upstream (Reddit's terms).
+- **Retention** of saved snapshots of content deleted upstream (Reddit's terms).
+- **Dropping the key-value entitlement** on iOS once every device has run the
+  one-time import.
 - **Extension UI:** Settings-like choices (card/list, open link vs. comments),
   NSFW handling for saved posts, and checking the design with real feeds.
 - **Distribution:** it's loaded unpacked; the Chrome Web Store would need a

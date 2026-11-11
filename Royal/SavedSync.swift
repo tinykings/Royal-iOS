@@ -1,12 +1,14 @@
 import CloudKit
 import Foundation
 
-// Syncs saved posts and seen posts with the desktop extension through the RoyalSync
-// zone of the private CloudKit database (docs/sync-schema.md). Opt-in. While it's on,
-// the synced library is what the Saved tab shows, and FeedStore mirrors it into iCloud
-// key-value storage so devices without sync, or turning sync off, still have the list.
-// Seen (RoyalSeen) is merged into the All feed's seen ids, so a post shown on another
-// device isn't new here at the next refresh. The All snapshot record is left alone.
+// Syncs saved posts and seen posts between devices and with the desktop extension
+// through the RoyalSync zone of the private CloudKit database (docs/sync-schema.md).
+// Always on: it turns itself on for the Apple Account signed in to iCloud, and once
+// it has, the synced library is what the Saved tab shows. Until then (no account, or
+// iCloud not ready) FeedStore keeps saves in SavedPostsStorage, which is imported when
+// sync turns on. Seen (RoyalSeen) is merged into the All feed's seen ids, so a post
+// shown on another device isn't new here at the next refresh. The All snapshot record
+// is left alone.
 //
 // Like the desktop it syncs when the app opens or returns to the foreground, about
 // 1.5 s after each change, and before an All refresh. There's no background timer.
@@ -23,12 +25,9 @@ final class SavedSync: ObservableObject {
     @Published private(set) var library = SavedSyncLibrary()
     @Published private(set) var status = ""
     @Published private(set) var busy = false
-    // Signed in to a different Apple Account than the one syncing: its data is hidden
-    // and nothing is sent until that account signs in again or sync is turned on anew.
-    @Published private(set) var accountMismatch = false
-    // Sync was asked to turn on but iCloud wasn't ready (throttled, offline, or the
-    // sign-in needed confirming). Kept across launches; Royal keeps trying.
-    @Published private(set) var pendingEnable = UserDefaults.standard.bool(forKey: SavedSync.pendingEnableKey)
+    // Sync hasn't turned on for an Apple Account yet: none is signed in, or iCloud
+    // wasn't ready (throttled, offline, or the sign-in needed confirming). Royal keeps trying.
+    @Published private(set) var pendingEnable = true
 
     // Called whenever the saved list, the seen ids, or whether sync is active may have changed.
     var onChange: (() -> Void)?
@@ -36,7 +35,8 @@ final class SavedSync: ObservableObject {
     var localSeen: (() -> (ids: [String], sources: [String]))?
 
     private static let settingsKey = "savedSyncSettings"
-    private static let pendingEnableKey = "savedSyncPendingEnable"
+    // Written by builds where sync was opt-in.
+    private static let legacyPendingEnableKey = "savedSyncPendingEnable"
     private static let zoneID = CKRecordZone.ID(zoneName: "RoyalSync", ownerName: CKCurrentUserDefaultName)
     private var verifiedAccount = false
     private var again = false
@@ -60,7 +60,7 @@ final class SavedSync: ObservableObject {
     var isOn: Bool { settings != nil }
 
     // Whether the Saved tab shows the synced library.
-    var isActive: Bool { configurationMatches && !accountMismatch }
+    var isActive: Bool { configurationMatches }
 
     private var configurationMatches: Bool {
         guard let settings else { return false }
@@ -71,11 +71,17 @@ final class SavedSync: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: Self.settingsKey),
            let stored = try? JSONDecoder().decode(Settings.self, from: data) {
             settings = stored
-            library = Self.loadLibrary(stored) ?? SavedSyncLibrary()
-            if !configurationMatches {
-                status = "This build uses a different CloudKit container or environment than when sync was turned on. Turn sync off and on again."
+            if configurationMatches {
+                library = Self.loadLibrary(stored) ?? SavedSyncLibrary()
+                pendingEnable = false
+            } else {
+                // A build for another container or environment (Debug vs. TestFlight):
+                // turn on afresh for this one. The other's library file stays.
+                settings = nil
+                UserDefaults.standard.removeObject(forKey: Self.settingsKey)
             }
         }
+        UserDefaults.standard.removeObject(forKey: Self.legacyPendingEnableKey)
         accountObserver = NotificationCenter.default.addObserver(
             forName: .CKAccountChanged, object: nil, queue: .main
         ) { [weak self] _ in
@@ -92,16 +98,9 @@ final class SavedSync: ObservableObject {
 
     // MARK: Turning sync on and off
 
-    // Turns sync on for the signed-in Apple Account, importing the saves in iCloud
-    // key-value storage. Earlier synced data for the same account on this device is
-    // picked up again. If iCloud isn't ready, the request is kept and retried.
-    func enable() async {
-        setPendingEnable(true)
-        notBefore = nil
-        failures = 0
-        await attemptEnable()
-    }
-
+    // Turns sync on for the signed-in Apple Account, importing this device's own saves
+    // (SavedPostsStorage) and seen ids. Earlier synced data for the same account on this
+    // device is picked up again. If iCloud isn't ready, it's tried again later.
     private func attemptEnable() async {
         guard pendingEnable, !isOn, let identifier = Self.containerIdentifier, !busy else { return }
         busy = true
@@ -110,24 +109,20 @@ final class SavedSync: ObservableObject {
             let container = CKContainer(identifier: identifier)
             try await Self.checkAccount(container)
             let account = try await container.userRecordID().recordName
-            // Switched off while waiting for iCloud.
-            guard pendingEnable else {
-                busy = false
-                return
-            }
             let new = Settings(container: identifier, environment: Self.environment, account: account)
             library = Self.loadLibrary(new) ?? SavedSyncLibrary()
             library.importLocal(SavedPostsStorage.load())
             if let local = localSeen?() { library.noteSeen(ids: local.ids, sources: local.sources) }
             settings = new
-            accountMismatch = false
             verifiedAccount = true
             if let data = try? JSONEncoder().encode(new) { UserDefaults.standard.set(data, forKey: Self.settingsKey) }
-            setPendingEnable(false)
+            pendingEnable = false
             persist()
+            // They're this account's now, kept with its pending intentions; what stays
+            // here is only what's saved while no account is syncing.
+            SavedPostsStorage.save([])
         } catch {
             busy = false
-            guard pendingEnable else { return }
             handle(error, enabling: true)
             return
         }
@@ -135,24 +130,14 @@ final class SavedSync: ObservableObject {
         await sync()
     }
 
-    private func setPendingEnable(_ value: Bool) {
-        pendingEnable = value
-        UserDefaults.standard.set(value, forKey: Self.pendingEnableKey)
-    }
-
-    // Back to iCloud key-value storage alone. The synced copy stays on this device for
-    // turning sync on again; changes made meanwhile are imported then.
-    func disable() {
-        scheduled?.cancel()
-        setPendingEnable(false)
-        notBefore = nil
-        failures = 0
+    // Another Apple Account signed in to iCloud: hide this one's library, keeping its
+    // file and pending intentions for when it signs in again, and turn on for the new one.
+    private func switchAccount() {
         settings = nil
-        accountMismatch = false
         verifiedAccount = false
         UserDefaults.standard.removeObject(forKey: Self.settingsKey)
         library = SavedSyncLibrary()
-        status = "Sync is off. Saved posts stay in iCloud key-value storage."
+        pendingEnable = true
         onChange?()
     }
 
@@ -165,7 +150,7 @@ final class SavedSync: ObservableObject {
         scheduleSync()
     }
 
-    // Saves that arrived through key-value storage, from a device without sync.
+    // Saves made on this device before sync turned on.
     func importLocal(_ saved: [SavedPost]) {
         guard isActive, library.importLocal(saved) else { return }
         persist()
@@ -214,7 +199,6 @@ final class SavedSync: ObservableObject {
             return
         }
         busy = true
-        defer { busy = false }
         repeat {
             again = false
             do {
@@ -226,6 +210,9 @@ final class SavedSync: ObservableObject {
                 handle(error, enabling: false)
             }
         } while again && configurationMatches && notBefore == nil
+        busy = false
+        // The Apple Account changed during the sync.
+        if pendingEnable && !isOn { await attemptEnable() }
     }
 
     private struct Paused: Error {
@@ -243,13 +230,9 @@ final class SavedSync: ObservableObject {
         // so it's checked once per launch and after the account changes.
         if !verifiedAccount {
             let current = try await container.userRecordID().recordName
-            let mismatch = current != settings.account
-            if mismatch != accountMismatch {
-                accountMismatch = mismatch
-                onChange?()
-            }
-            if mismatch {
-                throw Paused(message: "Signed in to a different Apple Account than the one syncing. Sign in to that account, or turn sync off and on again for this one.")
+            if current != settings.account {
+                switchAccount()
+                return "Switching to the Apple Account signed in to iCloud…"
             }
             verifiedAccount = true
         }
@@ -493,14 +476,9 @@ final class SavedSync: ObservableObject {
             status = message + " Royal will try again in about \(Self.duration(delay))."
             scheduleSync(after: 0)
         case .later:
-            status = message + (enabling || isOn ? " Royal will try again when you return to the app." : "")
+            status = message + " Royal will try again when you return to the app."
         case .never:
-            if enabling {
-                setPendingEnable(false)
-                status = "Couldn't turn on sync. " + message
-            } else {
-                status = message
-            }
+            status = enabling ? "Couldn't turn on sync. " + message : message
         }
     }
 
