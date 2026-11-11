@@ -100,6 +100,13 @@ struct CloudKitProbeView: View {
             }
             return "iCloud is rate-limiting sign-in requests from this device (\(text)). Wait about \(Int(seconds.rounded(.up))) seconds before trying again. If it keeps happening, open Settings › Apple Account to confirm your sign-in."
         }
+        let underlying = (nsError.userInfo[NSUnderlyingErrorKey] as? NSError)?.localizedDescription ?? ""
+        let combined = text + " " + underlying
+        let passwordPrompt = combined.localizedCaseInsensitiveContains("password")
+            || combined.localizedCaseInsensitiveContains("rejected a prompt")
+        if ckError?.code == .accountTemporarilyUnavailable || passwordPrompt {
+            return "iOS needs your Apple Account password to confirm iCloud, and the prompt was dismissed or didn't finish. Open Settings › Apple Account, enter your password when asked, then read again."
+        }
         if ckError?.code == .notAuthenticated {
             return "iCloud is not signed in or needs you to sign in again. Open Settings › Apple Account, then read again."
         }
