@@ -1,8 +1,8 @@
 import Foundation
 
-// The iOS side of the RoyalSync saved-post records (docs/sync-schema.md), matching
-// desktop/sync.mjs and desktop/library.mjs. Plain values only; SavedSync does the
-// CloudKit requests.
+// The iOS side of the RoyalSync saved-post and seen records (docs/sync-schema.md),
+// matching desktop/sync.mjs and desktop/library.mjs. Plain values only; SavedSync
+// does the CloudKit requests.
 //
 // Local intentions are dirty marks, stored with the library so they survive being
 // offline and relaunches, and coalesce per post. Each mark records the library's
@@ -14,6 +14,7 @@ import Foundation
 // - Unsaves are tombstones (isSaved 0), never deletions.
 // - An import (posts saved here before sync was on) never overwrites a remote record
 //   or tombstone.
+// - Seen is a grow-only set of post ids, merged by union.
 
 struct SyncedSave: Codable {
     var post: FeedPost
@@ -40,7 +41,33 @@ struct SavedSyncLibrary: Codable {
     var systemFields: [String: Data] = [:]
     var lastSync: Date?
 
-    var pendingCount: Int { dirty.count }
+    // The RoyalSeen record: post ids the All feed has shown on any device, oldest
+    // first, at most SeenSyncCodec.limit, and the sources that have had posts in All.
+    var seen: [String] = []
+    var seenSources: [String] = []
+    // The rev of a pending seen write, if any.
+    var seenDirty: Int?
+    var seenSystemFields: Data?
+
+    var pendingCount: Int { dirty.count + (seenDirty == nil ? 0 : 1) }
+
+    init() {}
+
+    // Libraries stored before seen synced lack its keys.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        entries = try c.decode([String: SyncedSave].self, forKey: .entries)
+        dirty = try c.decode([String: Mark].self, forKey: .dirty)
+        rev = try c.decode(Int.self, forKey: .rev)
+        changeToken = try c.decodeIfPresent(Data.self, forKey: .changeToken)
+        zoneReady = try c.decode(Bool.self, forKey: .zoneReady)
+        systemFields = try c.decode([String: Data].self, forKey: .systemFields)
+        lastSync = try c.decodeIfPresent(Date.self, forKey: .lastSync)
+        seen = try c.decodeIfPresent([String].self, forKey: .seen) ?? []
+        seenSources = try c.decodeIfPresent([String].self, forKey: .seenSources) ?? []
+        seenDirty = try c.decodeIfPresent(Int.self, forKey: .seenDirty)
+        seenSystemFields = try c.decodeIfPresent(Data.self, forKey: .seenSystemFields)
+    }
 
     // Newest first, tombstones left out.
     var savedPosts: [SavedPost] {
@@ -109,10 +136,97 @@ struct SavedSyncLibrary: Codable {
     }
 
     // The zone was deleted: every record is created anew, keeping pending intentions.
+    // Seen is written again, since its union is all there is to it.
     mutating func zoneLost() {
         zoneReady = false
         changeToken = nil
         systemFields = [:]
+        seenSystemFields = nil
+        if !seen.isEmpty && seenDirty == nil {
+            rev += 1
+            seenDirty = rev
+        }
+    }
+
+    // MARK: Seen
+
+    // What this device's All feed has shown (allFeedSeenIDs, allFeedSources), merged in.
+    // Returns whether that added anything to send.
+    @discardableResult
+    mutating func noteSeen(ids: [String], sources: [String]) -> Bool {
+        let merged = SeenSyncCodec.merge(remote: seen, local: ids)
+        let mergedSources = SeenSyncCodec.union(seenSources, sources)
+        guard merged != seen || mergedSources != seenSources else { return false }
+        seen = merged
+        seenSources = mergedSources
+        rev += 1
+        seenDirty = rev
+        return true
+    }
+
+    // The remote RoyalSeen record; nil values when it couldn't be read (or is a newer
+    // schema), keeping only its revision.
+    mutating func applyRemoteSeen(ids: [String]?, sources: [String]?, systemFields fields: Data?) {
+        if let fields { seenSystemFields = fields }
+        guard let ids, let sources else { return }
+        seen = SeenSyncCodec.merge(remote: ids, local: seen)
+        seenSources = SeenSyncCodec.union(sources, seenSources)
+        // Local ids or sources the remote lacks still need sending.
+        let remoteIDs = Set(ids), remoteSources = Set(sources)
+        if seenDirty == nil && (seen.contains { !remoteIDs.contains($0) } || seenSources.contains { !remoteSources.contains($0) }) {
+            rev += 1
+            seenDirty = rev
+        }
+    }
+
+    mutating func applyRemoteSeenDeletion() {
+        seenSystemFields = nil
+    }
+
+    mutating func seenPushSucceeded(rev pushedRev: Int, systemFields fields: Data?) {
+        if let fields { seenSystemFields = fields }
+        if seenDirty == pushedRev { seenDirty = nil }
+    }
+}
+
+enum SeenSyncCodec {
+    static let recordType = "RoyalSeen"
+    static let recordName = "seen"
+    // As FeedStore's seenLimit and desktop SEEN_LIMIT.
+    static let limit = 3000
+    static let knownSources = ["reddit", "hn", "youtube"]
+
+    // Union: remote order first, then local ids it lacks, keeping the newest `limit`.
+    static func merge(remote: [String], local: [String]) -> [String] {
+        let remoteSet = Set(remote)
+        var added = Set<String>()
+        let extra = local.filter { !remoteSet.contains($0) && added.insert($0).inserted }
+        return Array((remote + extra).suffix(limit))
+    }
+
+    // Known sources only, first seen first.
+    static func union(_ a: [String], _ b: [String]) -> [String] {
+        var out: [String] = []
+        for source in a + b where knownSources.contains(source) && !out.contains(source) {
+            out.append(source)
+        }
+        return out
+    }
+
+    static func encode(_ strings: [String]) -> String {
+        let data = (try? JSONEncoder().encode(strings)) ?? Data("[]".utf8)
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    // A RoyalSeen record's fields; nil when it's not one Royal understands, including a
+    // newer schemaVersion. Limits match desktop decodeRecord.
+    static func decode(ids: String?, sources: String?, schemaVersion: Int?) -> (ids: [String], sources: [String])? {
+        guard let schemaVersion, schemaVersion <= SavedSyncCodec.schemaVersion,
+              let idData = ids?.data(using: .utf8), let sourceData = sources?.data(using: .utf8),
+              let ids = try? JSONDecoder().decode([String].self, from: idData), ids.count <= limit * 2,
+              let sources = try? JSONDecoder().decode([String].self, from: sourceData), sources.count <= 10
+        else { return nil }
+        return (ids, union(sources, []))
     }
 }
 

@@ -1,11 +1,12 @@
 import CloudKit
 import Foundation
 
-// Syncs saved posts with the desktop extension through the RoyalSync zone of the
-// private CloudKit database (docs/sync-schema.md). Opt-in. While it's on, the synced
-// library is what the Saved tab shows, and FeedStore mirrors it into iCloud key-value
-// storage so devices without sync, or turning sync off, still have the list.
-// The seen and All records in the zone are left alone for now.
+// Syncs saved posts and seen posts with the desktop extension through the RoyalSync
+// zone of the private CloudKit database (docs/sync-schema.md). Opt-in. While it's on,
+// the synced library is what the Saved tab shows, and FeedStore mirrors it into iCloud
+// key-value storage so devices without sync, or turning sync off, still have the list.
+// Seen (RoyalSeen) is merged into the All feed's seen ids, so a post shown on another
+// device isn't new here at the next refresh. The All snapshot record is left alone.
 //
 // Like the desktop it syncs when the app opens or returns to the foreground, about
 // 1.5 s after each change, and on Sync Now. There's no background timer.
@@ -29,8 +30,10 @@ final class SavedSync: ObservableObject {
     // sign-in needed confirming). Kept across launches; Royal keeps trying.
     @Published private(set) var pendingEnable = UserDefaults.standard.bool(forKey: SavedSync.pendingEnableKey)
 
-    // Called whenever the saved list or whether sync is active may have changed.
+    // Called whenever the saved list, the seen ids, or whether sync is active may have changed.
     var onChange: (() -> Void)?
+    // This device's All feed seen ids and sources, offered when sync turns on.
+    var localSeen: (() -> (ids: [String], sources: [String]))?
 
     private static let settingsKey = "savedSyncSettings"
     private static let pendingEnableKey = "savedSyncPendingEnable"
@@ -115,6 +118,7 @@ final class SavedSync: ObservableObject {
             let new = Settings(container: identifier, environment: Self.environment, account: account)
             library = Self.loadLibrary(new) ?? SavedSyncLibrary()
             library.importLocal(SavedPostsStorage.load())
+            if let local = localSeen?() { library.noteSeen(ids: local.ids, sources: local.sources) }
             settings = new
             accountMismatch = false
             verifiedAccount = true
@@ -166,6 +170,22 @@ final class SavedSync: ObservableObject {
         guard isActive, library.importLocal(saved) else { return }
         persist()
         scheduleSync()
+    }
+
+    // What this device's All feed has shown; merged and sent.
+    func noteSeen(ids: [String], sources: [String]) {
+        guard isActive, library.noteSeen(ids: ids, sources: sources) else { return }
+        persist()
+        scheduleSync()
+    }
+
+    // Waits, up to `timeout`, for a sync in progress to finish; returns at once if none is.
+    // An All refresh waits so posts another device has shown don't count as new.
+    func waitUntilIdle(timeout: Double) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while busy && Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
     }
 
     // Also finishes turning sync on when that's still pending.
@@ -239,22 +259,29 @@ final class SavedSync: ObservableObject {
         var pulled = 0, pushed = 0, failed = 0
         for _ in 0..<4 {
             pulled += try await pull(database)
-            let pending = library.pending
+            let pending = library.pending.map { PushItem.saved(postID: $0.postID, rev: $0.rev) }
+                + (library.seenDirty.map { [PushItem.seen(rev: $0)] } ?? [])
             if pending.isEmpty { break }
             var retry = false
             for start in stride(from: 0, to: pending.count, by: 100) {
                 let batch = Array(pending[start..<min(start + 100, pending.count)])
-                let records = batch.compactMap { record(for: $0.postID) }
+                let records = batch.compactMap { record(for: $0) }
                 let result = try await database.modifyRecords(
                     saving: records, deleting: [], savePolicy: .ifServerRecordUnchanged, atomically: false)
                 for item in batch {
-                    let id = CKRecord.ID(recordName: SavedSyncCodec.recordName(item.postID), zoneID: Self.zoneID)
+                    let id = CKRecord.ID(recordName: item.recordName, zoneID: Self.zoneID)
                     switch result.saveResults[id] ?? .failure(CKError(.internalError)) {
                     case .success(let saved):
-                        library.pushSucceeded(postID: item.postID, rev: item.rev, systemFields: Self.archive(saved))
+                        switch item {
+                        case .saved(let postID, let rev):
+                            library.pushSucceeded(postID: postID, rev: rev, systemFields: Self.archive(saved))
+                        case .seen(let rev):
+                            library.seenPushSucceeded(rev: rev, systemFields: Self.archive(saved))
+                        }
                         pushed += 1
                     case .failure(let error as CKError) where error.code == .serverRecordChanged:
-                        library.pushConflicted(postID: item.postID)
+                        // Seen needs nothing more: the newer revision is merged below and sent again.
+                        if case .saved(let postID, _) = item { library.pushConflicted(postID: postID) }
                         if let server = error.serverRecord { apply(server) }
                         retry = true
                     case .failure(let error as CKError) where Self.isZoneMissing(error):
@@ -277,6 +304,18 @@ final class SavedSync: ObservableObject {
         return summary
     }
 
+    private enum PushItem {
+        case saved(postID: String, rev: Int)
+        case seen(rev: Int)
+
+        var recordName: String {
+            switch self {
+            case .saved(let postID, _): SavedSyncCodec.recordName(postID)
+            case .seen: SeenSyncCodec.recordName
+            }
+        }
+    }
+
     // Every page of changes since the stored token.
     private func pull(_ database: CKDatabase) async throws -> Int {
         var pulled = 0
@@ -292,6 +331,10 @@ final class SavedSync: ObservableObject {
                     pulled += 1
                 }
                 for deletion in changes.deletions {
+                    if deletion.recordID.zoneID == Self.zoneID && deletion.recordID.recordName == SeenSyncCodec.recordName {
+                        library.applyRemoteSeenDeletion()
+                        continue
+                    }
                     guard deletion.recordID.zoneID == Self.zoneID,
                           let postID = SavedSyncCodec.postID(fromRecordName: deletion.recordID.recordName) else { continue }
                     library.applyRemoteDeletion(postID: postID)
@@ -312,6 +355,14 @@ final class SavedSync: ObservableObject {
     }
 
     private func apply(_ record: CKRecord) {
+        if record.recordType == SeenSyncCodec.recordType, record.recordID.zoneID == Self.zoneID,
+           record.recordID.recordName == SeenSyncCodec.recordName {
+            let seen = SeenSyncCodec.decode(
+                ids: record["ids"] as? String, sources: record["sources"] as? String,
+                schemaVersion: (record["schemaVersion"] as? NSNumber)?.intValue)
+            library.applyRemoteSeen(ids: seen?.ids, sources: seen?.sources, systemFields: Self.archive(record))
+            return
+        }
         guard record.recordType == SavedSyncCodec.recordType, record.recordID.zoneID == Self.zoneID,
               let postID = SavedSyncCodec.postID(fromRecordName: record.recordID.recordName) else { return }
         let save = SavedSyncCodec.decode(
@@ -324,6 +375,20 @@ final class SavedSync: ObservableObject {
 
     // The record to write: the last known revision when there is one, so the write is
     // conditional on it; otherwise a new record, which fails if another client created it.
+    private func record(for item: PushItem) -> CKRecord? {
+        switch item {
+        case .saved(let postID, _): return record(for: postID)
+        case .seen:
+            let id = CKRecord.ID(recordName: SeenSyncCodec.recordName, zoneID: Self.zoneID)
+            let record = library.seenSystemFields.flatMap(Self.unarchiveRecord)
+                ?? CKRecord(recordType: SeenSyncCodec.recordType, recordID: id)
+            record["ids"] = SeenSyncCodec.encode(library.seen) as NSString
+            record["sources"] = SeenSyncCodec.encode(library.seenSources) as NSString
+            record["schemaVersion"] = NSNumber(value: Int64(SavedSyncCodec.schemaVersion))
+            return record
+        }
+    }
+
     private func record(for postID: String) -> CKRecord? {
         guard let entry = library.entries[postID] else { return nil }
         let id = CKRecord.ID(recordName: SavedSyncCodec.recordName(postID), zoneID: Self.zoneID)
@@ -458,7 +523,7 @@ final class SavedSync: ObservableObject {
         case .notAuthenticated?, .accountTemporarilyUnavailable?:
             return ("iCloud needs your Apple Account password confirmed. Open Settings › Apple Account if it asks.", .later)
         case .unknownItem?, .invalidArguments?, .serverRejectedRequest?:
-            return ("CloudKit rejected the request (\(text)). The RoyalSavedPost record type may not be deployed to \(environment) yet; see desktop/README.md.", .never)
+            return ("CloudKit rejected the request (\(text)). The RoyalSavedPost or RoyalSeen record type may not be deployed to \(environment) yet; see desktop/README.md.", .never)
         default:
             break
         }

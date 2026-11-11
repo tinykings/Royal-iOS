@@ -76,10 +76,19 @@ final class FeedStore: ObservableObject {
                 }
             }
         }
-        savedSync.onChange = { [weak self] in self?.reloadSaved() }
+        savedSync.onChange = { [weak self] in
+            self?.reloadSaved()
+            self?.mergeSyncedSeen()
+        }
+        savedSync.localSeen = {
+            let defaults = UserDefaults.standard
+            return (defaults.stringArray(forKey: FeedStore.seenKey) ?? [], defaults.stringArray(forKey: FeedStore.sourcesKey) ?? [])
+        }
         if savedSync.isActive {
             savedSync.importLocal(SavedPostsStorage.load())
             reloadSaved()
+            // Posts shown while sync was paused, or before seen synced at all.
+            sendSeen()
         }
         savedSync.scheduleSync(after: 0)
         restoreCache()
@@ -174,8 +183,14 @@ final class FeedStore: ObservableObject {
             started.append(key)
             waiting.append(task)
         }
+        let refreshingAll = !started.isEmpty && keys == FeedKey.combined
+        // Catch up on what other devices have shown while the feeds load, so it isn't new here.
+        if refreshingAll { savedSync.scheduleSync(after: 0) }
         for task in waiting { await task.value }
-        if !started.isEmpty && keys == FeedKey.combined { recordRefresh() }
+        if refreshingAll {
+            await savedSync.waitUntilIdle(timeout: 4)
+            recordRefresh()
+        }
         if !started.isEmpty { saveCache() }
     }
 
@@ -361,6 +376,28 @@ final class FeedStore: ObservableObject {
         defaults.set(now, forKey: Self.refreshedKey)
         lastRefresh = now
         pagedSinceRefresh = []
+        sendSeen()
+    }
+
+    // Offers this device's seen ids to sync with the desktop, when it's on.
+    private func sendSeen() {
+        guard savedSync.isActive, let local = savedSync.localSeen?() else { return }
+        savedSync.noteSeen(ids: local.ids, sources: local.sources)
+    }
+
+    // Takes in what other devices' All feeds have shown. It counts from the next refresh,
+    // like everything seen here; the posts on screen stay where they are.
+    private func mergeSyncedSeen() {
+        guard savedSync.isActive else { return }
+        let library = savedSync.library
+        guard !library.seen.isEmpty || !library.seenSources.isEmpty else { return }
+        let defaults = UserDefaults.standard
+        let stored = defaults.stringArray(forKey: Self.seenKey) ?? []
+        let merged = SeenSyncCodec.merge(remote: library.seen, local: stored)
+        if merged != stored { defaults.set(merged, forKey: Self.seenKey) }
+        let storedSources = defaults.stringArray(forKey: Self.sourcesKey) ?? []
+        let mergedSources = SeenSyncCodec.union(storedSources, library.seenSources)
+        if mergedSources != storedSources { defaults.set(mergedSources, forKey: Self.sourcesKey) }
     }
 
     // Adds posts loaded after a refresh, so the next refresh doesn't call them new.
@@ -370,6 +407,7 @@ final class FeedStore: ObservableObject {
         let idSet = Set(ids)
         let stored = (defaults.stringArray(forKey: Self.seenKey) ?? []).filter { !idSet.contains($0) }
         defaults.set(Array((stored + ids).suffix(Self.seenLimit)), forKey: Self.seenKey)
+        sendSeen()
     }
 
     // Marks everything the All feed shows as read, so it moves in with the earlier posts.

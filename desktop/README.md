@@ -72,13 +72,13 @@ Added in 0.3.0 (`library.mjs`, `store.mjs`); a port of `Royal/FeedStore.swift`:
 
 Added in 0.4.0 (`sync.mjs`, `sync-runner.mjs`); the wire format and conflict
 rules are in [docs/sync-schema.md](../docs/sync-schema.md). iOS syncs saved posts
-only (Settings › Web Sync Experiment › Sync Saved Posts); All and seen still sync
-between desktop browsers only.
+and seen (Settings › Web Sync Experiment › Sync with Desktop); the All snapshot
+still syncs between desktop browsers only.
 
 - Opt-in, in **iCloud probe → 4. Sync All, seen, and saved**, in whichever
   environment step 1 selects (Production or Development). It reads and writes
-  only its own zone. iOS reads and writes its `RoyalSavedPost` records once
-  Sync Saved Posts is on there; with it off, iOS keeps saved posts in iCloud
+  only its own zone. iOS reads and writes its `RoyalSavedPost` and `RoyalSeen`
+  records once Sync with Desktop is on there; with it off, iOS keeps saved posts in iCloud
   key-value storage only. While it's on, iOS mirrors the synced list into
   key-value storage, and imports saves it finds there that the zone has no record of. Production
   rejects record types that haven't been deployed, so set up the schema first
@@ -382,6 +382,30 @@ database or application server would be needed; CloudKit would supply storage.
   refresh-on-resume checks, and opt-in sync settings before enabling real data.
 - Replace the probe with that integration only after native/web compatibility is
   proven. Do not treat the probe's single String message as a production sync schema.
+
+## Next
+
+Saved posts sync live between iOS and desktop (2026-11-11). Remaining, roughly in order:
+
+1. **Live-test seen sync from iOS.** Refresh All on the desktop and sync; then
+   refresh All on iOS: posts the desktop showed are under Earlier, not new. And
+   the other way round.
+2. **Sync edge cases, live.** Concurrent saves on both sides, offline unsave then
+   reconnect, same-post conflict, Apple Account switch, an interrupted first
+   import, and saves above the old key-value size limit.
+3. **Extension UI.** The feed page is very basic: no thumbnails or post images,
+   and none of Royal's design. Give it a proper web design: images (`image` /
+   `imageAspect` from `sources.js`), Royal's palette and type (as on the site,
+   `docs/index.html`, and in the iOS app), card layout, the All divider between
+   new and earlier, source/score/comment metadata, and light and dark modes,
+   keeping it responsive.
+4. **All snapshot on iOS.** Read and write `RoyalAllSnapshot` so a refresh or
+   Mark all read on one device shows on the other. Decide first whether iOS's
+   YouTube "videos above the newest seen" rule uses the synced snapshot.
+5. **Out of experiment.** Move the toggle out of Web Sync Experiment, retire the
+   probe, and decide when iOS stops mirroring saves into iCloud key-value storage.
+6. **Policy and polish.** Retention for saved snapshots of content deleted
+   upstream (Reddit's terms), in-app video on desktop, and extension packaging.
 
 ## Local checks
 

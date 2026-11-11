@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Turns saved-post sync with the desktop extension on and off, and shows how it's going.
+// Turns saved- and seen-post sync with the desktop extension on and off, and shows how it's going.
 struct SavedSyncView: View {
     @EnvironmentObject private var store: FeedStore
     @ObservedObject var sync: SavedSync
@@ -8,11 +8,11 @@ struct SavedSyncView: View {
     var body: some View {
         List {
             Section {
-                Text("Sync saved posts with the Royal desktop extension through your private iCloud database. Seen posts and the All feed don't sync yet.")
+                Text("Sync saved posts, and the posts the All feed has shown, with the Royal desktop extension through your private iCloud database. A post shown on another device isn't new here at the next refresh. The All feed itself doesn't sync yet.")
             }
             if let identifier = SavedSync.containerIdentifier {
                 Section {
-                    Toggle("Sync Saved Posts", isOn: Binding(
+                    Toggle("Sync with Desktop", isOn: Binding(
                         get: { sync.isOn || sync.pendingEnable },
                         set: { on in
                             if on { Task { await store.enableSavedSync() } } else { sync.disable() }
@@ -46,7 +46,7 @@ struct SavedSyncView: View {
                 Section { Text(sync.status).textSelection(.enabled) }
             }
         }
-        .navigationTitle("Sync Saved Posts")
+        .navigationTitle("Sync with Desktop")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

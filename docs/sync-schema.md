@@ -2,9 +2,10 @@
 
 Status: implemented by the desktop extension (`desktop/sync.mjs`) and tested
 against a fake CloudKit and between two desktop clients. iOS implements
-**`RoyalSavedPost` only** (`Royal/SavedSyncLibrary.swift`, `Royal/SavedSync.swift`,
-opt-in under Settings › Sync Saved Posts); it ignores `RoyalSeen` and
-`RoyalAllSnapshot` for now. Not yet tested against live CloudKit from iOS.
+**`RoyalSavedPost` and `RoyalSeen`** (`Royal/SavedSyncLibrary.swift`,
+`Royal/SavedSync.swift`, opt-in under Settings › Web Sync Experiment › Sync with
+Desktop); it ignores `RoyalAllSnapshot` for now. Saved posts were verified live
+between iOS and desktop; seen has not been tested live from iOS yet.
 The desktop syncs in either environment; for Production the record types
 below must be created in Development and deployed (Production never creates
 them). iOS must read and write exactly this format before relying on it.
@@ -56,6 +57,14 @@ resurrect them. Saved lists show `isSaved = 1` newest `savedAt` first.
 
 A grow-only set. Merge = union: remote order first, then local ids it lacks, then
 keep the newest 3000. Matches iOS `allFeedSeenIDs` / `allFeedSources`.
+
+iOS merges the remote set into `allFeedSeenIDs` / `allFeedSources` as it arrives,
+and sends its own after each All refresh, page loaded at the end of All, and Mark
+all read. As on the desktop, the merged set only takes effect at the next All
+refresh (it becomes that refresh's `previouslySeen`); the posts on screen don't move.
+An iOS All refresh syncs while the feeds load and waits up to 4 s for it before
+recording the refresh. Note that seen means *shown by All*, not read: a desktop
+refresh that nobody looked at still makes those posts not-new on iOS's next refresh.
 
 ### `RoyalAllSnapshot`: single record `all`
 

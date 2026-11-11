@@ -108,7 +108,7 @@ struct SettingsView: View {
                     Text("Royal has no server. It talks directly to Reddit, Hacker News, and YouTube with your logins, and collects nothing.")
                 }
                 Section("Web Sync Experiment") {
-                    NavigationLink("Sync Saved Posts") { SavedSyncView(sync: store.savedSync) }
+                    NavigationLink("Sync with Desktop") { SavedSyncView(sync: store.savedSync) }
                     NavigationLink("Test iCloud Sync") { CloudKitProbeView() }
                 }
                 #if DEBUG
