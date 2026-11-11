@@ -57,16 +57,11 @@
     <div id="tab-icloud" class="tab-panel" role="tabpanel" hidden>
     <p>Sync saved posts, which posts All has shown, and the All feed itself with Royal on iOS and in other browsers, through your private iCloud database. Optional: without it, Royal keeps everything in this browser.</p>
     <section aria-labelledby="account-title">
-      <h2 id="account-title">1. Sign in to iCloud</h2>
-      <p>Use the Apple Account signed into iCloud on your iPhone. Apple handles the login, and Royal keeps you signed in until you clear its session.</p>
-      <div class="actions"><button id="sign-in">Sign in with Apple</button><button id="sign-out" class="secondary">Clear Royal session</button></div>
-    </section>
-    <section aria-labelledby="sync-title">
-      <h2 id="sync-title">2. Turn on sync</h2>
-      <p>Sign in first (step 1). On iOS, turn on Settings › Sync with Desktop with the same Apple Account. iOS syncs saved posts and seen posts; the All feed itself syncs between browsers.</p>
-      <div class="actions"><button id="sync-enable">Turn on sync</button><button id="sync-now" class="secondary">Sync now</button><button id="sync-disable" class="secondary">Turn off sync</button></div>
-      <p id="sync-status" role="status">Sync is off.</p>
-      <p>Turning sync on copies this browser’s library to the signed-in Apple Account without overwriting anything already there. Each Apple Account keeps its own copy in this browser.</p>
+      <h2 id="account-title">iCloud</h2>
+      <p>Sign in with the Apple Account on your iPhone and Royal syncs; sign out and it stops. Apple handles the login. On iOS, turn on Settings › Sync with Desktop with the same Apple Account. iOS syncs saved posts and seen posts; the All feed itself syncs between browsers.</p>
+      <div class="actions"><button id="account">Sign in with Apple</button></div>
+      <p id="sync-status" role="status">Not signed in.</p>
+      <p>Signing in adds this browser’s library to the Apple Account without overwriting anything already there. Signing out goes back to this browser’s own library; each Apple Account’s copy stays here for its next sign-in. Sign out on a shared computer.</p>
     </section>
     <section aria-labelledby="connection-title">
       <h2 id="connection-title">Connection troubleshooting</h2>

@@ -32,8 +32,10 @@ the record format and conflict rules are in
 **Turning it on**
 
 - iOS: **Settings › Sync with Desktop**.
-- Desktop: **iCloud Sync** tab → 1. **Sign in with Apple** with the Apple Account
-  on the iPhone → 2. **Turn on sync**. Expect "Synced. Received …, sent …".
+- Desktop: **iCloud Sync** tab → **Sign in with Apple** with the Apple Account on
+  the iPhone. Being signed in is what turns sync on (since 0.6.2; there are no
+  separate sync buttons), so expect "Synced. Received …, sent …" straight away.
+  **Sign out** (the same button) turns it off.
 
 There's nothing to configure: the container, web API token, and Production
 environment are built into `cloudkit.mjs` (`ROYAL_CLOUDKIT`). The extension
@@ -42,17 +44,18 @@ of iOS use Development, so they don't sync with it. (Before 0.6.1 these were
 entered by hand; 0.6.1 drops that setting, and the sign-in made with it unless
 it matched.)
 
-Both sides must use the same Apple Account. Turning
-sync on imports the local library without overwriting anything already synced,
-including unsaves (tombstones). Each Apple Account has its own copy in the
-browser; signing in to another account pauses sync until it's turned on for that
-account. **Turn off sync** switches back to the browser's local library and keeps the synced copy for later.
-Clearing the browser's extension data removes both.
+Both sides must use the same Apple Account. Signing in imports the browser's own
+library without overwriting anything already synced, including unsaves
+(tombstones). Each Apple Account has its own copy in the browser. Signing out
+switches back to the browser's own library and keeps that account's copy, with
+anything still pending, for its next sign-in; another account never sees it.
+Someone signed in by 0.6.1 or earlier without sync on starts syncing the next
+time Royal opens. Clearing the browser's extension data removes everything.
 
-**When it syncs:** when the page opens, about 1.5 s after each change, on **Sync
-now**, and just before **Refresh All**, so posts another device has shown are
+**When it syncs:** on sign-in, when the page opens, about 1.5 s after each
+change, and just before **Refresh All**, so posts another device has shown are
 already under Earlier. There's no background timer. A failed sync (offline,
-signed out) keeps changes pending, in the library's storage, so they survive
+sign-in expired) keeps changes pending, in the library's storage, so they survive
 restarts; Refresh All still runs.
 
 On iOS, sync runs when the app opens or returns to the foreground, after each
@@ -62,8 +65,9 @@ without sync still see them, and imports saves it finds there.
 
 **Sign-in:** the CloudKit web auth token is kept in `chrome.storage.local`
 (trusted contexts only), so it survives browser restarts and extension updates.
-**Clear Royal session** removes it (do this on a shared computer). If Apple
-expires it, sync pauses and the feed page shows **Sign in to iCloud**.
+**Sign out** removes it (do this on a shared computer). If Apple expires it,
+that isn't a sign-out: sync pauses with changes pending, and the feed page shows
+**Sign in to iCloud**.
 
 Seen means *shown by All*, not read: a desktop refresh nobody looked at still
 makes those posts not-new on the next iOS refresh.
@@ -184,8 +188,8 @@ No content scripts, external messaging, remote code, or `cookies` permission.
 CloudKit operations are limited to the caller identity and the `RoyalSync` zone
 of the private database. Only Royal's own page can message the worker. User
 tokens never reach the page or the console; the worker serializes CloudKit
-requests and adopts rotated tokens. **Clear Royal session** clears Royal's credentials, not the browser's Apple
-login.
+requests and adopts rotated tokens. **Sign out** clears Royal's credentials, not
+the browser's Apple login.
 
 ## Troubleshooting
 

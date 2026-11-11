@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ROYAL_CLOUDKIT } from "./cloudkit.mjs";
 
-test("worker isolates callers, serializes CloudKit use, and pauses sync without a sign-in", async () => {
+test("worker isolates callers, serializes CloudKit use, and syncs exactly while signed in", async () => {
   const local = {}, session = {}, listeners = [];
   const pageURL = "chrome-extension://royal-test/index.html";
   const storage = values => ({
@@ -82,36 +82,54 @@ test("worker isolates callers, serializes CloudKit use, and pauses sync without 
     assert.ok(!failedDiagnosis.message.includes("rotated-token"));
     assert.ok(!failedDiagnosis.message.includes("ckAPIToken="));
     networkFails = false;
-    // CloudKit operations run one at a time and never return the token.
-    const [first, second] = await Promise.all([send({ action: "sync" }), send({ action: "sync" })]);
-    assert.equal(first.ok, true);
-    assert.equal(second.ok, true);
-    assert.equal(maximumActive, 1);
-    assert.ok(!JSON.stringify(first).includes("rotated-token"));
     assert.equal((await send({ action: "read" })).ok, false, "the old probe operation is gone");
-    await send({ action: "signOut" });
-    assert.equal(local.cloudKitToken, undefined);
+    assert.equal((await send({ action: "enableSync" })).ok, false, "signing in is what turns sync on");
 
-    // Sync with the sign-in gone (signed out, or cleared by an older version's
-    // update) asks to sign in again without calling CloudKit.
-    assert.equal((await send({ action: "signIn" })).ok, true);
-    const enabled = await send({ action: "enableSync" });
-    assert.equal(enabled.ok, true);
-    assert.match(enabled.message, /^Synced\./);
-    assert.equal(enabled.signInNeeded, false);
-    await send({ action: "signOut" });
+    // Signing in turned sync on and synced.
+    const signedIn = await send({ action: "signIn" });
+    assert.match(signedIn.message, /^Synced\./);
+    assert.equal(signedIn.signedIn, true);
+    assert.equal(signedIn.sync.enabled, true);
+    assert.ok(!JSON.stringify(signedIn).includes("rotated-token"), "the token never reaches the page");
+    // CloudKit operations run one at a time.
+    maximumActive = 0;
+    const [first, second] = await Promise.all([send({ action: "sync" }), send({ action: "sync" })]);
+    assert.equal(first.ok && second.ok, true);
+    assert.equal(maximumActive, 1);
+
+    // Signing out turns sync off, with no CloudKit request.
     let calls = 0;
     const counted = globalThis.fetch;
     globalThis.fetch = async (...args) => { calls++; return counted(...args); };
+    const signedOut = await send({ action: "signOut" });
+    assert.equal(local.cloudKitToken, undefined);
+    assert.equal(signedOut.signedIn, false);
+    assert.equal(signedOut.sync.enabled, false);
+    const off = await send({ action: "sync" });
+    assert.match(off.message, /^Not signed in/);
+    assert.equal(calls, 0);
+
+    // A sign-in Apple expired (the token gone, sync still on) pauses sync and asks
+    // to sign in again, without calling CloudKit; signing in resumes it.
+    assert.equal((await send({ action: "signIn" })).ok, true);
+    delete local.cloudKitToken;
+    calls = 0;
     const paused = await send({ action: "sync" });
     assert.equal(paused.signInNeeded, true);
+    assert.equal(paused.signedIn, false);
+    assert.equal(paused.sync.enabled, true);
     assert.match(paused.message, /sign in to iCloud again/);
     assert.equal(calls, 0);
-    // Signing in again resumes it.
-    assert.equal((await send({ action: "signIn" })).ok, true);
-    const resumed = await send({ action: "sync" });
+    const resumed = await send({ action: "signIn" });
     assert.match(resumed.message, /^Synced\./);
     assert.equal(resumed.signInNeeded, false);
+
+    // Signed in by an earlier version without sync on: the next sync turns it on.
+    await send({ action: "signOut" });
+    local.cloudKitToken = "earlier-token";
+    const adopted = await send({ action: "sync" });
+    assert.match(adopted.message, /^Synced\./);
+    assert.equal(adopted.sync.enabled, true);
 
     // With sync on, Refresh All pulls other devices' seen posts before fetching feeds.
     requests.length = 0;

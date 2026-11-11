@@ -189,13 +189,20 @@ function renderSaved(saved) {
   document.querySelector("#saved-status").textContent = saved.length ? `${saved.length} saved` : "Nothing saved yet. Use ♡ on any post.";
 }
 
-function renderSync(sync, message, signInNeeded = false) {
+let isSignedIn = false;
+
+function renderSync(sync, message, signedIn) {
+  if (signedIn !== undefined) isSignedIn = signedIn;
+  const signInNeeded = sync?.enabled && !isSignedIn;
   const note = document.querySelector("#sync-note");
-  document.querySelector("#sync-sign-in").hidden = !(sync?.enabled && signInNeeded);
+  document.querySelector("#sync-sign-in").hidden = !signInNeeded;
+  const account = document.querySelector("#account");
+  account.textContent = isSignedIn ? "Sign out" : "Sign in with Apple";
+  account.classList.toggle("secondary", isSignedIn);
   const status = document.querySelector("#sync-status");
   if (!sync?.enabled) {
     note.textContent = "Stored in this browser only.";
-    status.textContent = message ?? "Sync is off.";
+    status.textContent = message ?? "Not signed in.";
     return;
   }
   const last = sync.lastSync ? `last synced ${when(sync.lastSync)}` : "not synced yet";
@@ -203,11 +210,11 @@ function renderSync(sync, message, signInNeeded = false) {
   note.textContent = signInNeeded
     ? `iCloud sync is paused until you sign in again${pending}.`
     : `Synced through iCloud: ${last}${pending}.`;
-  status.textContent = message ?? `Sync is on: ${last}${pending}.`;
+  status.textContent = message ?? (signInNeeded ? `Sync is paused until you sign in again${pending}.` : `Signed in and syncing: ${last}${pending}.`);
 }
 
 function applyLibrary(result, { all = true } = {}) {
-  renderSync(result.sync, result.syncMessage, result.signInNeeded);
+  renderSync(result.sync, result.syncMessage, result.signedIn);
   savedIDs = new Set(result.saved.map(post => post.id));
   if (all) renderAll(result.all);
   renderSaved(result.saved);
@@ -266,9 +273,9 @@ for (const button of document.querySelectorAll("nav.tabs button")) button.addEve
 
 // --- Sync ---
 async function syncAction(action) {
-  const buttons = document.querySelectorAll("#sync-title ~ .actions button");
+  const buttons = document.querySelectorAll("#account, #sync-sign-in");
   buttons.forEach(button => { button.disabled = true; });
-  document.querySelector("#sync-status").textContent = "Syncing…";
+  document.querySelector("#sync-status").textContent = action === "signOut" ? "Signing out…" : action === "signIn" ? "Signing in…" : "Syncing…";
   const result = await send({ action });
   buttons.forEach(button => { button.disabled = false; });
   if (result.ok) applyLibrary(result);
@@ -276,16 +283,13 @@ async function syncAction(action) {
   return result;
 }
 // Signing in from the feed page, when sync paused for it, then syncing straight away.
-document.querySelector("#sync-sign-in").addEventListener("click", async event => {
-  event.target.disabled = true;
-  const signedIn = await send({ action: "signIn" });
-  event.target.disabled = false;
-  if (signedIn.ok) syncAction("sync");
-  else document.querySelector("#sync-note").textContent = signedIn.message ?? "Sign-in failed.";
+// Signing in (from the iCloud tab, or the feed page when sync paused for it) turns
+// sync on and syncs straight away; signing out turns it off.
+document.querySelector("#sync-sign-in").addEventListener("click", async () => {
+  const result = await syncAction("signIn");
+  if (!result.ok) document.querySelector("#sync-note").textContent = result.message ?? "Sign-in failed.";
 });
-document.querySelector("#sync-enable").addEventListener("click", () => syncAction("enableSync"));
-document.querySelector("#sync-now").addEventListener("click", () => syncAction("sync"));
-document.querySelector("#sync-disable").addEventListener("click", () => syncAction("disableSync"));
+document.querySelector("#account").addEventListener("click", () => syncAction(isSignedIn ? "signOut" : "signIn"));
 // The worker syncs after local changes and tells open pages when it's done.
 chrome.runtime.onMessage.addListener(message => {
   if (message?.event === "libraryChanged") send({ action: "library" }).then(result => { if (result.ok) applyLibrary(result); });
@@ -296,7 +300,8 @@ chrome.runtime.onMessage.addListener(message => {
 const initial = await send({ action: "library" });
 if (initial.ok) {
   applyLibrary(initial);
-  // Opening Royal checks for changes from other devices first.
-  const current = initial.sync.enabled ? await syncAction("sync") : initial;
+  // Opening Royal checks for changes from other devices first (no request when
+  // signed out).
+  const current = initial.sync.enabled || initial.signedIn ? await syncAction("sync") : initial;
   if (current.ok && !current.all.refreshedAt) library("refreshAll");
 } else allStatus.textContent = initial.message ?? "Failed to load.";

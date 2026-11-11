@@ -49,6 +49,8 @@ async function setToken(token) {
   else await chrome.storage.local.remove("cloudKitToken");
 }
 
+const signedIn = async () => Boolean((await chrome.storage.local.get("cloudKitToken")).cloudKitToken);
+
 async function client() {
   return new CloudKitClient(ROYAL_CLOUDKIT, {
     getToken: async () => (await chrome.storage.local.get("cloudKitToken")).cloudKitToken,
@@ -97,25 +99,35 @@ async function handle(request) {
         if (!result) throw new Error("Apple sign-in was cancelled.");
         await setToken(callbackToken(result, chrome.identity.getRedirectURL("cloudkit")));
       }
-      await api.currentUser();
-      return { message: "Signed in to iCloud. Turn on sync next, if it isn't on." };
-    }
-    case "signOut":
-      await setToken(null);
-      return { message: "Royal's local CloudKit session cleared. Your Apple browser login is unchanged." };
-    case "enableSync": {
-      const api = await client();
-      const account = await api.currentUser();
-      const { container, environment } = api.config;
-      await library.useSync({ account, container, environment }, startSync);
+      // Being signed in is what turns sync on.
+      await useAccount(api);
       return syncNow(api);
     }
-    case "disableSync":
-      return { ...(await library.useSync(null)), message: "Sync is off. Showing this browser's local library; the synced copy and its pending changes are kept for when you turn sync on again." };
-    case "sync":
-      return syncNow(await client());
+    case "signOut":
+      // Turns sync off. The account's copy (with anything still pending) stays in
+      // this browser for the next sign-in to the same account; another account
+      // never sees it.
+      await setToken(null);
+      return { ...(await library.useSync(null)), message: "Signed out. Sync is off and Royal shows this browser's own library. Your Apple login in the browser is unchanged." };
+    case "sync": {
+      const api = await client();
+      if (!(await library.settings())) {
+        if (!(await api.getToken())) return { ...(await library.view()), message: "Not signed in. Royal keeps everything in this browser." };
+        // Signed in before sign-in turned sync on (0.6.1 and earlier).
+        await useAccount(api);
+      }
+      return syncNow(api);
+    }
     default: throw new Error("Unknown Royal operation.");
   }
+}
+
+// Syncs the signed-in Apple Account's library, creating it from this browser's
+// own library (an import that never overwrites synced records) the first time.
+async function useAccount(api) {
+  const account = await api.currentUser();
+  const { container, environment } = api.config;
+  await library.useSync({ account, container, environment }, startSync);
 }
 
 const SIGN_IN_CODES = ["AUTHENTICATION_REQUIRED", "AUTHENTICATION_FAILED"];
@@ -200,7 +212,7 @@ chrome.runtime.onMessage.addListener((request, sender, respond) => {
   const libraryOperation = Object.hasOwn(libraryOperations, request?.action) ? libraryOperations[request.action] : null;
   if (libraryOperation) {
     storageReady.then(libraryOperation)
-      .then(result => respond({ ok: true, ...result }), error => {
+      .then(async result => respond({ ok: true, ...result, signedIn: await signedIn() }), error => {
         console.warn(`[Royal feeds] ${request.action}: ${error?.message}`);
         respond({ ok: false, message: /^(Unknown feed|Invalid )/.test(error?.message ?? "") ? error.message : "Feed request failed." });
       });
@@ -208,11 +220,11 @@ chrome.runtime.onMessage.addListener((request, sender, respond) => {
   }
   const operation = queue.then(() => handle(request));
   queue = operation.catch(() => {});
-  operation.then(result => respond({ ok: true, ...result }), error => {
+  operation.then(async result => respond({ ok: true, ...result, signedIn: await signedIn() }), error => {
     // Browser identity errors can include the redirect URL. Never echo them.
     const message = error instanceof CloudKitError
       ? describeCloudKitError(error)
-      : /^Enter |^Choose |^Sync |^Unknown Royal|^Configuration|^CloudKit returned|^Apple sign-in/.test(error.message ?? "")
+      : /^Sync |^Unknown Royal|^Configuration|^CloudKit returned|^Apple sign-in/.test(error.message ?? "")
         ? error.message : "Operation failed. Check Apple sign-in, callback configuration, and connectivity.";
     respond({ ok: false, message });
   });

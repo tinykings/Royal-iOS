@@ -14,17 +14,17 @@ export async function runSync({ api, library, now = () => Date.now() }) {
   const settings = await library.settings();
   if (!settings) throw new SyncPausedError("Sync is off.");
   if (settings.environment !== api.config.environment || settings.container !== api.config.container) {
-    throw new SyncPausedError("The CloudKit configuration changed. Turn sync on again.");
+    throw new SyncPausedError("The CloudKit configuration changed. Sign out and sign in again.");
   }
   const account = await api.currentUser();
   if (account !== settings.account) {
-    throw new SyncPausedError("Signed in to a different Apple Account than the one syncing. Sign in to that account, or turn sync on for this one.");
+    throw new SyncPausedError("Signed in to a different Apple Account than the one syncing. Sign out and sign in again.");
   }
   const key = accountLibraryKey(settings);
   const setSync = change => library.apply(key, state => ({ ...state, sync: { ...state.sync, ...change(state.sync) } }));
 
   let state = await library.read(key);
-  if (!state?.sync) throw new SyncPausedError("This account's library is missing. Turn sync on again.");
+  if (!state?.sync) throw new SyncPausedError("This account's library is missing. Sign out and sign in again.");
   if (!state.sync.zoneReady) {
     await api.ensureSyncZone();
     state = await setSync(() => ({ zoneReady: true }));

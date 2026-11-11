@@ -1,7 +1,7 @@
 const status = document.querySelector("#status");
 
 async function run(request) {
-  const buttons = [...document.querySelectorAll("#tab-icloud button")];
+  const buttons = [...document.querySelectorAll("#connection-title ~ button")];
   buttons.forEach(button => { button.disabled = true; });
   status.textContent = "Working…";
   try {
@@ -13,8 +13,6 @@ async function run(request) {
   } finally { buttons.forEach(button => { button.disabled = false; }); }
 }
 
-document.querySelector("#sign-in").addEventListener("click", () => run({ action: "signIn" }));
-document.querySelector("#sign-out").addEventListener("click", () => run({ action: "signOut" }));
 document.querySelector("#diagnose").addEventListener("click", () => run({ action: "diagnose" }));
 
 const result = await run({ action: "status" });
