@@ -52,7 +52,6 @@ struct SettingsView: View {
                     } label: {
                         LabeledContent("Account", value: status(.youtube))
                     }
-                    cookieExpirations(.youtube)
                     logOutButton(.youtube)
                     Picker("View", selection: $youtubeLayout) {
                         ForEach(FeedLayout.allCases) { Text($0.title).tag($0) }
@@ -73,7 +72,6 @@ struct SettingsView: View {
                     } label: {
                         LabeledContent("Account", value: status(.reddit))
                     }
-                    cookieExpirations(.reddit)
                     logOutButton(.reddit)
                     Picker("View", selection: $redditLayout) {
                         ForEach(FeedLayout.allCases) { Text($0.title).tag($0) }
@@ -116,6 +114,8 @@ struct SettingsView: View {
                             diagnostics = await store.diagnostics()
                         }
                     }
+                    cookieExpirations(.youtube)
+                    cookieExpirations(.reddit)
                     if !diagnostics.isEmpty {
                         Text(diagnostics)
                             .font(.caption2.monospaced())
@@ -160,6 +160,7 @@ struct SettingsView: View {
     }
 
     // When each login cookie runs out, as set by the service and capped by WebKit.
+    // Shown under Diagnostics, so each row names its service.
     @ViewBuilder
     private func cookieExpirations(_ source: FeedSource) -> some View {
         if store.loggedIn[source] == true {
@@ -167,12 +168,12 @@ struct SettingsView: View {
                 LabeledContent {
                     Text(expiration(cookie))
                 } label: {
-                    Text(cookie.kind)
+                    Text("\(source.title): \(cookie.kind)")
                     Text(cookie.name)
                         .font(.caption.monospaced())
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(cookie.kind), \(expiration(cookie))")
+                .accessibilityLabel("\(source.title): \(cookie.kind), \(expiration(cookie))")
             }
         }
     }
