@@ -202,8 +202,8 @@ function renderSync(sync, message, signInNeeded = false) {
   const pending = sync.pending ? `, ${sync.pending} change${sync.pending === 1 ? "" : "s"} pending` : "";
   note.textContent = signInNeeded
     ? `iCloud sync is paused until you sign in again${pending}.`
-    : `Synced through iCloud (${sync.environment}): ${last}${pending}.`;
-  status.textContent = message ?? `Sync is on (${sync.environment}): ${last}${pending}.`;
+    : `Synced through iCloud: ${last}${pending}.`;
+  status.textContent = message ?? `Sync is on: ${last}${pending}.`;
 }
 
 function applyLibrary(result, { all = true } = {}) {

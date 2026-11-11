@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { ROYAL_CLOUDKIT } from "./cloudkit.mjs";
 
 test("worker isolates callers, serializes CloudKit use, and pauses sync without a sign-in", async () => {
   const local = {}, session = {}, listeners = [];
@@ -57,14 +58,16 @@ test("worker isolates callers, serializes CloudKit use, and pauses sync without 
   });
   // A token kept by an earlier version, in session storage.
   session.cloudKitToken = "old-session-token";
+  // And a hand-entered configuration from before 0.6.1 that matches Royal's own.
+  local.cloudKitConfig = { ...ROYAL_CLOUDKIT };
   try {
     await import(`./background.mjs?worker-test`);
     assert.equal((await send({ action: "status" })).ok, true);
     assert.equal(local.cloudKitToken, "old-session-token", "an earlier version's sign-in carries over");
     assert.equal(session.cloudKitToken, undefined);
     assert.equal(await send({ action: "status" }, { id: "royal-test", url: "https://attacker.test" }), "rejected-sender");
-    const config = { container: "iCloud.com.tinykings.Royal", apiToken: "public-api-token", environment: "development" };
-    assert.equal((await send({ action: "configure", config })).ok, true);
+    assert.equal(local.cloudKitConfig, undefined, "a hand-entered configuration is dropped");
+    assert.equal((await send({ action: "configure", config: {} })).ok, false, "configuration can't be changed");
     assert.equal((await send({ action: "signIn" })).ok, true);
     assert.equal(local.cloudKitToken, "rotated-token");
     const diagnosis = await send({ action: "diagnose" });
@@ -86,7 +89,7 @@ test("worker isolates callers, serializes CloudKit use, and pauses sync without 
     assert.equal(maximumActive, 1);
     assert.ok(!JSON.stringify(first).includes("rotated-token"));
     assert.equal((await send({ action: "read" })).ok, false, "the old probe operation is gone");
-    await send({ action: "configure", config });
+    await send({ action: "signOut" });
     assert.equal(local.cloudKitToken, undefined);
 
     // Sync with the sign-in gone (signed out, or cleared by an older version's
@@ -120,6 +123,33 @@ test("worker isolates callers, serializes CloudKit use, and pauses sync without 
     assert.ok(pulled >= 0 && fetchedFeed > pulled, `sync before feeds: ${requests.join(", ")}`);
   } finally {
     globalThis.fetch = savedFetch;
+    delete globalThis.chrome;
+  }
+});
+
+test("a sign-in made under a different hand-entered configuration is dropped", async () => {
+  const local = { cloudKitToken: "development-token", cloudKitConfig: { ...ROYAL_CLOUDKIT, environment: "development" } };
+  const storage = values => ({
+    setAccessLevel: async () => {},
+    get: async key => ({ [key]: values[key] }),
+    set: async entries => Object.assign(values, entries),
+    remove: async key => { delete values[key]; },
+  });
+  let messageListener;
+  const pageURL = "chrome-extension://royal-test/index.html";
+  globalThis.chrome = {
+    runtime: { id: "royal-test", getURL: () => pageURL, sendMessage: async () => {}, onMessage: { addListener: fn => { messageListener = fn; } } },
+    action: { onClicked: { addListener: () => {} } },
+    storage: { local: storage(local), session: storage({}) },
+    identity: { getRedirectURL: () => "https://royal-test.chromiumapp.org/cloudkit" },
+  };
+  try {
+    await import("./background.mjs?other-configuration");
+    const status = await new Promise(resolve => messageListener({ action: "status" }, { id: "royal-test", url: pageURL }, resolve));
+    assert.equal(status.ok, true);
+    assert.equal(local.cloudKitConfig, undefined);
+    assert.equal(local.cloudKitToken, undefined);
+  } finally {
     delete globalThis.chrome;
   }
 });

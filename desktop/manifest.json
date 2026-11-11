@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Royal",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Royal's Reddit, Hacker News, and YouTube feeds with your desktop logins, with optional iCloud sync of saved and seen posts with Royal on iOS.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlWPbxsA2kzF6kf4l2Z7r+rQgKb7WxlFnmpYMqKkyO+749WX/mfOsq1dFbFlUP5yWUQGp/142TiBCt2LNTFgXz2wMuE4FRzKjmjQ2Vrzi/R2miJMfFS9ic1RfBND3P9EcFqcijfMEsxGuZaaOQ71KiksyaF5ZWK6NfcMRrpPwuta5o98MdJXePEspPL9HhjR36NhiPF5W6bapoPbGne5CR29FMYRAqZggBMW2EFLLQdlLktRLXPUMDMbOILZBaAfGA+CRR2U27OkgCES8JElkHvMWqI7wEBzwU3gM1vQDtN9G61D6+tWBSPv8E2Rn2PlZ84r6B1AoxmdQKeCOqakogQIDAQAB",
   "minimum_chrome_version": "120",

@@ -2,7 +2,7 @@ import { fetchFeed } from "./feeds.mjs";
 import { createLibrary } from "./store.mjs";
 import { startSync } from "./sync.mjs";
 import { runSync, SyncPausedError } from "./sync-runner.mjs";
-import { CloudKitClient, CloudKitError, appleSignInURL, callbackToken, validateConfig, describeCloudKitError } from "./cloudkit.mjs";
+import { CloudKitClient, CloudKitError, ROYAL_CLOUDKIT, appleSignInURL, callbackToken, describeCloudKitError } from "./cloudkit.mjs";
 
 const pageURL = chrome.runtime.getURL("index.html");
 chrome.action.onClicked.addListener(() => { chrome.tabs.create({ url: pageURL }); });
@@ -19,11 +19,11 @@ chrome.declarativeNetRequest?.updateSessionRules({
   }],
 }).catch(error => console.warn(`[Royal player] Couldn't set the embed referrer: ${error?.message ?? error}`));
 
-// Do not expose configuration or authentication to content scripts; the UI
-// receives status only. The CloudKit web auth token is kept in local storage, as
-// CloudKit JS keeps its session, so sync survives browser restarts and extension
-// updates (session storage is wiped by both). Sign out or a configuration change
-// removes it, and CloudKit can still expire it, which asks for a new sign-in.
+// Do not expose authentication to content scripts; the UI receives status only.
+// The CloudKit web auth token is kept in local storage, as CloudKit JS keeps its
+// session, so sync survives browser restarts and extension updates (session
+// storage is wiped by both). Sign out removes it, and CloudKit can still expire
+// it, which asks for a new sign-in.
 const storageReady = Promise.all([
   chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" }),
   chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" }),
@@ -34,6 +34,14 @@ const storageReady = Promise.all([
     await chrome.storage.local.set({ cloudKitToken });
     await chrome.storage.session.remove("cloudKitToken");
   }
+  // Before 0.6.1 the container, token, and environment were entered by hand. A
+  // sign-in made with anything other than Royal's own configuration is dropped.
+  const { cloudKitConfig } = await chrome.storage.local.get("cloudKitConfig");
+  if (cloudKitConfig) {
+    const same = ["container", "environment", "apiToken"].every(key => cloudKitConfig[key] === ROYAL_CLOUDKIT[key]);
+    if (!same) await chrome.storage.local.remove("cloudKitToken");
+    await chrome.storage.local.remove("cloudKitConfig");
+  }
 });
 let queue = Promise.resolve();
 async function setToken(token) {
@@ -42,8 +50,7 @@ async function setToken(token) {
 }
 
 async function client() {
-  const { cloudKitConfig } = await chrome.storage.local.get("cloudKitConfig");
-  return new CloudKitClient(cloudKitConfig, {
+  return new CloudKitClient(ROYAL_CLOUDKIT, {
     getToken: async () => (await chrome.storage.local.get("cloudKitToken")).cloudKitToken,
     setToken,
   });
@@ -52,16 +59,14 @@ async function client() {
 async function handle(request) {
   await storageReady;
   switch (request.action) {
-    case "status": {
-      const { cloudKitConfig } = await chrome.storage.local.get("cloudKitConfig");
-      return { config: cloudKitConfig ?? null, callback: chrome.identity.getRedirectURL("cloudkit"), origin: `chrome-extension://${chrome.runtime.id}` };
-    }
+    case "status":
+      return { callback: chrome.identity.getRedirectURL("cloudkit"), origin: `chrome-extension://${chrome.runtime.id}` };
     case "diagnose": {
       // Intentionally invalid API token: this checks HTTP reachability without
       // sending the user's configuration or changing their sign-in session.
       const granted = await chrome.permissions.contains({ origins: ["https://api.apple-cloudkit.com/*"] });
       if (!granted) return { message: "CloudKit host access is not granted. In the browser's extension Details, allow Royal access to api.apple-cloudkit.com, then retry." };
-      const api = new CloudKitClient({ container: "iCloud.com.tinykings.Royal", environment: "production", apiToken: "royal-connectivity-check-not-a-real-token" }, {
+      const api = new CloudKitClient({ ...ROYAL_CLOUDKIT, apiToken: "royal-connectivity-check-not-a-real-token" }, {
         getToken: async () => null, setToken: async () => {},
       });
       try { await api.currentUser(); }
@@ -70,16 +75,7 @@ async function handle(request) {
         if (error.httpStatus) return { message: `Connection check: CloudKit returned HTTP ${error.httpStatus} (${error.code}) to an intentionally invalid test token. HTTP reachability works. If Sign in still fails, inspect that request in the service worker; check the real token's environment and allowed origin. This check does not verify your token or Apple login.` };
         return { message: `Connection check: host permission is granted, but the browser delivered no HTTP response. ${describeCloudKitError(error)} No real API token was used.` };
       }
-      return { message: "Connection check reached CloudKit. This does not verify your configured token or Apple login." };
-    }
-    case "configure": {
-      const config = validateConfig(request.config);
-      await setToken(null);
-      await chrome.storage.local.set({ cloudKitConfig: config });
-      // Synced libraries belong to one container/environment/account.
-      await library.useSync(null);
-      chrome.runtime.sendMessage({ event: "libraryChanged" }).catch(() => {});
-      return { message: "Configuration saved. Sign in with Apple next." };
+      return { message: "Connection check reached CloudKit. This does not verify Royal's token or your Apple login." };
     }
     case "signIn": {
       await setToken(null);

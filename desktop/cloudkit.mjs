@@ -1,4 +1,14 @@
 // No remote SDK: this module uses CloudKit Web Services from the extension worker.
+
+// Royal's container, always in Production (the environment TestFlight and App Store
+// builds use). A CloudKit web API token identifies the app, not a user, and is meant
+// to be public; private data still needs each user's Apple sign-in. If the token is
+// regenerated in CloudKit Console, update it here and ship a new version.
+export const ROYAL_CLOUDKIT = Object.freeze({
+  container: "iCloud.com.tinykings.Royal",
+  environment: "production",
+  apiToken: "a2264bd487c0e13d0737139ebabb92e68c4ab4389ece42326d8fd15517f2f2d4",
+});
 const DATABASES = { "users/caller": "public", "records/modify": "private", "zones/modify": "private", "records/changes": "private" };
 // Royal's synced data lives in one custom private zone, so clients can fetch
 // incremental changes with a sync token (the default zone can't).

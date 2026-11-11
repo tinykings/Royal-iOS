@@ -32,17 +32,21 @@ the record format and conflict rules are in
 **Turning it on**
 
 - iOS: **Settings › Sync with Desktop**.
-- Desktop: **iCloud Sync** tab → 1. container `iCloud.com.tinykings.Royal`, the
-  web API token, and **Production** (TestFlight/App Store; **Development** only
-  for Xcode Debug builds) → 2. **Sign in with Apple** with the Apple Account on
-  the iPhone → 3. **Turn on sync**. Expect "Synced. Received …, sent …".
+- Desktop: **iCloud Sync** tab → 1. **Sign in with Apple** with the Apple Account
+  on the iPhone → 2. **Turn on sync**. Expect "Synced. Received …, sent …".
 
-Both sides must use the same Apple Account and CloudKit environment. Turning
+There's nothing to configure: the container, web API token, and Production
+environment are built into `cloudkit.mjs` (`ROYAL_CLOUDKIT`). The extension
+always uses Production, as TestFlight and App Store builds do; Xcode Debug builds
+of iOS use Development, so they don't sync with it. (Before 0.6.1 these were
+entered by hand; 0.6.1 drops that setting, and the sign-in made with it unless
+it matched.)
+
+Both sides must use the same Apple Account. Turning
 sync on imports the local library without overwriting anything already synced,
-including unsaves (tombstones). Each Apple Account/container/environment has its
-own copy in the browser; signing in to another account pauses sync until it's
-turned on for that account. **Turn off sync** (or saving a new configuration)
-switches back to the browser's local library and keeps the synced copy for later.
+including unsaves (tombstones). Each Apple Account has its own copy in the
+browser; signing in to another account pauses sync until it's turned on for that
+account. **Turn off sync** switches back to the browser's local library and keeps the synced copy for later.
 Clearing the browser's extension data removes both.
 
 **When it syncs:** when the page opens, about 1.5 s after each change, on **Sync
@@ -100,10 +104,9 @@ Recorded for rebuilding the setup; all of this is in place for
    A web API token isn't a secret; private data still needs the user's Apple
    sign-in. The cost is that other sites could use it to show sign-in for this
    container. Untested hardening: rewrite the extension's `Origin` to its
-   `chromiumapp.org` host and allow only that.
-
-The extension's configuration is the container, token and environment, never an
-Apple password or server-to-server key.
+   `chromiumapp.org` host and allow only that. The token is `ROYAL_CLOUDKIT.apiToken`
+   in `cloudkit.mjs`; if it's regenerated, update it there and release a new
+   version (existing sign-ins may need to sign in again).
 
 ## How it works
 
@@ -181,8 +184,7 @@ No content scripts, external messaging, remote code, or `cookies` permission.
 CloudKit operations are limited to the caller identity and the `RoyalSync` zone
 of the private database. Only Royal's own page can message the worker. User
 tokens never reach the page or the console; the worker serializes CloudKit
-requests and adopts rotated tokens. A configuration change clears the session,
-and **Clear Royal session** clears Royal's credentials, not the browser's Apple
+requests and adopts rotated tokens. **Clear Royal session** clears Royal's credentials, not the browser's Apple
 login.
 
 ## Troubleshooting
@@ -199,8 +201,8 @@ token or session.
 
 - Host access missing: allow Royal access to `api.apple-cloudkit.com` in the
   extension's Details.
-- Reachable but sign-in fails: check the token's container, environment and
-  allowed origins.
+- Reachable but sign-in fails: check in CloudKit Console that Royal's web API
+  token still exists, for Production, with Any Domain origins and the callback.
 - No HTTP response: open Royal's **service worker** inspector from the extensions
   page, retry, and note the browser error (`net::ERR_…`, a CSP violation). Request
   URLs contain tokens, so share only the error code or status, never full URLs or

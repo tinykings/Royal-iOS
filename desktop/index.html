@@ -56,26 +56,14 @@
     </section>
     <div id="tab-icloud" class="tab-panel" role="tabpanel" hidden>
     <p>Sync saved posts, which posts All has shown, and the All feed itself with Royal on iOS and in other browsers, through your private iCloud database. Optional: without it, Royal keeps everything in this browser.</p>
-    <section aria-labelledby="setup-title">
-      <h2 id="setup-title">1. Configure CloudKit</h2>
-      <p>Use the same container and environment as the iOS build. See <a href="README.md">the setup guide</a> in this extension’s source folder.</p>
-      <form id="configuration">
-        <label>Container <input name="container" placeholder="iCloud.com.tinykings.Royal" required autocomplete="off" spellcheck="false"></label>
-        <label>Web API token <input name="apiToken" required autocomplete="off" spellcheck="false"></label>
-        <label>Environment <select name="environment"><option value="production">Production (TestFlight)</option><option value="development">Development (Xcode Debug)</option></select></label>
-        <button>Save configuration</button>
-      </form>
-      <p>Configure Apple’s sign-in callback to this exact URL:</p><code id="callback"></code>
-      <p>Extension origin:</p><code id="origin"></code>
-    </section>
     <section aria-labelledby="account-title">
-      <h2 id="account-title">2. Sign in to iCloud</h2>
+      <h2 id="account-title">1. Sign in to iCloud</h2>
       <p>Use the Apple Account signed into iCloud on your iPhone. Apple handles the login, and Royal keeps you signed in until you clear its session.</p>
       <div class="actions"><button id="sign-in">Sign in with Apple</button><button id="sign-out" class="secondary">Clear Royal session</button></div>
     </section>
     <section aria-labelledby="sync-title">
-      <h2 id="sync-title">3. Turn on sync</h2>
-      <p>Sign in first (step 2). On iOS, turn on Settings › Sync with Desktop with the same Apple Account. iOS syncs saved posts and seen posts; the All feed itself syncs between browsers.</p>
+      <h2 id="sync-title">2. Turn on sync</h2>
+      <p>Sign in first (step 1). On iOS, turn on Settings › Sync with Desktop with the same Apple Account. iOS syncs saved posts and seen posts; the All feed itself syncs between browsers.</p>
       <div class="actions"><button id="sync-enable">Turn on sync</button><button id="sync-now" class="secondary">Sync now</button><button id="sync-disable" class="secondary">Turn off sync</button></div>
       <p id="sync-status" role="status">Sync is off.</p>
       <p>Turning sync on copies this browser’s library to the signed-in Apple Account without overwriting anything already there. Each Apple Account keeps its own copy in this browser.</p>
@@ -83,10 +71,11 @@
     <section aria-labelledby="connection-title">
       <h2 id="connection-title">Connection troubleshooting</h2>
       <button id="diagnose" class="secondary">Check connection</button>
-      <p>This checks extension host access and CloudKit reachability with an invalid test token. It does not send your real token or change your sign-in session.</p>
+      <p>This checks extension host access and CloudKit reachability with an invalid test token. It does not change your sign-in session.</p>
+      <p>Apple’s sign-in returns to <code id="callback"></code> (extension origin <code id="origin"></code>); the CloudKit web API token’s redirect URL must match it.</p>
       <p>For a browser network error, open this extension’s Details in the browser’s extensions page, inspect its service worker, then retry Sign in. Note the browser error code; request addresses can contain tokens, so do not share full URLs.</p>
     </section>
-    <p id="status" role="status" aria-live="polite">Loading configuration…</p>
+    <p id="status" role="status" aria-live="polite"></p>
     </div>
   </main>
 </body>
