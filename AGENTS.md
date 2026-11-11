@@ -10,3 +10,6 @@
 
   Then install and launch the built `Royal.app` on that simulator.
 - Run `node --test` after changing `sources.js`.
+- `saved/` is the Royal Saved website; `saved/shared/` links to `desktop/` modules.
+  Run `node --test` from the root after changing either. Pushing to `main` publishes
+  it with `docs/index.html` through `.github/workflows/pages.yml`.

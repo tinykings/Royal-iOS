@@ -1,6 +1,6 @@
 # Royal Saved
 
-A website at **https://royal.tinyk.ing/** showing the posts saved with ♥ in Royal on
+A website at **https://royal.tinyk.ing/saved/** showing the posts saved with ♥ in Royal on
 iPhone (and the Royal desktop extension). Sign in with Apple; there's no Royal
 server. Saved posts sync through Apple's CloudKit Web Services API with your private
 iCloud database, the same `RoyalSavedPost` records iOS writes
@@ -11,28 +11,36 @@ records.
 You can open a post, play a YouTube video on the page, and unsave (with Undo). An
 unsave syncs back to iOS as a tombstone, like everywhere else.
 
-## Setup (once)
+## Publishing
 
-1. **DNS:** add a `CNAME` record for `royal` on `tinyk.ing` pointing to
-   `tinykings.github.io`.
-2. **GitHub:** push this repository (public), then in **Settings → Pages**
-   choose *Deploy from a branch*, `main`, `/ (root)`. The `CNAME` file sets the
-   custom domain. When the certificate is ready, turn on **Enforce HTTPS**. In
-   your account's **Settings → Pages**, verify `tinyk.ing` so no one else can claim
-   the hostname on GitHub Pages.
-3. **CloudKit Console** (container `iCloud.com.tinykings.Royal`, Production):
-   create a new web API token.
-   - Sign-in callback: **URL Redirect**, `https://royal.tinyk.ing/`
-   - Allowed origins: **specific domain**, `royal.tinyk.ing`
-4. Put the token in `SITE_CLOUDKIT.apiToken` in `site.mjs`, commit, and push.
+Every push to `main` that touches `saved/`, `desktop/` or `docs/index.html` runs
+`.github/workflows/pages.yml`: it runs `node --test`, then publishes one GitHub
+Pages site at `royal.tinyk.ing`, with the landing page and privacy policy
+(`docs/index.html`) at `/` and this site at `/saved/`. The old
+`tinykings.github.io/Royal-iOS/` addresses redirect there.
 
-The record types are already deployed to Production for iOS and the extension.
+### Setup (once)
+
+1. **Old repository:** in `Royal-Saved`'s **Settings → Pages**, remove the custom
+   domain and unpublish the site (then archive the repository), so the hostname is
+   free for this one.
+2. **GitHub:** in this repository's **Settings → Pages**, set **Source** to
+   *GitHub Actions* and the custom domain to `royal.tinyk.ing`, and turn on
+   **Enforce HTTPS** when the certificate is ready. The DNS `CNAME` record for
+   `royal` on `tinyk.ing` already points to `tinykings.github.io`.
+3. **CloudKit Console** (container `iCloud.com.tinykings.Royal`, Production): on
+   the website's web API token, change the sign-in callback (**URL Redirect**) to
+   `https://royal.tinyk.ing/saved/`. The allowed origin stays `royal.tinyk.ing`.
+
+The token is `SITE_CLOUDKIT.apiToken` in `site.mjs`. The record types are already
+deployed to Production for iOS and the extension.
 
 ## Security
 
 - **Its own origin.** The site keeps your CloudKit sign-in token in this origin's
   `localStorage`. It's on its own hostname because every `tinykings.github.io`
-  project page shares one origin and could read it.
+  project page shares one origin and could read it. The only other page on
+  `royal.tinyk.ing` is Royal's own landing page from this repository.
 - **Content-Security-Policy** (a `<meta>` tag, as GitHub Pages can't send headers):
   scripts and styles from this site only, connections to `api.apple-cloudkit.com`
   only, frames from `www.youtube.com` only, and Trusted Types so nothing can be
@@ -55,12 +63,10 @@ The record types are already deployed to Production for iOS and the extension.
 
 - `index.html`, `app.mjs`, `site.css`: the page.
 - `site.mjs`: storage, Apple sign-in and sync, tested in `tests/site.test.mjs`.
-- `shared/`: byte-for-byte copies of the extension's modules from
-  [Royal-iOS](https://github.com/tinykings/Royal-iOS) `desktop/`: CloudKit client,
-  library, sync and conflict rules, preferences, stylesheet. Don't edit them here.
-  After they change there, run `scripts/update-shared.sh` (it reads
-  `../Royal-iOS/desktop` by default), then `node --test`. The tests fail if the
-  copies differ from a sibling `Royal-iOS` checkout.
+- `shared/`: links to the extension's modules in [`desktop/`](../desktop/): CloudKit
+  client, library, sync and conflict rules, preferences, stylesheet. Edit them
+  there; the Pages build copies the real files in. `tests/fake-cloudkit.mjs` links
+  to the extension's fake CloudKit server the same way.
 
 ## When it syncs
 
@@ -75,6 +81,8 @@ sign-in, the list stays and changes stay pending until you sign in again.
 node --test
 ```
 
-To try the page locally, serve this folder (for example
-`python3 -m http.server 8123`). Apple's sign-in always returns to
-`https://royal.tinyk.ing/`, so sign-in only completes on the real site.
+Run it from the repository root, which also runs the extension's tests. To try
+the page locally, serve the repository root (for example `python3 -m http.server
+8123`) and open `/saved/`; the server follows the `shared/` links. Apple's sign-in
+always returns to `https://royal.tinyk.ing/saved/`, so sign-in only completes on
+the real site.

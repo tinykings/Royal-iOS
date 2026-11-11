@@ -1,6 +1,6 @@
 // Royal Saved: the website's storage, Apple sign-in and sync, without the page.
 // The CloudKit client, library and sync rules are the extension's own modules
-// (shared/, copied byte for byte), so saves merge exactly as they do there. This
+// (shared/ links to ../desktop/), so saves merge exactly as they do there. This
 // site only ever reads and writes saved posts: seen and All records are filtered
 // out before they reach the library, so it can never push them.
 import { CloudKitClient, CloudKitError, ROYAL_CLOUDKIT, appleSignInURL, callbackToken, describeCloudKitError } from "./shared/cloudkit.mjs";
@@ -10,7 +10,7 @@ import { runSync, SyncPausedError } from "./shared/sync-runner.mjs";
 
 // Royal's container in Production, with the website's own web API token. In
 // CloudKit Console the token's sign-in callback is a URL Redirect to
-// https://royal.tinyk.ing/ and its allowed origin is royal.tinyk.ing only.
+// https://royal.tinyk.ing/saved/ and its allowed origin is royal.tinyk.ing only.
 // A web API token identifies the app, not a user, and is meant to be public.
 export const SITE_CLOUDKIT = Object.freeze({
   ...ROYAL_CLOUDKIT,
@@ -69,7 +69,7 @@ export function takeCallback(href, { pending, now = Date.now() }) {
   const cleanURL = url.href;
   if (!(started > 0 && now - started >= 0 && now - started < SIGN_IN_WINDOW)) return { cleanURL, token: null, refused: true };
   try {
-    return { cleanURL, token: callbackToken(href, new URL("/", href).href), refused: false };
+    return { cleanURL, token: callbackToken(href, new URL("./", href).href), refused: false };
   } catch {
     return { cleanURL, token: null, refused: true };
   }

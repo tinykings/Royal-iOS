@@ -1,6 +1,6 @@
 # Royal
 
-Website: <https://tinykings.github.io/Royal-iOS/>
+Website: <https://royal.tinyk.ing/> · Saved posts on the web: <https://royal.tinyk.ing/saved/> ([`saved/`](saved/README.md))
 
 iOS app combining Reddit, Hacker News, and your YouTube subscriptions in one feed. SwiftUI, no third-party dependencies.
 

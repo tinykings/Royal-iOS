@@ -1,0 +1,57 @@
+# Builds and publishes the website at https://royal.tinyk.ing/ on every push to main:
+# the landing page and privacy policy (docs/index.html) at the root, and Royal Saved
+# (saved/) at /saved/. Royal Saved's shared/ files are links to desktop/, so the site
+# always ships the same CloudKit and sync code as the extension.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/index.html"
+      - "saved/**"
+      - "desktop/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test
+        run: node --test
+      - name: Build
+        run: |
+          mkdir -p _site/saved
+          cp docs/index.html _site/
+          # -L copies what the shared/ links point to, not the links.
+          cp -RL saved/index.html saved/app.mjs saved/site.mjs saved/site.css saved/icon.svg saved/shared _site/saved/
+          echo royal.tinyk.ing > _site/CNAME
+          touch _site/.nojekyll
+          find _site -type f | sort
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

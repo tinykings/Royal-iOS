@@ -1,13 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { CloudKitClient } from "../shared/cloudkit.mjs";
 import { fakeCloudKit } from "./fake-cloudkit.mjs";
 import { SIGN_IN_STARTED_KEY, TOKEN_KEY, createSite, takeCallback } from "../site.mjs";
 
 const CONFIG = { container: "iCloud.com.tinykings.Royal", environment: "production", apiToken: "site-token" };
-const SITE = "https://royal.tinyk.ing/";
+const SITE = "https://royal.tinyk.ing/saved/";
 const post = (source, id) => ({ source, id, title: `Title ${id}`, url: `https://example.com/${id}`, commentsUrl: `https://example.com/${id}#c`, label: source });
 const str = value => ({ value, type: "STRING" });
 const int = value => ({ value, type: "INT64" });
@@ -141,14 +139,4 @@ test("a different Apple Account than the one syncing pauses sync", async () => {
   server.signIn("a", "_b");
   const result = await b.site.sync();
   assert.match(result.message, /different Apple Account/);
-});
-
-test("shared files match the extension's when a Royal-iOS checkout is next to this one", t => {
-  const root = fileURLToPath(new URL("..", import.meta.url));
-  const extension = `${root}../Royal-iOS/desktop/`;
-  if (!existsSync(extension)) return t.skip("No ../Royal-iOS checkout.");
-  for (const file of readdirSync(`${root}shared`)) {
-    assert.ok(readFileSync(`${root}shared/${file}`).equals(readFileSync(extension + file)), `shared/${file} differs; run scripts/update-shared.sh`);
-  }
-  assert.ok(readFileSync(`${root}tests/fake-cloudkit.mjs`).equals(readFileSync(`${extension}fake-cloudkit.mjs`)));
 });
