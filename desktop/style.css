@@ -56,6 +56,10 @@ nav.tabs button[aria-selected="true"] { background: var(--text); color: var(--bg
 
 /* Feed panels */
 .tab-panel > .actions { margin: 8px 0; }
+/* All: one centered button (Refresh, or Mark all read while there are new posts)
+   with the refresh time below it. */
+.all-actions { justify-content: center; }
+.all-status { text-align: center; }
 .source-options label { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 500; color: var(--muted); }
 .source-options select { width: auto; padding: 6px 10px; border-radius: 999px; }
 .feed-status { font-size: 13px; color: var(--muted); margin: 8px 0; }

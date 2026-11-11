@@ -217,7 +217,9 @@ function renderAll(all) {
   earlierTitle.hidden = all.seen.length === 0;
   earlierTitle.textContent = all.previousRefresh ? `Earlier · shown before ${when(all.previousRefresh)}` : "Earlier";
   renderEarlierToggle();
+  // New posts have to be marked read before All can refresh again.
   document.querySelector("#mark-read").hidden = all.new.length === 0;
+  document.querySelector("#refresh-all").hidden = all.new.length > 0;
   allStatus.textContent = all.refreshedAt
     ? `Refreshed ${when(all.refreshedAt)}: ${all.new.length} new, ${all.seen.length} earlier.`
     : "Not refreshed yet.";
