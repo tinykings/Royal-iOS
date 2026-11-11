@@ -13,11 +13,15 @@ struct SavedSyncView: View {
             if let identifier = SavedSync.containerIdentifier {
                 Section {
                     Toggle("Sync Saved Posts", isOn: Binding(
-                        get: { sync.isOn },
+                        get: { sync.isOn || sync.pendingEnable },
                         set: { on in
                             if on { Task { await store.enableSavedSync() } } else { sync.disable() }
                         }))
-                        .disabled(sync.busy && !sync.isOn)
+                        .disabled(sync.busy && !sync.isOn && !sync.pendingEnable)
+                    if sync.pendingEnable && !sync.isOn {
+                        Text("Waiting for iCloud. Sync turns on by itself once it's ready.")
+                            .foregroundStyle(.secondary)
+                    }
                     if sync.isOn {
                         LabeledContent("Pending changes", value: "\(sync.library.pendingCount)")
                         if let last = sync.library.lastSync {

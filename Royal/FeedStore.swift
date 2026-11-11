@@ -99,7 +99,7 @@ final class FeedStore: ObservableObject {
     }
 
     func enableSavedSync() async {
-        await savedSync.enable(importing: SavedPostsStorage.load())
+        await savedSync.enable()
     }
 
     func reselect(_ tab: AppTab) {

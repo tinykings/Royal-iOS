@@ -25,16 +25,24 @@ final class SavedSync: ObservableObject {
     // Signed in to a different Apple Account than the one syncing: its data is hidden
     // and nothing is sent until that account signs in again or sync is turned on anew.
     @Published private(set) var accountMismatch = false
+    // Sync was asked to turn on but iCloud wasn't ready (throttled, offline, or the
+    // sign-in needed confirming). Kept across launches; Royal keeps trying.
+    @Published private(set) var pendingEnable = UserDefaults.standard.bool(forKey: SavedSync.pendingEnableKey)
 
     // Called whenever the saved list or whether sync is active may have changed.
     var onChange: (() -> Void)?
 
     private static let settingsKey = "savedSyncSettings"
+    private static let pendingEnableKey = "savedSyncPendingEnable"
     private static let zoneID = CKRecordZone.ID(zoneName: "RoyalSync", ownerName: CKCurrentUserDefaultName)
     private var verifiedAccount = false
     private var again = false
     private var scheduled: Task<Void, Never>?
     private var accountObserver: NSObjectProtocol?
+    // No request before this time: iCloud asked Royal to wait, or a retry is backing off.
+    // Opening the app or saving a post meanwhile waits too, so it can't extend a throttle.
+    private var notBefore: Date?
+    private var failures = 0
 
     static var containerIdentifier: String? {
         guard let value = Bundle.main.object(forInfoDictionaryKey: "RoyalCloudKitProbeContainer") as? String,
@@ -69,49 +77,72 @@ final class SavedSync: ObservableObject {
             forName: .CKAccountChanged, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.verifiedAccount = false
-                self?.scheduleSync(after: 0)
+                guard let self else { return }
+                // A new situation: try again at once.
+                self.verifiedAccount = false
+                self.notBefore = nil
+                self.failures = 0
+                self.scheduleSync(after: 0)
             }
         }
     }
 
     // MARK: Turning sync on and off
 
-    // Turns sync on for the signed-in Apple Account, importing `local` saves. Earlier
-    // synced data for the same account on this device is picked up again.
-    func enable(importing local: [SavedPost]) async {
-        guard let identifier = Self.containerIdentifier, !busy else { return }
+    // Turns sync on for the signed-in Apple Account, importing the saves in iCloud
+    // key-value storage. Earlier synced data for the same account on this device is
+    // picked up again. If iCloud isn't ready, the request is kept and retried.
+    func enable() async {
+        setPendingEnable(true)
+        notBefore = nil
+        failures = 0
+        await attemptEnable()
+    }
+
+    private func attemptEnable() async {
+        guard pendingEnable, !isOn, let identifier = Self.containerIdentifier, !busy else { return }
         busy = true
         status = "Turning on sync…"
         do {
             let container = CKContainer(identifier: identifier)
-            if let problem = try await Self.accountProblem(container) {
-                status = problem
+            try await Self.checkAccount(container)
+            let account = try await container.userRecordID().recordName
+            // Switched off while waiting for iCloud.
+            guard pendingEnable else {
                 busy = false
                 return
             }
-            let account = try await container.userRecordID().recordName
             let new = Settings(container: identifier, environment: Self.environment, account: account)
             library = Self.loadLibrary(new) ?? SavedSyncLibrary()
-            library.importLocal(local)
+            library.importLocal(SavedPostsStorage.load())
             settings = new
             accountMismatch = false
             verifiedAccount = true
             if let data = try? JSONEncoder().encode(new) { UserDefaults.standard.set(data, forKey: Self.settingsKey) }
+            setPendingEnable(false)
             persist()
         } catch {
-            status = Self.describe(error)
             busy = false
+            guard pendingEnable else { return }
+            handle(error, enabling: true)
             return
         }
         busy = false
         await sync()
     }
 
+    private func setPendingEnable(_ value: Bool) {
+        pendingEnable = value
+        UserDefaults.standard.set(value, forKey: Self.pendingEnableKey)
+    }
+
     // Back to iCloud key-value storage alone. The synced copy stays on this device for
     // turning sync on again; changes made meanwhile are imported then.
     func disable() {
         scheduled?.cancel()
+        setPendingEnable(false)
+        notBefore = nil
+        failures = 0
         settings = nil
         accountMismatch = false
         verifiedAccount = false
@@ -137,15 +168,21 @@ final class SavedSync: ObservableObject {
         scheduleSync()
     }
 
+    // Also finishes turning sync on when that's still pending.
     func scheduleSync(after seconds: Double = 1.5) {
-        guard configurationMatches else { return }
+        guard configurationMatches || (pendingEnable && !isOn) else { return }
+        let wait = max(seconds, notBefore?.timeIntervalSinceNow ?? 0)
         scheduled?.cancel()
         scheduled = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(seconds))
+            try? await Task.sleep(for: .seconds(wait))
             guard !Task.isCancelled else { return }
             // Run apart from this task, so a later schedule can't cancel a sync midway.
-            Task { await self?.sync() }
+            Task { await self?.run() }
         }
+    }
+
+    private func run() async {
+        if pendingEnable && !isOn { await attemptEnable() } else { await sync() }
     }
 
     // MARK: Syncing
@@ -163,22 +200,25 @@ final class SavedSync: ObservableObject {
             do {
                 status = "Syncing…"
                 status = try await runSync()
-            } catch let paused as Paused {
-                status = paused.message
+                failures = 0
+                notBefore = nil
             } catch {
-                status = Self.describe(error)
+                handle(error, enabling: false)
             }
-        } while again && configurationMatches
+        } while again && configurationMatches && notBefore == nil
     }
 
-    private struct Paused: Error { let message: String }
+    private struct Paused: Error {
+        let message: String
+        var retry: Retry = .later
+    }
 
     // Pulls zone changes, then pushes pending intentions with conditional writes,
     // pulling again after conflicts. Mirrors desktop/sync-runner.mjs.
     private func runSync() async throws -> String {
         guard let settings else { throw Paused(message: "Sync is off.") }
         let container = CKContainer(identifier: settings.container)
-        if let problem = try await Self.accountProblem(container) { throw Paused(message: problem) }
+        try await Self.checkAccount(container)
         // userRecordID asks Apple's account service, which throttles repeated requests,
         // so it's checked once per launch and after the account changes.
         if !verifiedAccount {
@@ -349,34 +389,87 @@ final class SavedSync: ObservableObject {
         error.code == .zoneNotFound || error.code == .userDeletedZone
     }
 
+    // When to try again after a failure.
+    private enum Retry {
+        // On a timer: after iCloud's suggested wait, or backing off when it gave none.
+        case timer(Double?)
+        // When the app returns to the foreground or the Apple Account changes, since it
+        // needs the person (a password prompt, a sign-in).
+        case later
+        case never
+    }
+
     // Checked on the device, before any request that has to authenticate.
-    private static func accountProblem(_ container: CKContainer) async throws -> String? {
-        let status = try await container.accountStatus()
-        switch status {
-        case .available: return nil
-        case .noAccount: return "No Apple Account is signed in to iCloud on this device."
-        case .restricted: return "iCloud is restricted on this device."
-        case .temporarilyUnavailable: return "iCloud needs attention. Open Settings › Apple Account and confirm your sign-in."
-        case .couldNotDetermine: return "iCloud account status could not be determined. Try again shortly."
-        @unknown default: return "iCloud is unavailable."
+    private static func checkAccount(_ container: CKContainer) async throws {
+        switch try await container.accountStatus() {
+        case .available:
+            return
+        case .noAccount:
+            throw Paused(message: "No Apple Account is signed in to iCloud on this device.")
+        case .restricted:
+            throw Paused(message: "iCloud is restricted on this device.")
+        case .temporarilyUnavailable:
+            throw Paused(message: "iCloud needs attention. Open Settings › Apple Account and confirm your sign-in.")
+        case .couldNotDetermine:
+            throw Paused(message: "iCloud account status could not be determined.", retry: .timer(nil))
+        @unknown default:
+            throw Paused(message: "iCloud is unavailable.")
         }
     }
 
-    private static func describe(_ error: Error) -> String {
-        let text = (error as NSError).localizedDescription
-        guard let error = error as? CKError else { return "Sync failed: \(text)" }
-        switch error.code {
-        case .networkUnavailable, .networkFailure:
-            return "Offline. Changes are kept and sent on the next sync."
-        case .requestRateLimited, .serviceUnavailable, .zoneBusy:
-            let wait = Int((error.retryAfterSeconds ?? 60).rounded(.up))
-            return "iCloud asked Royal to wait about \(wait) seconds. Changes are kept and sent on the next sync."
-        case .notAuthenticated, .accountTemporarilyUnavailable:
-            return "iCloud needs you to sign in again. Open Settings › Apple Account, then sync again."
-        case .unknownItem, .invalidArguments, .serverRejectedRequest:
-            return "CloudKit rejected the request (\(text)). The RoyalSavedPost record type may not be deployed to \(environment) yet; see desktop/README.md."
-        default:
-            return "Sync failed: \(text)"
+    private func handle(_ error: Error, enabling: Bool) {
+        let (message, retry) = Self.classify(error)
+        switch retry {
+        case .timer(let suggested):
+            let backoff = min(30 * pow(2, Double(min(failures, 5))), 600)
+            let delay = max(suggested ?? backoff, 5)
+            failures += 1
+            notBefore = Date().addingTimeInterval(delay)
+            status = message + " Royal will try again in about \(Self.duration(delay))."
+            scheduleSync(after: 0)
+        case .later:
+            status = message + (enabling || isOn ? " Royal will try again when you return to the app." : "")
+        case .never:
+            if enabling {
+                setPendingEnable(false)
+                status = "Couldn't turn on sync. " + message
+            } else {
+                status = message
+            }
         }
+    }
+
+    private static func duration(_ seconds: Double) -> String {
+        seconds < 90 ? "\(Int(seconds.rounded(.up))) seconds" : "\(Int((seconds / 60).rounded())) minutes"
+    }
+
+    private static func classify(_ error: Error) -> (String, Retry) {
+        if let paused = error as? Paused { return (paused.message, paused.retry) }
+        let nsError = error as NSError
+        let underlying = (nsError.userInfo[NSUnderlyingErrorKey] as? NSError)?.localizedDescription ?? ""
+        let text = nsError.localizedDescription
+        let combined = text + " " + underlying
+        let ckError = error as? CKError
+        switch ckError?.code {
+        case .networkUnavailable?, .networkFailure?:
+            return ("Offline. Changes are kept.", .timer(nil))
+        case .requestRateLimited?, .serviceUnavailable?, .zoneBusy?:
+            return ("iCloud asked Royal to wait. Changes are kept.", .timer(ckError?.retryAfterSeconds))
+        case .notAuthenticated?, .accountTemporarilyUnavailable?:
+            return ("iCloud needs your Apple Account password confirmed. Open Settings › Apple Account if it asks.", .later)
+        case .unknownItem?, .invalidArguments?, .serverRejectedRequest?:
+            return ("CloudKit rejected the request (\(text)). The RoyalSavedPost record type may not be deployed to \(environment) yet; see desktop/README.md.", .never)
+        default:
+            break
+        }
+        // Apple's account service reports these without a CloudKit error code.
+        if combined.localizedCaseInsensitiveContains("throttl") {
+            return ("iCloud is rate-limiting sign-in requests from this device.", .timer(60))
+        }
+        if combined.localizedCaseInsensitiveContains("password") || combined.localizedCaseInsensitiveContains("rejected a prompt") {
+            return ("iCloud needs your Apple Account password confirmed, and the prompt was dismissed.", .later)
+        }
+        if ckError != nil { return ("Sync failed: \(text)", .timer(nil)) }
+        return ("Sync failed: \(text)", .never)
     }
 }
