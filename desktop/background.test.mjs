@@ -1,8 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PROBE } from "./cloudkit.mjs";
 
-test("worker isolates callers/accounts, serializes token use, and requires reread after conflict", async () => {
+test("worker isolates callers, serializes CloudKit use, and pauses sync without a sign-in", async () => {
   const local = {}, session = {}, listeners = [];
   const pageURL = "chrome-extension://royal-test/index.html";
   const storage = values => ({
@@ -11,7 +10,7 @@ test("worker isolates callers/accounts, serializes token use, and requires rerea
     set: async entries => Object.assign(values, entries),
     remove: async key => { delete values[key]; },
   });
-  let active = 0, maximumActive = 0, writes = 0, account = "account-a", failWrite = false;
+  let active = 0, maximumActive = 0;
   let messageListener;
   let hostAccess = true, networkFails = false;
   globalThis.chrome = {
@@ -39,21 +38,17 @@ test("worker isolates callers/accounts, serializes token use, and requires rerea
         return { ok: false, status: 401, json: async () => ({ serverErrorCode: "AUTHENTICATION_FAILED" }) };
       }
       body = new URL(url).searchParams.has("ckWebAuthToken")
-        ? { userRecordName: account, ckWebAuthToken: "rotated-token" }
+        ? { userRecordName: "account-a", ckWebAuthToken: "rotated-token" }
         : { serverErrorCode: "AUTHENTICATION_REQUIRED", redirectURL: "https://idmsa.apple.com/login" };
     } else if (path.endsWith("zones/modify")) {
       body = { zones: [{ zoneID: { zoneName: "RoyalSync" } }] };
     } else if (path.endsWith("records/changes")) {
       body = { records: [], syncToken: "sync-token" };
-    } else if (path.endsWith("records/modify") && JSON.parse(options.body).zoneID) {
+    } else if (path.endsWith("records/modify")) {
+      assert.ok(JSON.parse(options.body).zoneID, "writes stay in the sync zone");
       body = { records: JSON.parse(options.body).operations.map(op => ({ ...op.record, recordChangeTag: "synced" })) };
-    } else if (path.endsWith("records/lookup")) {
-      body = { records: [{ ...PROBE, recordChangeTag: "revision", fields: { message: { value: "from-ios" } } }] };
     } else {
-      writes++;
-      assert.equal(JSON.parse(options.body).operations[0].operationType, "update");
-      body = { records: [failWrite ? { recordName: PROBE.recordName, serverErrorCode: "CONFLICT" }
-        : { ...PROBE, recordChangeTag: "new-revision", fields: { message: { value: "from-desktop" } } }] };
+      throw new Error(`unexpected CloudKit request ${path}`);
     }
     return { ok: true, json: async () => body };
   };
@@ -84,26 +79,15 @@ test("worker isolates callers/accounts, serializes token use, and requires rerea
     assert.ok(!failedDiagnosis.message.includes("rotated-token"));
     assert.ok(!failedDiagnosis.message.includes("ckAPIToken="));
     networkFails = false;
-    assert.equal((await send({ action: "write", message: "hi" })).ok, false);
-    const [first, second] = await Promise.all([send({ action: "read" }), send({ action: "read" })]);
-    assert.equal(first.record.message, "from-ios");
+    // CloudKit operations run one at a time and never return the token.
+    const [first, second] = await Promise.all([send({ action: "sync" }), send({ action: "sync" })]);
+    assert.equal(first.ok, true);
     assert.equal(second.ok, true);
     assert.equal(maximumActive, 1);
     assert.ok(!JSON.stringify(first).includes("rotated-token"));
-    failWrite = true;
-    assert.equal((await send({ action: "write", message: "hi" })).ok, false);
-    failWrite = false;
-    assert.equal((await send({ action: "write", message: "hi" })).ok, false);
-    assert.equal(writes, 1, "conflict invalidates the edit base");
-    await send({ action: "read" });
-    account = "account-b";
-    assert.equal((await send({ action: "write", message: "hi" })).ok, false);
-    assert.equal(writes, 1, "account switch cannot write using the other account's revision");
-    await send({ action: "read" });
-    assert.equal((await send({ action: "write", message: "hi" })).ok, true);
+    assert.equal((await send({ action: "read" })).ok, false, "the old probe operation is gone");
     await send({ action: "configure", config });
     assert.equal(local.cloudKitToken, undefined);
-    assert.equal((await send({ action: "write", message: "hi" })).ok, false);
 
     // Sync with the sign-in gone (signed out, or cleared by an older version's
     // update) asks to sign in again without calling CloudKit.

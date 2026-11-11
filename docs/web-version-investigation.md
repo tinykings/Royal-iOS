@@ -21,13 +21,12 @@ and YouTube with the shared `sources.js` from its service worker. In Chromium
 cookies, even with third-party cookies blocked. Verified live with desktop
 logins: Reddit Best/Top, HN, and YouTube Subscriptions/Home all load. See the
 desktop README.
-Sync (extension 0.4.1): All snapshot, seen, and saved sync
-between desktop clients through a custom private zone; see
-[`sync-schema.md`](sync-schema.md). Turning sync on works live in Production
-(zone, changes, and writes), and syncs between two desktop profiles. iOS does
-not implement it yet.
-Only All's explicit-refresh snapshot, seen state, and saved items will sync;
-individual source sections remain local. The probe does not connect real data yet.
+Sync (extension 0.4.1; out of experiment in 0.6.0 and the matching iOS build):
+All snapshot, seen, and saved sync through a custom private zone; see
+[`sync-schema.md`](sync-schema.md). iOS syncs saved and seen under Settings ›
+Sync with Desktop; saved posts are verified live between iOS and desktop. The
+sign-in probe records used for this investigation have been removed from both
+clients. Individual source sections remain local.
 
 ## Recommendation
 

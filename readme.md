@@ -10,6 +10,7 @@ iOS app combining Reddit, Hacker News, and your YouTube subscriptions in one fee
 - Reddit sort: **Best** or **Top** (today), from the subreddits you follow only, or **Top** (today) from one of them picked from the menu at the top. Hacker News: **Top** or **New**. YouTube: your **Subscriptions** or the **Recommended** videos from your Home page, with any that are new since the last refresh first.
 - Uses your Reddit and YouTube logins from in-app sign-in pages—no API keys or OAuth setup. Reddit links open with that login, so you can vote and reply.
 - Plays YouTube videos in-app.
+- Optional **Sync with Desktop** (Settings): saved posts, and the posts the All feed has shown, sync through your private iCloud database with the Royal [desktop browser extension](desktop/README.md) ([format](docs/sync-schema.md)).
 - Caps Reddit posts at five per subreddit, except when viewing a single subreddit; excludes pinned posts, and NSFW posts unless turned on in Settings.
 - The All feed shows posts new since the previous refresh. Pull up at the end to mark them read; pull up the empty feed to look back through earlier posts. Feeds refresh on their own after 15 minutes away; tap the current tab to jump to the top.
 
@@ -42,14 +43,6 @@ Edit `CONFIG` in `sources.js`:
 | `maxPerSubreddit` | `5` | Maximum posts selected per subreddit |
 
 ## Tests
-
-A desktop CloudKit sign-in/private-record experiment is available in
-[`desktop/`](desktop/README.md), paired with an iOS Settings probe available in
-Debug and Release/TestFlight builds.
-It needs Apple container setup and live validation. Settings › Web Sync
-Experiment › Sync with Desktop (opt-in) syncs saved posts, and the posts the All
-feed has shown, with the desktop extension through CloudKit (see
-[docs/sync-schema.md](docs/sync-schema.md)); the All feed itself doesn't sync yet.
 
 `sources.js` has Node tests that mock network requests. Run with Node.js 22 or later:
 

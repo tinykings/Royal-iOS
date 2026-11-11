@@ -1,6 +1,5 @@
 // No remote SDK: this module uses CloudKit Web Services from the extension worker.
-export const PROBE = { recordName: "royal-sync-probe-v1", recordType: "RoyalSyncProbe" };
-const DATABASES = { "users/caller": "public", "records/lookup": "private", "records/modify": "private", "zones/modify": "private", "records/changes": "private" };
+const DATABASES = { "users/caller": "public", "records/modify": "private", "zones/modify": "private", "records/changes": "private" };
 // Royal's synced data lives in one custom private zone, so clients can fetch
 // incremental changes with a sync token (the default zone can't).
 export const SYNC_ZONE = { zoneName: "RoyalSync" };
@@ -25,7 +24,7 @@ export function describeCloudKitError(error) {
   const prefix = `CloudKit: ${error.code}${status}${at}.`;
   if (error.code === "NETWORK_ERROR") return `${prefix} The browser did not deliver an HTTP response. Run Check connection below, then inspect the extension service worker for the browser's blocked-request or network error.`;
   if (error.code === "TIMEOUT") return `${prefix} The request timed out. Check your network and retry.`;
-  if (["CONFLICT", "EXISTS"].includes(error.code)) return `${prefix} Another client changed the probe. Read it again before writing.`;
+  if (["CONFLICT", "EXISTS"].includes(error.code)) return `${prefix} Another client changed the record; the next sync merges it.`;
   if (["AUTHENTICATION_FAILED", "ACCESS_DENIED"].includes(error.code)) return `${prefix} Check the token's container, Production/Development environment, and allowed origin in CloudKit Console.`;
   if (error.code === "AUTHENTICATION_REQUIRED") return `${prefix} Sign in again; if no Apple window opened, check the token's URL Redirect callback.`;
   return `${prefix} Check the setup guide for this operation.`;
@@ -113,35 +112,6 @@ export class CloudKitClient {
     return user.userRecordName;
   }
 
-  async readProbe() {
-    const result = await this.request("records/lookup", { records: [{ recordName: PROBE.recordName }] });
-    const record = this.resultRecord(result);
-    // Only a per-record NOT_FOUND means the probe is absent. Configuration errors
-    // at the request level must not be turned into permission to create a record.
-    if (record.serverErrorCode === "NOT_FOUND") return null;
-    this.checkRecord(record);
-    return record;
-  }
-
-  async writeProbe(message, previous) {
-    if (typeof message !== "string" || !message.trim() || message.length > 500) throw new Error("Enter a message of 1–500 characters.");
-    if (previous && (previous.recordName !== PROBE.recordName || !previous.recordChangeTag)) throw new CloudKitError("INVALID_RESPONSE");
-    const record = {
-      ...PROBE,
-      ...(previous ? { recordChangeTag: previous.recordChangeTag } : {}),
-      fields: {
-        message: { value: message.trim(), type: "STRING" },
-        writtenAt: { value: new Date().toISOString(), type: "STRING" },
-      },
-    };
-    const result = await this.request("records/modify", {
-      operations: [{ operationType: previous ? "update" : "create", record }],
-    });
-    const saved = this.resultRecord(result);
-    this.checkRecord(saved);
-    return saved;
-  }
-
   // Creates the sync zone; saving an existing zone leaves it unchanged.
   async ensureSyncZone() {
     const result = await this.request("zones/modify", { operations: [{ operationType: "create", zone: { zoneID: SYNC_ZONE } }] });
@@ -163,16 +133,5 @@ export class CloudKitClient {
     const result = await this.request("records/modify", { zoneID: SYNC_ZONE, atomic: false, operations });
     if (!Array.isArray(result.records) || result.records.length !== operations.length) throw new CloudKitError("INVALID_RESPONSE", undefined, { operation: "records/modify" });
     return result.records;
-  }
-
-  resultRecord(result) {
-    if (!Array.isArray(result.records) || result.records.length !== 1 || !result.records[0] ||
-        result.records[0].recordName !== PROBE.recordName) throw new CloudKitError("INVALID_RESPONSE");
-    return result.records[0];
-  }
-
-  checkRecord(record) {
-    if (record.serverErrorCode) throw new CloudKitError(record.serverErrorCode);
-    if (record.recordType !== PROBE.recordType || typeof record.recordChangeTag !== "string") throw new CloudKitError("INVALID_RESPONSE");
   }
 }

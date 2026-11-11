@@ -1,9 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CloudKitClient, CloudKitError, PROBE, appleSignInURL, callbackToken, validateConfig, describeCloudKitError } from "./cloudkit.mjs";
+import { CloudKitClient, CloudKitError, appleSignInURL, callbackToken, validateConfig, describeCloudKitError } from "./cloudkit.mjs";
 
 const config = { container: "iCloud.com.tinykings.Royal", apiToken: "public-api-token", environment: "development" };
-const record = { ...PROBE, recordChangeTag: "revision-1", fields: { message: { value: "Hello" } } };
 const reply = (value, ok = true) => ({ ok, json: async () => value });
 function fixture(responses, initialToken = "user+/=token") {
   let token = initialToken;
@@ -39,15 +38,15 @@ test("callback accepts only the configured origin/path and one non-empty token",
 });
 
 test("identity uses public/users/caller while record requests remain private and adopt rotated tokens", async () => {
-  const f = fixture([reply({ userRecordName: "user", ckWebAuthToken: "rotated" }), reply({ records: [record] })]);
+  const f = fixture([reply({ userRecordName: "user", ckWebAuthToken: "rotated" }), reply({ records: [], syncToken: "t" })]);
   assert.equal(await f.client.currentUser(), "user");
   assert.equal(f.token(), "rotated");
-  await f.client.readProbe();
+  await f.client.zoneChanges();
   assert.equal(f.calls[0].url.searchParams.get("ckWebAuthToken"), "user+/=token");
   assert.equal(f.calls[1].url.searchParams.get("ckWebAuthToken"), "rotated");
   assert.match(f.calls[0].url.pathname, /\/development\/public\/users\/caller$/);
   assert.equal(f.calls[0].options.method, "GET");
-  assert.match(f.calls[1].url.pathname, /\/development\/private\/records\/lookup$/);
+  assert.match(f.calls[1].url.pathname, /\/development\/private\/records\/changes$/);
   assert.equal(f.calls[0].options.redirect, "error");
   assert.equal(f.calls[0].options.cache, "no-store");
   assert.equal(f.calls[0].options.credentials, "omit");
@@ -67,37 +66,12 @@ test("authentication failure clears the prior session and retains only the redir
   assert.equal(f.token(), null);
 });
 
-test("only record-level NOT_FOUND is an absent probe", async () => {
-  const missing = fixture([reply({ records: [{ recordName: PROBE.recordName, serverErrorCode: "NOT_FOUND" }] })]);
-  assert.equal(await missing.client.readProbe(), null);
-  for (const response of [reply({ serverErrorCode: "NOT_FOUND" }, false), reply({ records: [{ recordName: PROBE.recordName, serverErrorCode: "ACCESS_DENIED" }] })]) {
-    const f = fixture([response]);
-    await assert.rejects(f.client.readProbe(), CloudKitError);
+test("malformed sync responses are errors, not empty results", async () => {
+  for (const response of [null, [], {}, { records: [] }, { records: {}, syncToken: "t" }]) {
+    await assert.rejects(fixture([reply(response)]).client.zoneChanges(), CloudKitError);
   }
-});
-
-test("writes use create or revision-checked update, never force overwrite", async () => {
-  const f = fixture([reply({ records: [record] }), reply({ records: [record] })]);
-  await f.client.writeProbe(" desktop ", null);
-  await f.client.writeProbe("desktop", record);
-  const operations = f.calls.map(call => JSON.parse(call.options.body).operations[0]);
-  assert.equal(operations[0].operationType, "create");
-  assert.equal(operations[0].record.fields.message.value, "desktop");
-  assert.equal(operations[0].record.recordChangeTag, undefined);
-  assert.equal(operations[1].operationType, "update");
-  assert.equal(operations[1].record.recordChangeTag, "revision-1");
-});
-
-test("per-record conflicts remain failures even on HTTP success", async () => {
-  const f = fixture([reply({ records: [{ recordName: PROBE.recordName, serverErrorCode: "CONFLICT", reason: "token-secret" }] })]);
-  await assert.rejects(f.client.writeProbe("desktop", record), error => error.code === "CONFLICT" && !error.message.includes("token-secret"));
-});
-
-test("malformed responses cannot become a valid read or successful write", async () => {
-  for (const response of [null, [], {}, { records: [] }, { records: [{}] }, { records: [{ ...record, recordName: "another-record" }] },
-    { records: [{ ...record, recordChangeTag: undefined }] }]) {
-    const f = fixture([reply(response)]);
-    await assert.rejects(f.client.readProbe(), CloudKitError);
+  for (const response of [{}, { records: [] }]) {
+    await assert.rejects(fixture([reply(response)]).client.modifySyncRecords([{ operationType: "create", record: {} }]), CloudKitError);
   }
 });
 
@@ -127,13 +101,6 @@ test("timeouts and HTTP failures get distinct safe diagnostics", async () => {
     assert.ok(!description.includes("secret-token"));
     return true;
   });
-});
-
-test("empty/oversized messages and writes with no valid revision never reach the network", async () => {
-  const f = fixture([]);
-  for (const message of ["", " ", "a".repeat(501)]) await assert.rejects(f.client.writeProbe(message, null));
-  await assert.rejects(f.client.writeProbe("hi", { ...record, recordChangeTag: undefined }));
-  assert.equal(f.calls.length, 0);
 });
 
 test("default fetcher invokes the global fetch unbound, as browsers require", async () => {

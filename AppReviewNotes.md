@@ -35,6 +35,7 @@ USER-GENERATED CONTENT: Royal does not host or let users post content of its own
 - Hacker News (Firebase API, hacker-news.firebaseio.com): public stories.
 - YouTube / Google (youtube.com, accounts.google.com): the user's subscription feed and sign-in; videos play through YouTube's embedded player.
 - Apple iCloud key-value storage: syncs saved posts between the user's devices.
+- Apple CloudKit (the user's private iCloud database): optional, off by default. Settings > Sync with Desktop shares saved posts, and which posts the All feed has shown, with Royal's open-source desktop browser extension. Data stays in the user's own iCloud account; there is no Royal server.
 No analytics, ads, AI services, payment processors, or backend of our own. There are no in-app purchases.
 
 4. REGIONAL DIFFERENCES

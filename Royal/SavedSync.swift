@@ -9,7 +9,7 @@ import Foundation
 // device isn't new here at the next refresh. The All snapshot record is left alone.
 //
 // Like the desktop it syncs when the app opens or returns to the foreground, about
-// 1.5 s after each change, and on Sync Now. There's no background timer.
+// 1.5 s after each change, and before an All refresh. There's no background timer.
 @MainActor
 final class SavedSync: ObservableObject {
     struct Settings: Codable, Equatable {
@@ -48,13 +48,13 @@ final class SavedSync: ObservableObject {
     private var failures = 0
 
     static var containerIdentifier: String? {
-        guard let value = Bundle.main.object(forInfoDictionaryKey: "RoyalCloudKitProbeContainer") as? String,
+        guard let value = Bundle.main.object(forInfoDictionaryKey: "RoyalCloudKitContainer") as? String,
               value.hasPrefix("iCloud.") else { return nil }
         return value
     }
 
     static var environment: String {
-        Bundle.main.object(forInfoDictionaryKey: "RoyalCloudKitProbeEnvironment") as? String ?? "Unknown"
+        Bundle.main.object(forInfoDictionaryKey: "RoyalCloudKitEnvironment") as? String ?? "Unknown"
     }
 
     var isOn: Bool { settings != nil }

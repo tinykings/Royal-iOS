@@ -36,14 +36,9 @@ const storageReady = Promise.all([
   }
 });
 let queue = Promise.resolve();
-let probe;
-let hasRead = false;
-let currentAccount;
-
-function resetProbe() { probe = undefined; hasRead = false; currentAccount = undefined; }
 async function setToken(token) {
   if (token) await chrome.storage.local.set({ cloudKitToken: token });
-  else { await chrome.storage.local.remove("cloudKitToken"); resetProbe(); }
+  else await chrome.storage.local.remove("cloudKitToken");
 }
 
 async function client() {
@@ -52,11 +47,6 @@ async function client() {
     getToken: async () => (await chrome.storage.local.get("cloudKitToken")).cloudKitToken,
     setToken,
   });
-}
-
-function displayRecord(record) {
-  if (!record) return null;
-  return { message: record.fields?.message?.value ?? "", writtenAt: record.fields?.writtenAt?.value ?? "" };
 }
 
 async function handle(request) {
@@ -111,34 +101,12 @@ async function handle(request) {
         if (!result) throw new Error("Apple sign-in was cancelled.");
         await setToken(callbackToken(result, chrome.identity.getRedirectURL("cloudkit")));
       }
-      currentAccount = await api.currentUser();
-      return { message: "Signed in to CloudKit. Read the probe next to verify private database access." };
+      await api.currentUser();
+      return { message: "Signed in to iCloud. Turn on sync next, if it isn't on." };
     }
     case "signOut":
       await setToken(null);
-      return { message: "Royal's local CloudKit session cleared. Your Apple browser login is unchanged.", record: null };
-    case "read": {
-      const api = await client();
-      const account = await api.currentUser();
-      if (currentAccount !== account) resetProbe();
-      currentAccount = account;
-      // A failed read invalidates the previous edit base.
-      hasRead = false;
-      probe = await api.readProbe();
-      hasRead = true;
-      return { record: displayRecord(probe), message: probe ? "Private probe read." : "No probe yet. Write a message to create one." };
-    }
-    case "write": {
-      if (!hasRead) throw new Error("Read the probe before writing.");
-      const api = await client();
-      if (await api.currentUser() !== currentAccount) {
-        resetProbe();
-        throw new Error("Apple Account changed. Read the probe again.");
-      }
-      try { probe = await api.writeProbe(request.message, probe); }
-      catch (error) { hasRead = false; throw error; }
-      return { record: displayRecord(probe), message: "Private probe written. Read it from iOS to verify sync." };
-    }
+      return { message: "Royal's local CloudKit session cleared. Your Apple browser login is unchanged." };
     case "enableSync": {
       const api = await client();
       const account = await api.currentUser();
@@ -248,7 +216,7 @@ chrome.runtime.onMessage.addListener((request, sender, respond) => {
     // Browser identity errors can include the redirect URL. Never echo them.
     const message = error instanceof CloudKitError
       ? describeCloudKitError(error)
-      : /^Enter |^Choose |^Read |^Sync |^Apple Account changed|^Unknown Royal|^Configuration|^CloudKit returned|^Apple sign-in/.test(error.message ?? "")
+      : /^Enter |^Choose |^Sync |^Unknown Royal|^Configuration|^CloudKit returned|^Apple sign-in/.test(error.message ?? "")
         ? error.message : "Operation failed. Check Apple sign-in, callback configuration, and connectivity.";
     respond({ ok: false, message });
   });

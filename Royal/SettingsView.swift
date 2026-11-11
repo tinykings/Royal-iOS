@@ -97,6 +97,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Hacker News")
                 }
+                DesktopSyncSection(sync: store.savedSync)
                 Section {
                     LabeledContent("Version", value: appVersion)
                     Link(destination: URL(string: "https://github.com/tinykings/Royal-iOS")!) {
@@ -106,10 +107,6 @@ struct SettingsView: View {
                     Text("About")
                 } footer: {
                     Text("Royal has no server. It talks directly to Reddit, Hacker News, and YouTube with your logins, and collects nothing.")
-                }
-                Section("Web Sync Experiment") {
-                    NavigationLink("Sync with Desktop") { SavedSyncView(sync: store.savedSync) }
-                    NavigationLink("Test iCloud Sync") { CloudKitProbeView() }
                 }
                 #if DEBUG
                 Section("Diagnostics") {
