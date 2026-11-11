@@ -72,6 +72,9 @@
   .feature { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
   .feature h3 { margin: 0 0 6px; font-size: 17px; }
   .feature p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.5; }
+  .requirements { margin: 18px 0 0; color: var(--muted); font-size: 14px; }
+  .feature .more { display: inline-block; margin-top: 10px; font-weight: 600; font-size: 15px; text-decoration: none; }
+  .feature .more:hover { text-decoration: underline; }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; }
 
   .privacy p, .privacy li { color: var(--text); }
@@ -99,8 +102,8 @@
     </a>
     <div class="links">
       <a href="#features">Features</a>
-      <a href="#privacy">Privacy</a>
       <a href="saved/">Saved</a>
+      <a href="#privacy">Privacy</a>
       <a href="https://github.com/tinykings/Royal-iOS">GitHub</a>
     </div>
   </nav>
@@ -138,6 +141,7 @@
         Saved
       </a>
     </div>
+    <p class="requirements">Free for iPhone · Requires iOS 17 or later</p>
   </header>
 
   <section id="features">
@@ -145,23 +149,27 @@
     <div class="features">
       <div class="feature">
         <h3><span class="dot" style="background:#ff4500"></span>Reddit</h3>
-        <p>Best or Top (today) from the subreddits you follow only. Capped at five posts per subreddit, with pinned and NSFW posts left out.</p>
+        <p>Best or Top (today) from the subreddits you follow, or just one of them picked from the menu. Capped at five posts per subreddit, with pinned posts left out and NSFW posts hidden unless you turn them on.</p>
       </div>
       <div class="feature">
         <h3><span class="dot" style="background:#ff6600"></span>Hacker News</h3>
-        <p>Top or New stories. Tap to open the link, long-press for the comments, or switch them around in Settings.</p>
+        <p>Top or New stories. Tap to open the link, swipe or long-press for the comments, or switch them around in Settings.</p>
       </div>
       <div class="feature">
         <h3><span class="dot" style="background:#ff0000"></span>YouTube</h3>
-        <p>Your subscriptions, played right in the app, in Safari, or in the YouTube app. Keep browsing your feeds while a video plays.</p>
+        <p>Your subscriptions or your Recommended videos, played right in the app, in Safari, or in the YouTube app. Keep browsing your feeds in a compact list while a video plays.</p>
       </div>
       <div class="feature">
         <h3><span class="dot" style="background:var(--gold)"></span>The All feed</h3>
-        <p>Everything together, with posts new since your last refresh above a divider so you can see at a glance what you haven't read.</p>
+        <p>Everything together, starting with what's new since your last refresh. Pull up at the end to mark it all read, and pull up again to look back through earlier posts.</p>
       </div>
       <div class="feature">
         <h3>Save for later</h3>
-        <p>Save any post. Saved posts sync across your devices through your own iCloud account.</p>
+        <p>Swipe left on any post, or press and hold it, to save it. Saved posts sync through your own iCloud account to your other devices, your desktop browser, and the web.</p>
+      </div>
+      <div class="feature">
+        <h3>Make it yours</h3>
+        <p>Large cards or compact rows for Reddit and YouTube, seven text sizes, and your choice of whether a tap opens the link or the comments.</p>
       </div>
       <div class="feature">
         <h3>No setup, no server</h3>
@@ -170,13 +178,29 @@
     </div>
   </section>
 
+  <section id="elsewhere">
+    <h2>Beyond your iPhone</h2>
+    <div class="features">
+      <div class="feature">
+        <h3>Saved on the web</h3>
+        <p>See, open, and unsave the posts you've saved from any browser. Sign in with the Apple Account your iPhone uses for iCloud; your posts come straight from your private iCloud, with no Royal server in between.</p>
+        <a class="more" href="saved/">Open Royal Saved →</a>
+      </div>
+      <div class="feature">
+        <h3>Desktop extension</h3>
+        <p>Royal in a full tab in Chrome or Edge: All, Reddit, Hacker News, YouTube, and Saved, using your browser's own logins. Sign in with Apple to sync saved posts and what you've read with your iPhone.</p>
+        <a class="more" href="https://github.com/tinykings/Royal-iOS/tree/main/desktop#readme">Install it →</a>
+      </div>
+    </div>
+  </section>
+
   <section id="privacy" class="privacy">
     <h2>Privacy Policy</h2>
-    <p class="muted">Effective October 29, 2026</p>
+    <p class="muted">Effective November 11, 2026</p>
 
     <p class="summary"><strong>In short:</strong> Royal does not collect, store, or share any of your data. There is no Royal server, no analytics, no advertising, and no tracking. The developer never sees your accounts, your feeds, or what you read.</p>
 
-    <p>This policy covers the Royal app for iPhone and iPad (“Royal”, “the app”). Royal is open source, so everything described here can be checked in the <a href="https://github.com/tinykings/Royal-iOS">source code</a>.</p>
+    <p>This policy covers the Royal app for iPhone and iPad (“Royal”, “the app”) and the Royal Saved website at royal.tinyk.ing/saved/. Royal is open source, so everything described here can be checked in the <a href="https://github.com/tinykings/Royal-iOS">source code</a>.</p>
 
     <h3>Information we collect</h3>
     <p>None. Royal has no backend. It contains no analytics, crash-reporting, or advertising SDKs, and it has no third-party dependencies at all. The developer does not receive any personal information, usage data, identifiers, or diagnostics from the app.</p>
@@ -205,6 +229,9 @@
 
     <h3>Saved posts and iCloud</h3>
     <p>Posts you save, and which posts the All feed has shown, are stored on your device and in your personal iCloud account (its private CloudKit database) so they appear on your other devices and in the Royal desktop extension. This data is held by Apple under <a href="https://www.apple.com/legal/privacy/">Apple’s Privacy Policy</a> and is not accessible to the developer. You can turn off iCloud for Royal in the Settings app.</p>
+
+    <h3>The Royal Saved website</h3>
+    <p>Royal Saved shows your saved posts in a web browser. You sign in on Apple’s own page; the site then talks only to Apple’s CloudKit service, reading and writing your saved posts in the same private iCloud database the app uses. It keeps your CloudKit sign-in and a copy of your saved posts in your browser’s local storage, and choosing <strong>Sign out</strong> removes both from that browser. The site has no server of its own and no analytics, and sets no cookies of its own. Videos you play on it are embedded from YouTube, which handles them under Google’s privacy policy.</p>
 
     <h3>Tracking</h3>
     <p>Royal does not track you across apps or websites, and does not share data with data brokers or advertisers.</p>
