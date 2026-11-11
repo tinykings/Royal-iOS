@@ -218,7 +218,7 @@ function renderAll(all) {
   earlierTitle.textContent = all.previousRefresh ? `Earlier · shown before ${when(all.previousRefresh)}` : "Earlier";
   renderEarlierToggle();
   // New posts have to be marked read before All can refresh again.
-  document.querySelector("#mark-read").hidden = all.new.length === 0;
+  for (const button of document.querySelectorAll("#mark-read, #mark-read-bottom")) button.hidden = all.new.length === 0;
   document.querySelector("#refresh-all").hidden = all.new.length > 0;
   allStatus.textContent = all.refreshedAt
     ? `Refreshed ${when(all.refreshedAt)}: ${all.new.length} new, ${all.seen.length} earlier.`
@@ -278,7 +278,7 @@ async function library(action) {
 }
 
 document.querySelector("#refresh-all").addEventListener("click", () => { showsEarlier = false; library("refreshAll"); });
-document.querySelector("#mark-read").addEventListener("click", () => { showsEarlier = false; library("markAllRead"); });
+for (const button of document.querySelectorAll("#mark-read, #mark-read-bottom")) button.addEventListener("click", () => { showsEarlier = false; library("markAllRead"); });
 
 // --- Source tabs: fetched on first open and on Refresh; never stored in All. ---
 async function loadSource(panel) {

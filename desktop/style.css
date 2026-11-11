@@ -59,6 +59,8 @@ nav.tabs button[aria-selected="true"] { background: var(--text); color: var(--bg
 /* All: one centered button (Refresh, or Mark all read while there are new posts)
    with the refresh time below it. */
 .all-actions { justify-content: center; }
+.all-actions:has(#mark-read-bottom[hidden]) { display: none; }
+#all-new + .all-actions { margin: 16px 0; }
 .all-status { text-align: center; }
 .source-options label { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 500; color: var(--muted); }
 .source-options select { width: auto; padding: 6px 10px; border-radius: 999px; }
