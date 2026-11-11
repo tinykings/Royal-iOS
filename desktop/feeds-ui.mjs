@@ -92,7 +92,19 @@ function closePlayer() {
 }
 // Re-laying out the feeds keeps the post that was clicked where it was on screen,
 // below the docked player.
+// The page under the pointer still changes, so clicks on posts are ignored for a
+// moment afterwards: a quick second click on Close mustn't open whatever moved there.
+let settlesAt = 0;
+for (const type of ["click", "auxclick"]) {
+  document.addEventListener(type, event => {
+    if (performance.now() < settlesAt && event.target.closest?.("li.post")) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }, { capture: true });
+}
 function keepInPlace(postID, change) {
+  settlesAt = performance.now() + 400;
   const visible = () => [...document.querySelectorAll(`li.post[data-post-id="${CSS.escape(postID ?? "")}"]`)].find(item => item.offsetParent);
   const before = visible()?.getBoundingClientRect().top;
   change();
