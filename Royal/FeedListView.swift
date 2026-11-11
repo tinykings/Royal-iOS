@@ -16,6 +16,12 @@ struct FeedListView<Trailing: View>: View {
     @State private var pullUp: CGFloat = 0
     // How far past the top the feed is pulled down, to refresh.
     @State private var pullDown: CGFloat = 0
+    // Marking read sends the feed up and off the top, then brings in the emptied feed.
+    @State private var sweptAway = false
+    @State private var sweepDone = false
+    @State private var sweepSettled = false
+    @State private var listFadingIn = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(Preference.redditLayout) private var redditLayout = FeedLayout.cards
     @AppStorage(Preference.youtubeLayout) private var youtubeLayout = FeedLayout.cards
     @AppStorage(Preference.redditOpen) private var redditOpen = OpenTarget.link
@@ -169,14 +175,21 @@ struct FeedListView<Trailing: View>: View {
                 .environment(\.defaultMinListRowHeight, 0)
                 // Posts sit on tiles over the grouped background.
                 .scrollContentBackground(.hidden)
+                .visualEffect { [sweptAway, reduceMotion] content, geometry in
+                    content.offset(y: sweptAway && !reduceMotion ? -geometry.size.height : 0)
+                }
+                .opacity(sweptAway || listFadingIn ? 0 : 1)
                 .background(Color(.systemGroupedBackground))
                 .hidesHeaderOnScroll($scrolledAway)
                 // Pulling up past the unread posts marks them read, and pulling up the empty
                 // feed then shows the earlier ones, like pulling down refreshes.
                 .pullPast(.bottom, enabled: collapsed, distance: $pullUp, threshold: Self.pullThreshold,
-                          settleFirst: true) {
-                    if hasUnread {
-                        markRead(proxy)
+                          settleFirst: true, onRelease: {
+                    if hasUnread { sweepAway(proxy) }
+                }) {
+                    if hasUnread || sweptAway {
+                        sweepSettled = true
+                        finishSweep(proxy)
                     } else {
                         revealEarlier(proxy)
                     }
@@ -297,6 +310,36 @@ struct FeedListView<Trailing: View>: View {
         scrolledAway = false
         DispatchQueue.main.async {
             proxy.scrollTo(Self.topID, anchor: .top)
+        }
+    }
+
+    // Letting go of a pull to mark read sends the feed up and away while the bounce settles;
+    // once both are done the posts are marked read and the empty feed fades in.
+    private func sweepAway(_ proxy: ScrollViewProxy) {
+        sweepDone = false
+        sweepSettled = false
+        withAnimation(.easeIn(duration: 0.3)) {
+            sweptAway = true
+        } completion: {
+            sweepDone = true
+            finishSweep(proxy)
+        }
+    }
+
+    private func finishSweep(_ proxy: ScrollViewProxy) {
+        guard sweptAway else { return markRead(proxy) }
+        guard sweepDone && sweepSettled else { return }
+        markRead(proxy)
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            sweptAway = false
+            sweepDone = false
+            sweepSettled = false
+            listFadingIn = true
+        }
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.25)) { listFadingIn = false }
         }
     }
 
@@ -551,15 +594,18 @@ extension View {
     // `action` when let go past `threshold`. The list's own bounce gives the pull its
     // resistance. With `settleFirst` the action waits for the bounce back to settle, which
     // would otherwise carry the list on past where the action scrolls it to. With
-    // `whileDragging` the distance only counts during a drag, and is 0 once let go. Needs
+    // `whileDragging` the distance only counts during a drag, and is 0 once let go.
+    // `onRelease` runs the moment it's let go past `threshold`, before any settling. Needs
     // iOS 18 scroll geometry.
     @ViewBuilder
     func pullPast(_ edge: VerticalEdge, enabled: Bool, distance: Binding<CGFloat>, threshold: CGFloat,
                   settleFirst: Bool = false, whileDragging: Bool = false,
+                  onRelease: @escaping () -> Void = {},
                   action: @escaping () -> Void) -> some View {
         if #available(iOS 18, *) {
             modifier(PullPastEdge(edge: edge, enabled: enabled, distance: distance, threshold: threshold,
-                                  settleFirst: settleFirst, whileDragging: whileDragging, action: action))
+                                  settleFirst: settleFirst, whileDragging: whileDragging,
+                                  onRelease: onRelease, action: action))
         } else {
             self
         }
@@ -584,6 +630,7 @@ private struct PullPastEdge: ViewModifier {
     let threshold: CGFloat
     let settleFirst: Bool
     let whileDragging: Bool
+    let onRelease: () -> Void
     let action: () -> Void
     // Let go past the threshold, waiting for the list to settle.
     @State private var released = false
@@ -609,6 +656,7 @@ private struct PullPastEdge: ViewModifier {
                 dragging = new == .interacting
                 // Counts on letting go, so pulling back before then calls it off.
                 if old == .interacting && new != .interacting && enabled && distance >= threshold {
+                    onRelease()
                     if settleFirst {
                         released = true
                     } else {

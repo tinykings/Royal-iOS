@@ -164,14 +164,22 @@ struct SettingsView: View {
     private func cookieExpirations(_ source: FeedSource) -> some View {
         if store.loggedIn[source] == true {
             ForEach(store.loginCookies[source] ?? []) { cookie in
-                LabeledContent(cookie.name, value: expiration(cookie))
+                LabeledContent {
+                    Text(expiration(cookie))
+                } label: {
+                    Text(cookie.kind)
+                    Text(cookie.name)
+                        .font(.caption.monospaced())
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(cookie.kind), \(expiration(cookie))")
             }
         }
     }
 
     private func expiration(_ cookie: LoginCookie) -> String {
-        guard let expires = cookie.expires else { return "End of session" }
-        return expires > Date() ? expires.formatted(date: .abbreviated, time: .shortened) : "Expired"
+        guard let expires = cookie.expires else { return "Until app closes" }
+        return expires > Date() ? "Expires \(expires.formatted(date: .abbreviated, time: .omitted))" : "Expired"
     }
 
     @ViewBuilder

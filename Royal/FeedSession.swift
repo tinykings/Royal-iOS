@@ -65,6 +65,15 @@ struct LoginCookie: Identifiable, Equatable {
     let name: String
     let expires: Date?
     var id: String { name }
+
+    // What the cookie is for, in plain words, since the names mean little to most people.
+    var kind: String {
+        switch name {
+        case "reddit_session", "LOGIN_INFO": "Login cookie"
+        case "__Secure-1PSIDTS": "Google session cookie"
+        default: "Cookie"
+        }
+    }
 }
 
 // One browser profile for the app: login pages store cookies here,
