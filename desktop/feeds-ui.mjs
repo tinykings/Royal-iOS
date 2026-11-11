@@ -433,15 +433,37 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 showPreferences();
 
-// --- Tabs ---
+// --- Tabs: arrow keys, Home and End move between them, as in other tab bars. ---
+const tabButtons = [...document.querySelectorAll("nav.tabs button")];
+for (const button of tabButtons) {
+  const panel = document.querySelector(`#tab-${button.dataset.tab}`);
+  button.id = `tab-button-${button.dataset.tab}`;
+  button.setAttribute("aria-controls", panel.id);
+  panel.setAttribute("aria-labelledby", button.id);
+  button.tabIndex = button.getAttribute("aria-selected") === "true" ? 0 : -1;
+}
 function show(tab) {
-  for (const button of document.querySelectorAll("nav.tabs button")) button.setAttribute("aria-selected", String(button.dataset.tab === tab));
+  for (const button of tabButtons) {
+    const selected = button.dataset.tab === tab;
+    button.setAttribute("aria-selected", String(selected));
+    button.tabIndex = selected ? 0 : -1;
+  }
   for (const panel of document.querySelectorAll(".tab-panel")) panel.hidden = panel.id !== `tab-${tab}`;
   const panel = document.querySelector(`#tab-${tab}`);
   if (panel.classList.contains("source-tab") && !panel.dataset.loaded) loadSource(panel);
   if (tab === "reddit") loadSubreddits();
 }
-for (const button of document.querySelectorAll("nav.tabs button")) button.addEventListener("click", () => show(button.dataset.tab));
+for (const button of tabButtons) button.addEventListener("click", () => show(button.dataset.tab));
+document.querySelector("nav.tabs").addEventListener("keydown", event => {
+  const current = tabButtons.indexOf(document.activeElement);
+  if (current < 0) return;
+  const last = tabButtons.length - 1;
+  const next = { ArrowRight: current === last ? 0 : current + 1, ArrowLeft: current === 0 ? last : current - 1, Home: 0, End: last }[event.key];
+  if (next == null) return;
+  event.preventDefault();
+  tabButtons[next].focus();
+  show(tabButtons[next].dataset.tab);
+});
 
 // --- Sync ---
 async function syncAction(action) {
