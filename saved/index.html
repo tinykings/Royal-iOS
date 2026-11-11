@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- GitHub Pages can't send security headers, so the policy is set here: only this
+       site's own scripts and styles, CloudKit as the only server it talks to, YouTube
+       embeds, and Trusted Types so no string can be run as HTML. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https:; connect-src https://api.apple-cloudkit.com; frame-src https://www.youtube.com; base-uri 'none'; form-action 'none'; upgrade-insecure-requests; require-trusted-types-for 'script'; trusted-types 'none'">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta name="color-scheme" content="light dark">
+  <title>Royal Saved</title>
+  <meta name="description" content="Your saved posts from Royal on iPhone.">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="shared/style.css">
+  <link rel="stylesheet" href="site.css">
+  <script type="module" src="app.mjs"></script>
+</head>
+<body>
+  <noscript><p class="noscript">Royal Saved needs JavaScript.</p></noscript>
+  <!-- Hidden until app.mjs checks it isn't framed by another page. -->
+  <main hidden>
+    <header>
+      <span class="crown" aria-hidden="true"><svg viewBox="200 250 624 520"><defs><linearGradient id="crown-gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fee25f"/><stop offset=".5" stop-color="#fedd59"/><stop offset="1" stop-color="#fec744"/></linearGradient></defs><path fill="url(#crown-gold)" d="M310 640L232.7 436.1A40 40 0 0 1 294.4 390.1L395 467Q440 505 480 460Q500 435 485 410L446.2 358.3A14 14 0 0 1 446.2 341.6L499.1 269.6A16 16 0 0 1 524.9 269.6L577.8 341.6A14 14 0 0 1 577.8 358.3L539 410Q524 435 544 460Q584 505 629 467L729.6 390.1A40 40 0 0 1 791.3 436.1L714 640ZM340 668H684A30 30 0 0 1 714 698V730A30 30 0 0 1 684 760H340A30 30 0 0 1 310 730V698A30 30 0 0 1 340 668Z"/></svg></span>
+      <h1>Saved</h1>
+      <button id="account" class="account">Sign in with Apple</button>
+    </header>
+    <aside id="player" aria-label="Video player" hidden>
+      <div class="player-frame"><iframe title="YouTube video" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
+      <div class="player-bar">
+        <div class="player-text"><strong id="player-title"></strong><span id="player-label"></span></div>
+        <a id="player-open" target="_blank" rel="noopener noreferrer">Open on YouTube</a>
+        <button id="player-close" class="icon-button" aria-label="Close video" title="Close video">✕</button>
+      </div>
+    </aside>
+    <section id="intro" class="intro" hidden>
+      <h2>Your saved posts from Royal</h2>
+      <p>Posts you save with ♥ in Royal on iPhone show up here. Sign in with the same Apple Account your iPhone uses for iCloud; Apple handles the login, and Royal only reads its own data in your private iCloud.</p>
+    </section>
+    <p id="notice" class="problem" role="alert" hidden></p>
+    <p class="feed-status" id="saved-status" role="status"></p>
+    <div id="undo" class="actions undo" hidden><span id="undo-text"></span><button id="undo-button" class="secondary">Undo</button></div>
+    <ol id="saved-list" class="posts"></ol>
+    <footer>
+      <details class="settings-panel">
+        <summary>Settings</summary>
+        <form id="settings-form" class="settings">
+          <p class="hint">Saved in this browser only.</p>
+          <label>Reddit posts open <select name="redditOpen"><option value="link">Link</option><option value="comments">Comments</option></select></label>
+          <label>Hacker News posts open <select name="hnOpen"><option value="link">Link</option><option value="comments">Comments</option></select></label>
+          <label>Play videos in <select name="youtubePlayback"><option value="inApp">This page</option><option value="browser">A new tab</option></select></label>
+          <label>Blur NSFW images <input type="checkbox" role="switch" name="blurNSFW"></label>
+        </form>
+      </details>
+      <p id="sync-status" class="hint" role="status"></p>
+    </footer>
+  </main>
+</body>
+</html>
