@@ -34,9 +34,10 @@ export function normalizePreferences(stored) {
 }
 
 // Like iOS FeedListView.layout(for:): Saved mixes every source, so it stays in rows;
-// so does everything while a video plays, if chosen; Hacker News is always rows.
+// so does everything while a video plays, if chosen; Hacker News is always rows, and
+// so is any post with no image, so a text post's title looks like Hacker News's.
 export function layoutFor(post, preferences, { saved = false, playing = false } = {}) {
-  if (saved) return "row";
+  if (saved || !(post.image || post.videoId)) return "row";
   if (playing && preferences.listWhilePlaying && preferences.youtubePlayback === "inApp") return "row";
   if (post.source === "reddit") return preferences.redditLayout;
   if (post.source === "youtube") return preferences.youtubeLayout;

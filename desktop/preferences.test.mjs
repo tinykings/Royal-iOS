@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DEFAULT_PREFERENCES, PREFERENCES_KEY, layoutFor, loadPreferences, normalizePreferences, opensComments, savePreferences } from "./preferences.mjs";
 
-const reddit = { source: "reddit" }, hn = { source: "hn" }, youtube = { source: "youtube" };
+const reddit = { source: "reddit", image: "https://i.redd.it/a.jpg" }, hn = { source: "hn" }, youtube = { source: "youtube", videoId: "abc" };
 
 test("defaults match iOS: cards for Reddit and YouTube, clicks open the link, videos play in Royal", () => {
   assert.deepEqual(normalizePreferences(undefined), DEFAULT_PREFERENCES);
@@ -26,6 +26,11 @@ test("layout follows each source's choice; Saved and Hacker News stay rows", () 
   assert.equal(layoutFor(youtube, preferences), "card");
   assert.equal(layoutFor(youtube, preferences, { saved: true }), "row");
   assert.equal(layoutFor(hn, { ...preferences, redditLayout: "card" }), "row");
+});
+
+test("posts with no image are rows, even where cards are chosen", () => {
+  assert.equal(layoutFor({ source: "reddit" }, DEFAULT_PREFERENCES), "row");
+  assert.equal(layoutFor({ ...hn, image: "https://example.com/a.png" }, DEFAULT_PREFERENCES), "row");
 });
 
 test("rows while a video plays, only when chosen and videos play in Royal", () => {
