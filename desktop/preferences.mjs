@@ -9,6 +9,7 @@ export const DEFAULT_PREFERENCES = Object.freeze({
   hnOpen: "link",
   youtubePlayback: "inApp", // "inApp" (the docked player) | "browser" (a new tab)
   listWhilePlaying: true,   // every feed switches to rows while the docked player plays
+  blurNSFW: true,           // NSFW images stay blurred until clicked
 });
 
 const CHOICES = {
@@ -18,6 +19,7 @@ const CHOICES = {
   hnOpen: ["link", "comments"],
   youtubePlayback: ["inApp", "browser"],
   listWhilePlaying: [true, false],
+  blurNSFW: [true, false],
 };
 
 // Stored values from an older or newer version fall back to the default one by one.

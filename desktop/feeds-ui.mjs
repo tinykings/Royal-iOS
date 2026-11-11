@@ -129,6 +129,24 @@ function playsHere(anchor, post) {
   });
 }
 
+// NSFW images stay blurred (Settings › Reddit) until clicked, then stay shown, even
+// when the feed is laid out again.
+const revealedNSFW = new Set();
+function blursNSFW(anchor, post, layout) {
+  if (!post.nsfw || !preferences.blurNSFW || revealedNSFW.has(post.id)) return;
+  anchor.classList.add("nsfw");
+  if (layout === "card") anchor.append(element("span", "nsfw-cover", "NSFW · Click to show"));
+  anchor.title = "Click to show";
+  anchor.addEventListener("click", event => {
+    if (!anchor.classList.contains("nsfw")) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    revealedNSFW.add(post.id);
+    anchor.classList.remove("nsfw");
+    anchor.removeAttribute("title");
+  });
+}
+
 function media(post, layout, href) {
   const src = thumbnail(post);
   if (!src) return null;
@@ -144,7 +162,8 @@ function media(post, layout, href) {
     anchor.append(image(src, "backdrop"), image(src, "fit"));
   } else anchor.append(image(src));
   // A dead image leaves the post as text rather than an empty frame.
-  anchor.querySelector("img:last-child").addEventListener("error", () => anchor.remove(), { once: true });
+  anchor.querySelector("img:last-of-type").addEventListener("error", () => anchor.remove(), { once: true });
+  blursNSFW(anchor, post, layout);
   playsHere(anchor, post);
   return anchor;
 }

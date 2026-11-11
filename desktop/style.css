@@ -110,6 +110,17 @@ ol.posts:empty { display: none; }
 .post.video .media:hover::before { background: var(--youtube); }
 .post.playing .media::before, .post.playing .media::after { display: none; }
 
+/* NSFW images, blurred until clicked (Settings › Reddit). */
+.post .nsfw img { filter: blur(32px); transform: scale(1.2); }
+.post.card .media.nsfw img.backdrop { filter: blur(32px) brightness(.85); }
+.post .nsfw { cursor: pointer; }
+.post.video .media.nsfw::before, .post.video .media.nsfw::after { display: none; }
+.nsfw-cover {
+  position: absolute; inset: 0; z-index: 2; display: grid; place-items: center;
+  background: rgb(0 0 0 / .3); color: white; font-size: 14px; font-weight: 600;
+}
+.media:not(.nsfw) .nsfw-cover { display: none; }
+
 /* Rows: text with a small thumbnail on the right. */
 .post.row { display: flex; gap: 12px; align-items: flex-start; padding: var(--inset); }
 .post.row .details { flex: 1; min-width: 0; }

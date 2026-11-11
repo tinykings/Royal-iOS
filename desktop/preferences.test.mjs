@@ -16,6 +16,8 @@ test("defaults match iOS: cards for Reddit and YouTube, clicks open the link, vi
 test("unknown or invalid stored values fall back one by one", () => {
   const preferences = normalizePreferences({ redditLayout: "row", hnOpen: "sideways", listWhilePlaying: "yes", extra: 1 });
   assert.deepEqual(preferences, { ...DEFAULT_PREFERENCES, redditLayout: "row" });
+  assert.equal(normalizePreferences({ blurNSFW: "no" }).blurNSFW, true);
+  assert.equal(normalizePreferences({ blurNSFW: false }).blurNSFW, false);
 });
 
 test("layout follows each source's choice; Saved and Hacker News stay rows", () => {
