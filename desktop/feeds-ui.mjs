@@ -310,7 +310,10 @@ async function loadSource(panel) {
   list.replaceChildren(...panel.posts.map(post => renderPost(post)));
 }
 for (const panel of document.querySelectorAll(".source-tab")) {
-  panel.querySelector("form").addEventListener("submit", event => { event.preventDefault(); loadSource(panel); });
+  const form = panel.querySelector("form");
+  form.addEventListener("submit", event => { event.preventDefault(); loadSource(panel); });
+  // Picking another list, feed, sort or subreddit loads it straight away.
+  form.addEventListener("change", () => loadSource(panel));
 }
 
 // Reddit: everything followed, or one followed subreddit. A single subreddit only
@@ -322,7 +325,7 @@ function updateRedditSort() {
   if (one) redditForm.elements.sort.value = "top";
   redditForm.elements.sort.querySelector('option[value="best"]').disabled = one;
 }
-redditForm.addEventListener("change", () => { updateRedditSort(); loadSource(redditPanel); });
+redditForm.elements.subreddit.addEventListener("change", updateRedditSort);
 let subredditsLoaded = false;
 async function loadSubreddits() {
   if (subredditsLoaded) return;

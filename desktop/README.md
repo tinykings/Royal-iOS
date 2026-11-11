@@ -183,7 +183,8 @@ only, never tokens.
 light and dark mode: cards or 96×54 rows for Reddit and YouTube, rows for Hacker
 News and Saved. The Reddit tab has a subreddit menu on the left (All subreddits, or
 one followed subreddit, as on iOS) and the Best/Top today sort on the right; a single
-subreddit only has Top today, so Best is unavailable while one is chosen. A plain click on a YouTube post plays it in a player docked above
+subreddit only has Top today, so Best is unavailable while one is chosen. Changing
+any source tab's menu reloads that tab. A plain click on a YouTube post plays it in a player docked above
 the tabs; ⌘/Ctrl/middle click opens YouTube.
 
 The **Settings** tab starts with iCloud Sync (sign in or out, and sync status),
