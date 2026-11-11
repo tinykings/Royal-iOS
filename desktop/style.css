@@ -47,8 +47,13 @@ label { display: grid; gap: 6px; margin: 16px 0; font-weight: 600; }
 input, select { width: 100%; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: inherit; }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 
-/* Tabs: a segmented bar beside the name, scrolling sideways when the window is narrow. */
-nav.tabs { flex: 1; min-width: 0; display: flex; gap: 4px; margin-left: 8px; overflow-x: auto; scrollbar-width: none; }
+/* Tabs: a segmented bar beside the name. In a narrow window they move to their own
+   line below it and wrap, so every tab stays in reach without scrolling sideways. */
+nav.tabs { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 4px; margin-left: 8px; }
+@media (max-width: 719px) {
+  header { flex-wrap: wrap; row-gap: 8px; }
+  nav.tabs { flex-basis: 100%; margin-left: 0; }
+}
 nav.tabs button { flex: none; background: transparent; color: var(--muted); padding: 6px 14px; }
 nav.tabs button:hover { color: var(--text); background: var(--placeholder); }
 nav.tabs button[aria-selected="true"] { background: var(--text); color: var(--bg); }
