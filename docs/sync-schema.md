@@ -1,8 +1,11 @@
 # Royal CloudKit sync schema (v1, draft)
 
 Status: implemented by the desktop extension (`desktop/sync.mjs`) and tested
-against a fake CloudKit and between two desktop clients. **Not implemented on iOS
-yet**. The desktop syncs in either environment; for Production the record types
+against a fake CloudKit and between two desktop clients. iOS implements
+**`RoyalSavedPost` only** (`Royal/SavedSyncLibrary.swift`, `Royal/SavedSync.swift`,
+opt-in under Settings › Sync Saved Posts); it ignores `RoyalSeen` and
+`RoyalAllSnapshot` for now. Not yet tested against live CloudKit from iOS.
+The desktop syncs in either environment; for Production the record types
 below must be created in Development and deployed (Production never creates
 them). iOS must read and write exactly this format before relying on it.
 

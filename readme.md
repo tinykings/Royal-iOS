@@ -46,8 +46,10 @@ Edit `CONFIG` in `sources.js`:
 A desktop CloudKit sign-in/private-record experiment is available in
 [`desktop/`](desktop/README.md), paired with an iOS Settings probe available in
 Debug and Release/TestFlight builds.
-It needs Apple container setup and live validation; it does not sync feeds or
-replace the existing saved-post storage yet.
+It needs Apple container setup and live validation. Settings › Web Sync
+Experiment › Sync Saved Posts (opt-in) syncs saved posts with the desktop
+extension through CloudKit (see [docs/sync-schema.md](docs/sync-schema.md)); feeds
+and seen state don't sync with it yet.
 
 `sources.js` has Node tests that mock network requests. Run with Node.js 22 or later:
 

@@ -3,6 +3,7 @@ import UIKit
 
 struct ContentView: View {
     @StateObject private var store = FeedStore()
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     // The tabs in the order TabView lays them out, for mapping tab bar indexes back.
     private static let tabOrder: [AppTab] = [.reddit, .hn, .all, .youtube, .settings]
@@ -51,6 +52,10 @@ struct ContentView: View {
         }
         // Feeds open as they were left, so check logins apart from loading them.
         .task { await store.refreshLoginStatus() }
+        // Saved-post sync with the desktop has no background timer; it catches up here.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { store.savedSync.scheduleSync(after: 0) }
+        }
         .tint(.royalAccent)
         .environmentObject(store)
     }

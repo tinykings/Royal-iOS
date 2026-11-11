@@ -71,13 +71,16 @@ Added in 0.3.0 (`library.mjs`, `store.mjs`); a port of `Royal/FeedStore.swift`:
 ### Sync experiment
 
 Added in 0.4.0 (`sync.mjs`, `sync-runner.mjs`); the wire format and conflict
-rules are in [docs/sync-schema.md](../docs/sync-schema.md). iOS doesn't implement
-it yet, so this syncs between desktop browsers only.
+rules are in [docs/sync-schema.md](../docs/sync-schema.md). iOS syncs saved posts
+only (Settings › Web Sync Experiment › Sync Saved Posts); All and seen still sync
+between desktop browsers only.
 
 - Opt-in, in **iCloud probe → 4. Sync All, seen, and saved**, in whichever
   environment step 1 selects (Production or Development). It reads and writes
-  only its own zone, so it can't change the iOS app's data: iOS keeps saved
-  posts in iCloud key-value storage and never reads `RoyalSync` yet. Production
+  only its own zone. iOS reads and writes its `RoyalSavedPost` records once
+  Sync Saved Posts is on there; with it off, iOS keeps saved posts in iCloud
+  key-value storage only. While it's on, iOS mirrors the synced list into
+  key-value storage, and imports saves it finds there that the zone has no record of. Production
   rejects record types that haven't been deployed, so set up the schema first
   (live test step 1).
 - Records live in a custom private zone `RoyalSync`: one `RoyalSavedPost` per

@@ -53,19 +53,53 @@ final class FeedStore: ObservableObject {
     @Published var playingVideo: FeedPost?
     // Bumped when the showing tab's icon is tapped again; that tab scrolls to the top.
     @Published private(set) var reselected: (tab: AppTab, count: Int)?
-    // Newest first. Synced through iCloud; see SavedPostsStorage.
+    // Newest first. Synced through iCloud key-value storage (SavedPostsStorage), or,
+    // when sync with the desktop is on, through CloudKit (SavedSync).
     @Published private(set) var saved = SavedPostsStorage.load()
+    let savedSync: SavedSync
     private var cloudObserver: NSObjectProtocol?
 
     init() {
+        savedSync = SavedSync()
         // Pick up posts saved or unsaved on another device.
         cloudObserver = NotificationCenter.default.addObserver(
             forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
             object: NSUbiquitousKeyValueStore.default, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.saved = SavedPostsStorage.load() }
+            Task { @MainActor in
+                guard let self else { return }
+                // With sync on, only saves the synced library has no record of are taken.
+                if self.savedSync.isActive {
+                    self.savedSync.importLocal(SavedPostsStorage.load())
+                } else {
+                    self.saved = SavedPostsStorage.load()
+                }
+            }
         }
+        savedSync.onChange = { [weak self] in self?.reloadSaved() }
+        if savedSync.isActive {
+            savedSync.importLocal(SavedPostsStorage.load())
+            reloadSaved()
+        }
+        savedSync.scheduleSync(after: 0)
         restoreCache()
+    }
+
+    // Shows the synced library while sync is on, mirroring it into key-value storage
+    // when it changes; otherwise key-value storage alone.
+    private func reloadSaved() {
+        let list = savedSync.isActive ? savedSync.library.savedPosts : SavedPostsStorage.load()
+        // Unchanged lists aren't written back, so devices don't echo each other's mirrors.
+        func fingerprint(_ items: [SavedPost]) -> [String] {
+            items.map { "\($0.post.id) \($0.savedAt.timeIntervalSince1970)" }
+        }
+        guard fingerprint(list) != fingerprint(saved) else { return }
+        saved = list
+        if savedSync.isActive { SavedPostsStorage.save(list) }
+    }
+
+    func enableSavedSync() async {
+        await savedSync.enable(importing: SavedPostsStorage.load())
     }
 
     func reselect(_ tab: AppTab) {
@@ -81,6 +115,10 @@ final class FeedStore: ObservableObject {
     }
 
     func toggleSaved(_ post: FeedPost) {
+        if savedSync.isActive {
+            savedSync.setSaved(post, !isSaved(post))
+            return
+        }
         if let index = saved.firstIndex(where: { $0.post.id == post.id }) {
             saved.remove(at: index)
         } else {
