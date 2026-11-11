@@ -236,7 +236,7 @@ function renderPost(post, { showsSource = false, saved = false } = {}) {
 
 function renderProblem(target, result) {
   target.append(result.message ?? "Feed failed.");
-  if (result.state === "notLoggedIn" && result.login) target.append(" ", link(result.login, `Open ${new URL(result.login).host}`));
+  if (result.state === "notLoggedIn" && result.login) target.append(" ", link(result.login, `Open ${host(result.login) ?? "the site"}`));
 }
 
 // --- All ---
@@ -269,10 +269,10 @@ function renderAll(all) {
     ? `Refreshed ${when(all.refreshedAt)}: ${all.new.length} new, ${all.seen.length} earlier.`
     : "Not refreshed yet.";
   document.querySelector("#all-problems").replaceChildren(...Object.entries(all.errors ?? {}).map(([source, error]) => {
-    const item = document.createElement("li");
-    item.append(`${SOURCE_NAMES[source]}: `);
+    const item = element("p", "problem");
+    item.append(element("strong", null, SOURCE_NAMES[source]), " — ");
     renderProblem(item, error);
-    item.append(" Showing its posts from the previous refresh, if any.");
+    item.append(element("span", "problem-note", "Showing its posts from the last refresh, if any."));
     return item;
   }));
 }

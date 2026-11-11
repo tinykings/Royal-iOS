@@ -71,8 +71,16 @@ nav.tabs button[aria-selected="true"] { background: var(--text); color: var(--bg
 .source-options .trailing { margin-left: auto; }
 .source-options select[name="subreddit"] { max-width: 220px; }
 .feed-status { font-size: 13px; color: var(--muted); margin: 8px 0; }
-.feed-status.problem, .problems { color: var(--text); font-weight: 600; }
+/* A feed that failed: a warning box with the reason and, if it's a login, a link. */
+.problems { display: grid; gap: 8px; margin: 8px 0 16px; }
 .problems:empty { display: none; }
+.problem {
+  margin: 8px 0; padding: 10px var(--inset); border-radius: 12px; font-size: 14px; color: var(--text);
+  background: color-mix(in srgb, var(--gold) 12%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 45%, transparent);
+}
+.problems .problem { margin: 0; }
+.problem-note { display: block; margin-top: 2px; font-size: 13px; color: var(--muted); }
 
 ol.posts { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 ol.posts:empty { display: none; }
