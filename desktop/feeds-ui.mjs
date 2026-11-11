@@ -103,14 +103,18 @@ function keepInPlace(postID, change) {
 }
 document.querySelector("#player-close").addEventListener("click", closePlayer);
 
-// Scrolling down past the video shrinks it to half size; back at the top it's full size
-// again. The gap between the two keeps the page's shift, as the player resizes, from
-// flipping it straight back.
+// Scrolling down into the feed shrinks the video to half size right away; back at the
+// top it's full size again. While it resizes, scroll anchoring is off: it would scroll
+// the page up by the space the video gave back, back to the top, and grow it again.
+let anchoringTimer;
 function fitPlayer() {
-  if (player.hidden) return player.classList.remove("compact");
-  const fullHeight = Math.min(player.offsetWidth, innerHeight * 0.48 * 16 / 9) * 9 / 16;
-  if (scrollY > fullHeight) player.classList.add("compact");
-  else if (scrollY < 40) player.classList.remove("compact");
+  const compact = !player.hidden && (scrollY > 24 || (player.classList.contains("compact") && scrollY > 4));
+  if (compact === player.classList.contains("compact")) return;
+  const scrollers = [document.documentElement, document.body];
+  for (const element of scrollers) element.style.overflowAnchor = "none";
+  clearTimeout(anchoringTimer);
+  anchoringTimer = setTimeout(() => { for (const element of scrollers) element.style.overflowAnchor = ""; }, 300);
+  player.classList.toggle("compact", compact);
 }
 addEventListener("scroll", fitPlayer, { passive: true });
 addEventListener("resize", fitPlayer);
