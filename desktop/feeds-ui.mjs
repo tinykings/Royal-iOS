@@ -131,6 +131,9 @@ function media(post, layout, href) {
 // thumbnail. A click opens the link or the comments, per Settings, and the
 // details link to the other. As on iOS.
 const host = url => { try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return null; } };
+// A filled heart, tinted by the button: dim until hovered or saved.
+const HEART = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 21s-7.5-4.6-9.6-9.3C.9 8.2 3 4.5 6.7 4.5c2.1 0 3.6 1.1 5.3 3 1.7-1.9 3.2-3 5.3-3 3.7 0 5.8 3.7 4.3 7.2C19.5 16.4 12 21 12 21z"/></svg>';
+
 function renderPost(post, { showsSource = false, saved = false } = {}) {
   const layout = layoutFor(post, preferences, { saved, playing: playingID != null });
   const comments = opensComments(post, preferences);
@@ -169,10 +172,10 @@ function renderPost(post, { showsSource = false, saved = false } = {}) {
   else item.append(...[body, picture].filter(Boolean));
 
   const save = element("button", "save");
+  save.innerHTML = HEART;
   const update = () => {
     const saved = savedIDs.has(post.id);
     save.setAttribute("aria-pressed", String(saved));
-    save.textContent = saved ? "♥" : "♡";
     save.title = saved ? "Unsave" : "Save";
     save.setAttribute("aria-label", saved ? `Unsave ${post.title}` : `Save ${post.title}`);
   };
@@ -236,7 +239,7 @@ function renderAll(all) {
 function renderSaved(saved) {
   shownSaved = saved;
   document.querySelector("#saved-list").replaceChildren(...saved.map(post => renderPost(post, { showsSource: true, saved: true })));
-  document.querySelector("#saved-status").textContent = saved.length ? `${saved.length} saved` : "Nothing saved yet. Use ♡ on any post.";
+  document.querySelector("#saved-status").textContent = saved.length ? `${saved.length} saved` : "Nothing saved yet. Use ♥ on any post.";
 }
 
 let isSignedIn = false;

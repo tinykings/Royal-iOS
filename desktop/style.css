@@ -113,11 +113,11 @@ ol.posts:empty { display: none; }
 .post .title { display: block; color: var(--text); text-decoration: none; overflow-wrap: anywhere; line-height: 1.35; }
 .post .title:hover { text-decoration: underline; text-decoration-color: var(--muted); }
 .post a.title:visited { color: color-mix(in srgb, var(--text) 70%, var(--muted)); }
-.post .meta { display: flex; align-items: baseline; gap: 5px; margin-top: 4px; padding-right: 28px; font-size: 13px; color: var(--muted); }
+.post .meta { display: flex; align-items: baseline; gap: 5px; margin-top: 4px; padding-right: 36px; font-size: 13px; color: var(--muted); }
 .post .meta a { color: inherit; }
 .post .meta a:hover { color: var(--text); }
 .post.row .meta { padding-right: 0; }
-.post.row .details { padding-right: 20px; }
+.post.row .details { padding-right: 32px; }
 
 /* Source marks, like iOS's r.circle / y.square / play.rectangle symbols. */
 .source-icon { flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; translate: 0 2px; color: white; font: 700 9px/1 system-ui, sans-serif; }
@@ -127,16 +127,19 @@ ol.posts:empty { display: none; }
 .source-icon.youtube::after { content: ""; border-style: solid; border-width: 3.5px 0 3.5px 6px; border-color: transparent transparent transparent white; margin-left: 1px; }
 .post.playing .source-icon { background: var(--gold); }
 
-/* Heart in the corner, like iOS; outlined until saved. */
+/* Heart in the corner, like iOS: filled, dim until hovered (brightening to the heart
+   color) and the heart color once saved. */
 button.save {
-  position: absolute; right: 6px; bottom: 6px; z-index: 1; display: grid; place-items: center;
-  width: 30px; height: 30px; padding: 0; background: transparent; color: var(--muted); font-size: 16px; line-height: 1;
-  opacity: 0; transition: opacity .15s;
+  position: absolute; right: 4px; bottom: 4px; z-index: 1; display: grid; place-items: center;
+  width: 36px; height: 36px; padding: 0; background: transparent; color: var(--muted);
+  opacity: 0; transition: opacity .15s, color .15s, transform .15s;
 }
-.post:hover button.save, .post:focus-within button.save, button.save[aria-pressed="true"] { opacity: 1; }
-button.save:hover { background: var(--placeholder); color: var(--heart); }
-button.save[aria-pressed="true"] { color: var(--heart); }
-@media (hover: none) { button.save { opacity: 1; } }
+button.save svg { width: 24px; height: 24px; display: block; }
+.post:hover button.save, .post:focus-within button.save { opacity: .55; }
+button.save[aria-pressed="true"] { opacity: 1; color: var(--heart); }
+button.save:hover, button.save:focus-visible { opacity: 1; color: var(--heart); transform: scale(1.1); }
+button.save[aria-pressed="true"]:hover { filter: brightness(1.2); }
+@media (hover: none) { button.save { opacity: .55; } button.save[aria-pressed="true"] { opacity: 1; } }
 
 /* All: the divider between new and earlier posts. */
 .divider { display: flex; align-items: center; gap: 12px; margin: 22px 0 12px; font-size: 13px; font-weight: 600; color: var(--muted); }
