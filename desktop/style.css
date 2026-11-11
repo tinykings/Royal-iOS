@@ -64,6 +64,8 @@ nav.tabs button[aria-selected="true"] { background: var(--text); color: var(--bg
 .all-status { text-align: center; }
 .source-options label { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 500; color: var(--muted); }
 .source-options select { width: auto; padding: 6px 10px; border-radius: 999px; }
+.source-options .trailing { margin-left: auto; }
+.source-options select[name="subreddit"] { max-width: 220px; }
 .feed-status { font-size: 13px; color: var(--muted); margin: 8px 0; }
 .feed-status.problem, .problems { color: var(--text); font-weight: 600; }
 .problems:empty { display: none; }

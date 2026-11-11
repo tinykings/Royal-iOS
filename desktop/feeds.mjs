@@ -2,7 +2,7 @@
 // to desktop/sources.js) with the browser's own cookies for each provider host.
 // The page receives type-checked normalized posts (http(s) links only) or a short
 // error, never cookies or raw pages.
-import { fetchReddit, fetchHackerNews, fetchYouTube, NotLoggedInError } from "./sources.js";
+import { fetchReddit, fetchSubscribedSubreddits, fetchHackerNews, fetchYouTube, NotLoggedInError } from "./sources.js";
 import { normalizePost } from "./library.mjs";
 
 export const FEED_LIMIT = 50;
@@ -15,7 +15,8 @@ export const HN_LIMIT = 30;
 export const SOURCES = {
   reddit: {
     name: "Reddit", origin: "https://www.reddit.com/*", login: "https://www.reddit.com/login/",
-    options: { sort: ["best", "top"], timeframe: ["hour", "day", "week", "month", "year", "all"] },
+    // `subreddit` is one followed subreddit's name, or "" for everything followed.
+    options: { sort: ["best", "top"], timeframe: ["hour", "day", "week", "month", "year", "all"], subreddit: value => /^\w{0,50}$/.test(value) },
     fetch: options => fetchReddit(FEED_LIMIT, options),
   },
   hn: {
@@ -33,7 +34,8 @@ export const SOURCES = {
 function validOptions(source, options = {}) {
   const allowed = SOURCES[source].options, result = {};
   for (const [key, value] of Object.entries(options ?? {})) {
-    if (!allowed[key]?.includes(value)) throw new Error(`Invalid ${SOURCES[source].name} option.`);
+    const check = allowed[key];
+    if (typeof value !== "string" || !(typeof check === "function" ? check(value) : check?.includes(value))) throw new Error(`Invalid ${SOURCES[source].name} option.`);
     result[key] = value;
   }
   return result;
@@ -44,6 +46,18 @@ function loginMessage(source, error) {
     return "Reddit returned no followed subreddits. Log into Reddit in this browser and follow at least one subreddit, then refresh.";
   }
   return `Log into ${SOURCES[source].name} in this browser (open ${new URL(SOURCES[source].login).host} in a normal tab), then refresh.`;
+}
+
+// The followed subreddits, A to Z, for the Reddit tab's menu. An empty list when
+// Reddit can't be reached or isn't logged in; the feed itself reports why.
+export async function fetchSubreddits({ hasHostAccess, log = console } = {}) {
+  if (hasHostAccess && !(await hasHostAccess(SOURCES.reddit.origin))) return { subreddits: [] };
+  try {
+    return { subreddits: await fetchSubscribedSubreddits() };
+  } catch (error) {
+    log.warn(`[Royal feeds] subreddits: ${error?.constructor?.name ?? "Error"}: ${error?.message ?? error}`);
+    return { subreddits: [] };
+  }
 }
 
 export async function fetchFeed({ source, options } = {}, { hasHostAccess, log = console } = {}) {

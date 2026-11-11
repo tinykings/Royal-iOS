@@ -290,6 +290,7 @@ async function loadSource(panel) {
   const status = panel.querySelector(".feed-status");
   const options = Object.fromEntries(new FormData(form));
   if (source === "reddit" && options.sort === "top") options.timeframe = "day";
+  if (source === "reddit" && !options.subreddit) delete options.subreddit;
   status.textContent = "Loading…";
   status.classList.remove("problem");
   form.querySelector("button").disabled = true;
@@ -310,6 +311,30 @@ async function loadSource(panel) {
 }
 for (const panel of document.querySelectorAll(".source-tab")) {
   panel.querySelector("form").addEventListener("submit", event => { event.preventDefault(); loadSource(panel); });
+}
+
+// Reddit: everything followed, or one followed subreddit. A single subreddit only
+// has Top (sources.js), so Best is unavailable while one is chosen, as on iOS.
+const redditPanel = document.querySelector("#tab-reddit");
+const redditForm = redditPanel.querySelector("form");
+function updateRedditSort() {
+  const one = Boolean(redditForm.elements.subreddit.value);
+  if (one) redditForm.elements.sort.value = "top";
+  redditForm.elements.sort.querySelector('option[value="best"]').disabled = one;
+}
+redditForm.addEventListener("change", () => { updateRedditSort(); loadSource(redditPanel); });
+let subredditsLoaded = false;
+async function loadSubreddits() {
+  if (subredditsLoaded) return;
+  subredditsLoaded = true;
+  const result = await send({ action: "subreddits" });
+  if (!result.ok || !result.subreddits?.length) { subredditsLoaded = false; return; }
+  const select = redditForm.elements.subreddit;
+  const chosen = select.value;
+  const options = result.subreddits.map(name => Object.assign(element("option", null, `r/${name}`), { value: name }));
+  select.replaceChildren(select.options[0], ...options);
+  select.value = result.subreddits.includes(chosen) ? chosen : "";
+  updateRedditSort();
 }
 
 // Lays out what's already shown again, after a Settings change or the player opening or closing.
@@ -357,6 +382,7 @@ function show(tab) {
   for (const panel of document.querySelectorAll(".tab-panel")) panel.hidden = panel.id !== `tab-${tab}`;
   const panel = document.querySelector(`#tab-${tab}`);
   if (panel.classList.contains("source-tab") && !panel.dataset.loaded) loadSource(panel);
+  if (tab === "reddit") loadSubreddits();
 }
 for (const button of document.querySelectorAll("nav.tabs button")) button.addEventListener("click", () => show(button.dataset.tab));
 

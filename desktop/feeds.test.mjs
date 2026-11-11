@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { fetchFeed } from "./feeds.mjs";
+import { fetchFeed, fetchSubreddits } from "./feeds.mjs";
 
 const quiet = { info() {}, warn() {} };
 
@@ -93,3 +93,24 @@ test("feed requests are bounded to known sources and options", async () => {
   await assert.rejects(fetchFeed({ source: "reddit", options: { sort: "new" } }, { log: quiet }), /Invalid Reddit option/);
   await assert.rejects(fetchFeed({ source: "youtube", options: { url: "https://evil.test" } }, { log: quiet }), /Invalid YouTube option/);
 });
+
+test("the Reddit tab can show one followed subreddit's Top", () => withFetch(async url => {
+  if (url.pathname.startsWith("/subreddits/mine/")) return jsonResponse({ data: { children: [
+    { data: { display_name: "zeta" } }, { data: { display_name: "Alpha" } },
+    { data: { display_name: "u_someone", subreddit_type: "user" } }, { data: { display_name: "adult", over18: true } },
+  ], after: null } });
+  if (url.pathname === "/r/swift/top.json") {
+    assert.equal(url.searchParams.get("t"), "day");
+    return jsonResponse({ data: { children: [
+      { data: { name: "t3_s", title: "S", subreddit: "swift", permalink: "/r/swift/comments/s/", url: "https://example.com/", score: 1, num_comments: 0, created_utc: 5 } },
+    ] } });
+  }
+  throw new Error(`unexpected ${url}`);
+}, async () => {
+  assert.deepEqual((await fetchSubreddits({ log: quiet })).subreddits, ["Alpha", "zeta"]);
+  assert.deepEqual((await fetchSubreddits({ log: quiet, hasHostAccess: async () => false })).subreddits, []);
+  const one = await fetchFeed({ source: "reddit", options: { sort: "top", timeframe: "day", subreddit: "swift" } }, { log: quiet });
+  assert.deepEqual(one.posts.map(post => post.label), ["r/swift"]);
+  await assert.rejects(fetchFeed({ source: "reddit", options: { subreddit: "../evil" } }, { log: quiet }), /Invalid Reddit option/);
+  await assert.rejects(fetchFeed({ source: "reddit", options: { subreddit: ["swift"] } }, { log: quiet }), /Invalid Reddit option/);
+}));

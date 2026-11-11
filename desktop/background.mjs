@@ -1,4 +1,4 @@
-import { fetchFeed } from "./feeds.mjs";
+import { fetchFeed, fetchSubreddits } from "./feeds.mjs";
 import { createLibrary } from "./store.mjs";
 import { startSync } from "./sync.mjs";
 import { runSync, SyncPausedError } from "./sync-runner.mjs";
@@ -188,6 +188,7 @@ chrome.runtime.onMessage.addListener((request, sender, respond) => {
   // CloudKit queue. The library serializes its own storage updates.
   const libraryOperations = {
     feed: () => fetchFeed(request, feedContext),
+    subreddits: () => fetchSubreddits(feedContext),
     library: () => library.view(),
     refreshAll: () => refreshAllAfterSync(),
     markAllRead: () => library.markAllRead(),

@@ -128,7 +128,8 @@ Recorded for rebuilding the setup; all of this is in place for
 - The service worker runs the fetches (`feeds.mjs`) and returns only display
   fields (title, http(s) links, label, score, comments, age). The page
   (`feeds-ui.mjs`) sends one bounded message per source: `reddit` (`sort`
-  best/top, `timeframe`), `hn` (`list` top/new), `youtube` (`feed`
+  best/top, `timeframe`, and `subreddit`, a name or empty for everything
+  followed), `subreddits` (the followed list, A to Z, for the Reddit tab's menu), `hn` (`list` top/new), `youtube` (`feed`
   subscriptions/home). Anything else is refused; there is no URL proxy.
 - Host permissions: `www.reddit.com`, `hacker-news.firebaseio.com`,
   `www.youtube.com`, `api.apple-cloudkit.com`; CSP `connect-src` lists the same.
@@ -180,7 +181,9 @@ only, never tokens.
 
 `feeds-ui.mjs` and `style.css` follow iOS `PostRow` and the site's palette in
 light and dark mode: cards or 96×54 rows for Reddit and YouTube, rows for Hacker
-News and Saved. A plain click on a YouTube post plays it in a player docked above
+News and Saved. The Reddit tab has a subreddit menu on the left (All subreddits, or
+one followed subreddit, as on iOS) and the Best/Top today sort on the right; a single
+subreddit only has Top today, so Best is unavailable while one is chosen. A plain click on a YouTube post plays it in a player docked above
 the tabs; ⌘/Ctrl/middle click opens YouTube.
 
 The **Settings** tab starts with iCloud Sync (sign in or out, and sync status),
