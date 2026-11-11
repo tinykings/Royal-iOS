@@ -28,6 +28,7 @@
       <button role="tab" data-tab="hn">Hacker News</button>
       <button role="tab" data-tab="youtube">YouTube</button>
       <button role="tab" data-tab="saved">Saved</button>
+      <button role="tab" data-tab="settings">Settings</button>
       <button role="tab" data-tab="icloud">iCloud Sync</button>
     </nav>
     <p class="note">Fetched with this browser’s own Reddit and YouTube logins. <span id="sync-note">Stored in this browser only.</span> <button id="sync-sign-in" class="inline-button" hidden>Sign in to iCloud</button></p>
@@ -54,6 +55,26 @@
     <section id="tab-saved" class="tab-panel" role="tabpanel" hidden>
       <p class="feed-status" id="saved-status" role="status"></p><ol id="saved-list" class="posts"></ol>
     </section>
+    <form id="tab-settings" class="tab-panel settings" role="tabpanel" hidden>
+      <p>Saved in this browser only; they don’t sync.</p>
+      <section>
+        <h2>YouTube</h2>
+        <label>View <select name="youtubeLayout"><option value="card">Cards</option><option value="row">List</option></select></label>
+        <label>Play videos in <select name="youtubePlayback"><option value="inApp">Royal’s player</option><option value="browser">A new tab</option></select></label>
+        <label class="toggle"><input type="checkbox" name="listWhilePlaying"> Show list view when playing video</label>
+        <p class="hint">Cards show a large thumbnail with the title below. With Royal’s player, every feed can switch to List view while a video plays. ⌘/Ctrl-click always opens YouTube.</p>
+      </section>
+      <section>
+        <h2>Reddit</h2>
+        <label>View <select name="redditLayout"><option value="card">Cards</option><option value="row">List</option></select></label>
+        <label>Clicking a post opens <select name="redditOpen"><option value="link">Link</option><option value="comments">Comments</option></select></label>
+        <p class="hint">The post’s details link to the other.</p>
+      </section>
+      <section>
+        <h2>Hacker News</h2>
+        <label>Clicking a post opens <select name="hnOpen"><option value="link">Link</option><option value="comments">Comments</option></select></label>
+      </section>
+    </form>
     <div id="tab-icloud" class="tab-panel" role="tabpanel" hidden>
     <p>Sync saved posts, which posts All has shown, and the All feed itself with Royal on iOS and in other browsers, through your private iCloud database. Optional: without it, Royal keeps everything in this browser.</p>
     <section aria-labelledby="account-title">

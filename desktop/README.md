@@ -179,9 +179,17 @@ only, never tokens.
 ### Page and video
 
 `feeds-ui.mjs` and `style.css` follow iOS `PostRow` and the site's palette in
-light and dark mode: cards for Reddit and YouTube, 96×54 rows for Hacker News and
-Saved. A plain click on a YouTube post plays it in a player docked above the
-tabs; ⌘/Ctrl/middle click opens YouTube. The embed won't play without a referrer
+light and dark mode: cards or 96×54 rows for Reddit and YouTube, rows for Hacker
+News and Saved. A plain click on a YouTube post plays it in a player docked above
+the tabs; ⌘/Ctrl/middle click opens YouTube.
+
+The **Settings** tab has iOS Settings' feed choices (`preferences.mjs`, stored as
+`royalPreferences` in `chrome.storage.local`, per browser, not synced): Cards or
+List for Reddit and YouTube; whether a click on a Reddit or Hacker News post opens
+the link or the comments (the details then link to the other); whether videos
+play in Royal's player or a new tab; and whether every feed switches to List while
+a video plays. Changes apply at once, in every open Royal tab. Text size and NSFW
+aren't there yet. The embed won't play without a referrer
 (error 153) and extension pages send none, so one session `declarativeNetRequest`
 rule sets `Referer: https://tinykings.github.io/` (as iOS does) on
 `www.youtube.com/embed/` sub-frames this extension's page loads
@@ -236,8 +244,8 @@ export a HAR or copy request headers: they contain session cookies.
 - **Retention** of saved snapshots of content deleted upstream (Reddit's terms).
 - **Dropping the key-value entitlement** on iOS once every device has run the
   one-time import.
-- **Extension UI:** Settings-like choices (card/list, open link vs. comments),
-  NSFW handling for saved posts, and checking the design with real feeds.
+- **Extension UI:** NSFW handling for saved posts, a text size choice, and
+  checking the design with real feeds over a few days of use.
 - **Distribution:** it's loaded unpacked; the Chrome Web Store would need a
   packed build and a privacy policy.
 

@@ -1,8 +1,11 @@
 // Royal's tabs: All (a stored snapshot, replaced only by Refresh All), one tab per
 // source (fetched on demand, never changing All), and Saved. The worker owns the
-// stored state; this page only renders what it returns.
+// stored state; this page only renders what it returns, laid out per Settings.
+import { PREFERENCES_KEY, layoutFor, loadPreferences, normalizePreferences, opensComments, savePreferences } from "./preferences.mjs";
+
 const send = request => chrome.runtime.sendMessage(request).catch(() => ({ ok: false, message: "Could not reach the Royal extension worker. Reload this page and try again." }));
 let savedIDs = new Set();
+let preferences = await loadPreferences(chrome.storage.local);
 
 // Ages in the largest whole unit, like iOS PostRow: "now", "5m", "3h", "2d", "4w", "3mo", "1y".
 const AGE_UNITS = [[31536000, "y"], [2592000, "mo"], [604800, "w"], [86400, "d"], [3600, "h"], [60, "m"]];
@@ -57,25 +60,45 @@ function markPlaying() {
   for (const item of document.querySelectorAll("li.post")) item.classList.toggle("playing", item.dataset.postId === playingID);
 }
 function play(post) {
+  const wasPlaying = playingID != null;
   playingID = post.id;
   player.querySelector("iframe").src = `https://www.youtube.com/embed/${encodeURIComponent(post.videoId)}?autoplay=1&rel=0`;
   document.querySelector("#player-title").textContent = post.title;
   document.querySelector("#player-label").textContent = post.label;
   document.querySelector("#player-open").href = post.url;
-  player.hidden = false;
+  keepInPlace(post.id, () => {
+    player.hidden = false;
+    // Starting to play can switch every feed to rows (Settings › YouTube).
+    if (!wasPlaying && preferences.listWhilePlaying) rerender();
+  });
   markPlaying();
 }
 function closePlayer() {
+  const id = playingID;
   playingID = null;
-  player.hidden = true;
+  keepInPlace(id, () => {
+    player.hidden = true;
+    if (preferences.listWhilePlaying) rerender();
+  });
   player.querySelector("iframe").src = "about:blank";
   markPlaying();
+}
+// Re-laying out the feeds keeps the post that was clicked where it was on screen,
+// below the docked player.
+function keepInPlace(postID, change) {
+  const visible = () => [...document.querySelectorAll(`li.post[data-post-id="${CSS.escape(postID ?? "")}"]`)].find(item => item.offsetParent);
+  const before = visible()?.getBoundingClientRect().top;
+  change();
+  const after = visible();
+  if (before == null || !after) return;
+  const below = player.hidden ? 0 : player.getBoundingClientRect().bottom + 8;
+  window.scrollBy(0, after.getBoundingClientRect().top - Math.max(before, below));
 }
 document.querySelector("#player-close").addEventListener("click", closePlayer);
 
 // A plain click on a video plays it here; modified and middle clicks open YouTube as links do.
 function playsHere(anchor, post) {
-  if (!post.videoId) return;
+  if (!post.videoId || preferences.youtubePlayback !== "inApp") return;
   anchor.addEventListener("click", event => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
@@ -83,10 +106,10 @@ function playsHere(anchor, post) {
   });
 }
 
-function media(post, layout) {
+function media(post, layout, href) {
   const src = thumbnail(post);
   if (!src) return null;
-  const anchor = link(post.url, null, layout === "card" ? "media" : "thumb");
+  const anchor = link(href, null, layout === "card" ? "media" : "thumb");
   anchor.tabIndex = -1;
   anchor.setAttribute("aria-hidden", "true");
   if (layout === "card" && post.videoId) {
@@ -103,15 +126,20 @@ function media(post, layout) {
   return anchor;
 }
 
-// Reddit and YouTube show as cards with a large image; Hacker News, and Saved
-// (which mixes every source), as rows with a small thumbnail. As on iOS.
-function renderPost(post, { showsSource = false, layout } = {}) {
-  layout ??= post.source === "hn" ? "row" : "card";
+// Reddit and YouTube show as cards with a large image or as rows, per Settings;
+// Hacker News, and Saved (which mixes every source), as rows with a small
+// thumbnail. A click opens the link or the comments, per Settings, and the
+// details link to the other. As on iOS.
+const host = url => { try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return null; } };
+function renderPost(post, { showsSource = false, saved = false } = {}) {
+  const layout = layoutFor(post, preferences, { saved, playing: playingID != null });
+  const comments = opensComments(post, preferences);
+  const href = comments ? post.commentsUrl : post.url;
   const item = element("li", `post ${layout}${post.videoId ? " video" : ""}`);
   item.dataset.postId = post.id;
   item.classList.toggle("playing", post.id === playingID);
   const body = element("div", "details");
-  const title = link(post.url, post.title, "title");
+  const title = link(href, post.title, "title");
   playsHere(title, post);
   body.append(title);
 
@@ -126,14 +154,17 @@ function renderPost(post, { showsSource = false, layout } = {}) {
   const parts = [post.label || SOURCE_NAMES[post.source], post.score != null && count(post.score, "pt"),
     post.created != null ? since(post.created) : published(post), post.nsfw && "NSFW"].filter(Boolean);
   text.append(parts.join(" · "));
+  const other = post.commentsUrl !== post.url;
   if (post.comments != null) {
     text.append(" · ");
-    text.append(post.commentsUrl !== post.url ? link(post.commentsUrl, count(post.comments, "comment")) : count(post.comments, "comment"));
+    text.append(other && !comments ? link(post.commentsUrl, count(post.comments, "comment")) : count(post.comments, "comment"));
   }
+  // Hacker News labels already name the link's site.
+  if (other && comments) text.append(" · ", link(post.url, host(post.url) === post.label ? "link" : host(post.url) ?? "link"));
   meta.append(text);
   body.append(meta);
 
-  const picture = media(post, layout);
+  const picture = media(post, layout, href);
   if (layout === "card") item.append(...[picture, body].filter(Boolean));
   else item.append(...[body, picture].filter(Boolean));
 
@@ -165,7 +196,9 @@ function renderProblem(target, result) {
 
 // --- All ---
 const allStatus = document.querySelector("#all-status");
+let shownAll = null, shownSaved = null;
 function renderAll(all) {
+  shownAll = all;
   const earlierTitle = document.querySelector("#all-earlier-title");
   document.querySelector("#all-new").replaceChildren(...all.new.map(post => renderPost(post, { showsSource: true })));
   document.querySelector("#all-seen").replaceChildren(...all.seen.map(post => renderPost(post, { showsSource: true })));
@@ -185,7 +218,8 @@ function renderAll(all) {
 
 // --- Saved ---
 function renderSaved(saved) {
-  document.querySelector("#saved-list").replaceChildren(...saved.map(post => renderPost(post, { showsSource: true, layout: "row" })));
+  shownSaved = saved;
+  document.querySelector("#saved-list").replaceChildren(...saved.map(post => renderPost(post, { showsSource: true, saved: true })));
   document.querySelector("#saved-status").textContent = saved.length ? `${saved.length} saved` : "Nothing saved yet. Use ♡ on any post.";
 }
 
@@ -250,17 +284,57 @@ async function loadSource(panel) {
   const list = panel.querySelector("ol");
   if (result.ok && result.state === "ok") {
     status.textContent = result.posts.length ? `${result.posts.length} posts` : "No posts.";
-    list.replaceChildren(...result.posts.map(post => renderPost(post)));
+    panel.posts = result.posts;
   } else {
     status.classList.add("problem");
     status.replaceChildren();
     renderProblem(status, result);
-    list.replaceChildren();
+    panel.posts = [];
   }
+  list.replaceChildren(...panel.posts.map(post => renderPost(post)));
 }
 for (const panel of document.querySelectorAll(".source-tab")) {
   panel.querySelector("form").addEventListener("submit", event => { event.preventDefault(); loadSource(panel); });
 }
+
+// Lays out what's already shown again, after a Settings change or the player opening or closing.
+function rerender() {
+  if (shownAll) renderAll(shownAll);
+  if (shownSaved) renderSaved(shownSaved);
+  for (const panel of document.querySelectorAll(".source-tab")) {
+    if (panel.posts) panel.querySelector("ol").replaceChildren(...panel.posts.map(post => renderPost(post)));
+  }
+}
+
+// --- Settings: like iOS Settings, for this browser only. ---
+const settingsForm = document.querySelector("#tab-settings");
+function showPreferences() {
+  for (const field of settingsForm.elements) {
+    if (!(field.name in preferences)) continue;
+    if (field.type === "checkbox") field.checked = preferences[field.name];
+    else field.value = preferences[field.name];
+  }
+  settingsForm.elements.listWhilePlaying.disabled = preferences.youtubePlayback !== "inApp";
+}
+function applyPreferences(next) {
+  next = normalizePreferences(next);
+  if (JSON.stringify(next) === JSON.stringify(preferences)) return;
+  preferences = next;
+  showPreferences();
+  rerender();
+}
+settingsForm.addEventListener("submit", event => event.preventDefault());
+settingsForm.addEventListener("change", () => {
+  const next = Object.fromEntries([...settingsForm.elements].filter(field => field.name)
+    .map(field => [field.name, field.type === "checkbox" ? field.checked : field.value]));
+  applyPreferences(next);
+  savePreferences(chrome.storage.local, preferences);
+});
+// Other Royal tabs in this browser follow along.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes[PREFERENCES_KEY]) applyPreferences(changes[PREFERENCES_KEY].newValue);
+});
+showPreferences();
 
 // --- Tabs ---
 function show(tab) {

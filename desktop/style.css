@@ -135,6 +135,7 @@ button.save[aria-pressed="true"] { color: var(--heart); }
 
 /* All: the divider between new and earlier posts. */
 .divider { display: flex; align-items: center; gap: 12px; margin: 22px 0 12px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.divider[hidden] { display: none; }
 .divider::before, .divider::after { content: ""; flex: 1; height: 2px; background: var(--gold); border-radius: 1px; }
 
 /* Docked player: stays at the top while the feed scrolls and tabs switch. */
@@ -150,6 +151,17 @@ button.save[aria-pressed="true"] { color: var(--heart); }
 .player-text span { font-size: 12px; color: var(--muted); }
 #player-open { font-size: 13px; white-space: nowrap; }
 .icon-button { width: 32px; height: 32px; padding: 0; display: grid; place-items: center; background: var(--placeholder); color: var(--text); font-size: 14px; }
+
+/* Settings tab: grouped like iOS Settings. */
+.settings section { background: var(--surface); border: 1px solid var(--line); padding: 4px 20px 8px; margin: 16px 0; border-radius: 16px; }
+.settings h2 { margin: 16px 0 8px; font-size: 18px; }
+.settings label { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0; padding: 10px 0; border-top: 1px solid var(--line); font-weight: 500; }
+.settings select { width: auto; min-width: 140px; }
+.settings label.toggle { justify-content: flex-start; }
+.settings input[type="checkbox"] { width: 18px; height: 18px; margin: 0; accent-color: var(--gold); }
+.settings input:disabled { opacity: .5; }
+.settings label:has(input:disabled) { color: var(--muted); }
+.hint { margin: 4px 0 8px; font-size: 13px; color: var(--muted); }
 
 /* iCloud tab */
 #tab-icloud section { background: var(--surface); border: 1px solid var(--line); padding: 20px; margin: 16px 0; border-radius: 16px; }
