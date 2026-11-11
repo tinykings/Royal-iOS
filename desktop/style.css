@@ -168,11 +168,15 @@ button.save[aria-pressed="true"]:hover { filter: brightness(1.2); }
 
 /* Docked player: stays under the header while the feed scrolls and tabs switch.
    --header-height is the header's measured height (feeds-ui.mjs). */
-#player { position: sticky; top: var(--header-height, 60px); z-index: 3; margin: 16px -16px 0; background: #000; }
+/* As wide as the cards, with their rounded corners and hairline edge. */
+#player {
+  position: sticky; top: var(--header-height, 60px); z-index: 3; margin: 16px 0 0; overflow: hidden;
+  background: #000; border-radius: var(--radius); box-shadow: 0 0 0 1px var(--edge), 0 6px 18px rgb(0 0 0 / .18);
+}
 #player[hidden] { display: none; }
 .player-frame { width: 100%; max-width: calc(48vh * 16 / 9); margin: 0 auto; aspect-ratio: 16 / 9; transition: width .2s ease; }
 .player-frame iframe { display: block; width: 100%; height: 100%; border: 0; }
-.player-bar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.player-bar { display: flex; align-items: center; gap: 12px; padding: 8px var(--inset); background: var(--surface); }
 .player-text { flex: 1; min-width: 0; display: grid; }
 .player-text > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .player-text strong { font-size: 14px; }
@@ -180,11 +184,11 @@ button.save[aria-pressed="true"]:hover { filter: brightness(1.2); }
 #player-open { font-size: 13px; white-space: nowrap; }
 /* Scrolled down into the feed, the video shrinks to half size at the left, leaving more
    of the feed in view, with its title, channel and links beside it on the right. */
-#player.compact { display: flex; background: var(--surface); border-bottom: 1px solid var(--line); }
+#player.compact { display: flex; background: var(--surface); }
 #player.compact .player-frame { flex: none; width: min(50%, calc(24vh * 16 / 9)); margin: 0; }
 #player.compact .player-bar {
   flex: 1; min-width: 0; display: grid; grid-template-columns: 1fr auto; align-content: start;
-  gap: 6px 12px; padding: 10px 16px; border-bottom: 0;
+  gap: 6px 12px; padding: 10px var(--inset);
 }
 #player.compact .player-text strong { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 #player.compact #player-open { grid-column: 1; grid-row: 2; justify-self: start; }
