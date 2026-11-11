@@ -114,6 +114,15 @@ still syncs between desktop browsers only.
 - Pending changes are stored with the library, so they survive being offline and
   browser restarts, and are sent on the next sync. Royal syncs when the page opens,
   about 1.5 s after each change, and on **Sync now**. There's no background timer.
+- The iCloud sign-in (CloudKit web auth token) is kept in `chrome.storage.local`
+  (trusted contexts only) since 0.5.1, so it survives browser restarts and
+  extension updates and reloads. Before that it was in `chrome.storage.session`,
+  which both wipe, so every update needed a new sign-in; 0.5.1 moves an existing
+  session token over. **Clear Royal session** or a new configuration removes it.
+  When there's no sign-in, or CloudKit refuses it (`AUTHENTICATION_REQUIRED` /
+  `AUTHENTICATION_FAILED`, for example once Apple expires it), sync pauses with
+  changes pending and the feed page shows **Sign in to iCloud**, which signs in
+  and syncs.
 - Turning sync on imports this browser's library into the signed-in account
   without overwriting existing records or tombstones. Each account/container/
   environment has its own copy in this browser; another Apple Account pauses sync
@@ -330,8 +339,9 @@ configuration, so the experiment is not gated by the installation channel.
 6. Clear the Royal desktop session and sign in to a different Apple Account.
    The first user's probe must not be visible. Account changes require another
    read before writing. Clear the session on a shared computer when done.
-7. Close/reopen the browser: public container configuration remains, but Royal's
-   web auth token is session-only and another Apple sign-in may be needed.
+7. Close/reopen the browser, and reload the extension: configuration and the
+   iCloud sign-in remain, and sync works without signing in again (unless Apple
+   has expired the token; then **Sign in to iCloud** appears).
 
 The native probe writes only the probe record and uses revision-checked saves.
 The extension's CloudKit operations are bounded to the probe and the opt-in

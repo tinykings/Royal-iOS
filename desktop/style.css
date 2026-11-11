@@ -51,6 +51,8 @@ nav.tabs button { flex: none; background: transparent; color: var(--muted); padd
 nav.tabs button:hover { color: var(--text); background: var(--placeholder); }
 nav.tabs button[aria-selected="true"] { background: var(--text); color: var(--bg); }
 .note { font-size: 13px; color: var(--muted); margin: 4px 0 12px; }
+.inline-button { font-size: 13px; padding: 2px 10px; margin-left: 4px; }
+.inline-button[hidden] { display: none; }
 
 /* Feed panels */
 .tab-panel > .actions { margin: 8px 0; }

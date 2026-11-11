@@ -189,8 +189,9 @@ function renderSaved(saved) {
   document.querySelector("#saved-status").textContent = saved.length ? `${saved.length} saved` : "Nothing saved yet. Use ♡ on any post.";
 }
 
-function renderSync(sync, message) {
+function renderSync(sync, message, signInNeeded = false) {
   const note = document.querySelector("#sync-note");
+  document.querySelector("#sync-sign-in").hidden = !(sync?.enabled && signInNeeded);
   const status = document.querySelector("#sync-status");
   if (!sync?.enabled) {
     note.textContent = "Stored in this browser only.";
@@ -199,12 +200,14 @@ function renderSync(sync, message) {
   }
   const last = sync.lastSync ? `last synced ${when(sync.lastSync)}` : "not synced yet";
   const pending = sync.pending ? `, ${sync.pending} change${sync.pending === 1 ? "" : "s"} pending` : "";
-  note.textContent = `Synced through iCloud (${sync.environment}): ${last}${pending}.`;
+  note.textContent = signInNeeded
+    ? `iCloud sync is paused until you sign in again${pending}.`
+    : `Synced through iCloud (${sync.environment}): ${last}${pending}.`;
   status.textContent = message ?? `Sync is on (${sync.environment}): ${last}${pending}.`;
 }
 
 function applyLibrary(result, { all = true } = {}) {
-  renderSync(result.sync, result.syncMessage);
+  renderSync(result.sync, result.syncMessage, result.signInNeeded);
   savedIDs = new Set(result.saved.map(post => post.id));
   if (all) renderAll(result.all);
   renderSaved(result.saved);
@@ -272,6 +275,14 @@ async function syncAction(action) {
   else document.querySelector("#sync-status").textContent = result.message ?? "Sync failed.";
   return result;
 }
+// Signing in from the feed page, when sync paused for it, then syncing straight away.
+document.querySelector("#sync-sign-in").addEventListener("click", async event => {
+  event.target.disabled = true;
+  const signedIn = await send({ action: "signIn" });
+  event.target.disabled = false;
+  if (signedIn.ok) syncAction("sync");
+  else document.querySelector("#sync-note").textContent = signedIn.message ?? "Sign-in failed.";
+});
 document.querySelector("#sync-enable").addEventListener("click", () => syncAction("enableSync"));
 document.querySelector("#sync-now").addEventListener("click", () => syncAction("sync"));
 document.querySelector("#sync-disable").addEventListener("click", () => syncAction("disableSync"));

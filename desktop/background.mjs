@@ -19,12 +19,22 @@ chrome.declarativeNetRequest?.updateSessionRules({
   }],
 }).catch(error => console.warn(`[Royal player] Couldn't set the embed referrer: ${error?.message ?? error}`));
 
-// Do not expose configuration or authentication to content scripts. Session tokens
-// stay in the worker and expire when the browser closes; UI receives status only.
+// Do not expose configuration or authentication to content scripts; the UI
+// receives status only. The CloudKit web auth token is kept in local storage, as
+// CloudKit JS keeps its session, so sync survives browser restarts and extension
+// updates (session storage is wiped by both). Sign out or a configuration change
+// removes it, and CloudKit can still expire it, which asks for a new sign-in.
 const storageReady = Promise.all([
   chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" }),
   chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" }),
-]);
+]).then(async () => {
+  // Earlier versions kept the token in session storage.
+  const { cloudKitToken } = await chrome.storage.session.get("cloudKitToken");
+  if (cloudKitToken) {
+    await chrome.storage.local.set({ cloudKitToken });
+    await chrome.storage.session.remove("cloudKitToken");
+  }
+});
 let queue = Promise.resolve();
 let probe;
 let hasRead = false;
@@ -32,14 +42,14 @@ let currentAccount;
 
 function resetProbe() { probe = undefined; hasRead = false; currentAccount = undefined; }
 async function setToken(token) {
-  if (token) await chrome.storage.session.set({ cloudKitToken: token });
-  else { await chrome.storage.session.remove("cloudKitToken"); resetProbe(); }
+  if (token) await chrome.storage.local.set({ cloudKitToken: token });
+  else { await chrome.storage.local.remove("cloudKitToken"); resetProbe(); }
 }
 
 async function client() {
   const { cloudKitConfig } = await chrome.storage.local.get("cloudKitConfig");
   return new CloudKitClient(cloudKitConfig, {
-    getToken: async () => (await chrome.storage.session.get("cloudKitToken")).cloudKitToken,
+    getToken: async () => (await chrome.storage.local.get("cloudKitToken")).cloudKitToken,
     setToken,
   });
 }
@@ -144,15 +154,23 @@ async function handle(request) {
   }
 }
 
+const SIGN_IN_CODES = ["AUTHENTICATION_REQUIRED", "AUTHENTICATION_FAILED"];
+
 async function syncNow(api, { notify = false } = {}) {
   syncTimer = clearTimeout(syncTimer);
-  let message;
+  let message, signInNeeded = false;
   try {
+    // Without an iCloud sign-in, CloudKit can only refuse; say so instead.
+    if ((await library.settings()) && !(await api.getToken())) {
+      throw new CloudKitError("AUTHENTICATION_REQUIRED");
+    }
     const result = await runSync({ api, library });
     message = `Synced. Received ${result.pulled}, sent ${result.pushed}${result.failed ? `, ${result.failed} refused` : ""}; ${result.pending} pending.`;
     console.info(`[Royal sync] ${message}`);
   } catch (error) {
+    signInNeeded = error instanceof CloudKitError && SIGN_IN_CODES.includes(error.code);
     message = error instanceof SyncPausedError ? `Sync paused: ${error.message}`
+      : signInNeeded ? "Sync paused: sign in to iCloud again. Changes stay pending."
       : error instanceof CloudKitError ? `Sync failed: ${describeCloudKitError(error)} Changes stay pending.`
         : "Sync failed. Changes stay pending.";
     console.warn(`[Royal sync] ${error instanceof CloudKitError ? `${error.code}${error.httpStatus ? ` HTTP ${error.httpStatus}` : ""}${error.operation ? ` ${error.operation}` : ""}` : error?.message}`);
@@ -161,7 +179,7 @@ async function syncNow(api, { notify = false } = {}) {
   // After a background sync, let an open Royal page redraw with what arrived.
   // (A page that asked for this sync gets the result as its reply.)
   if (notify) chrome.runtime.sendMessage({ event: "libraryChanged" }).catch(() => {});
-  return { ...view, message, syncMessage: message };
+  return { ...view, message, syncMessage: message, signInNeeded };
 }
 
 // After a local change, sync shortly, once, through the CloudKit queue. If the
