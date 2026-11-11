@@ -20,15 +20,22 @@ body {
   font: 16px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
-main { max-width: 720px; margin: 0 auto; padding: 28px 16px 48px; }
+main { max-width: 720px; margin: 0 auto; padding: 8px 16px 48px; }
 a { color: var(--gold-ink); }
 p { overflow-wrap: anywhere; }
 :focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 
-header { display: flex; align-items: center; gap: 14px; }
-header h1 { margin: 0; font-size: 28px; line-height: 1.1; letter-spacing: -0.01em; }
-header p { margin: 0; color: var(--muted); font-size: 14px; }
-.crown { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 12px; background: var(--icon-bg); color: #fed655; font-size: 32px; box-shadow: 0 6px 20px rgb(0 0 0 / .18); }
+/* Header: the crown, the name and the tabs in one bar that stays in reach while the
+   feed scrolls (unless the player has the top). */
+header {
+  position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 12px;
+  margin: 0 -16px; padding: 10px 16px; background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(12px);
+}
+main:has(#player:not([hidden])) header { position: static; }
+header h1 { margin: 0; font-size: 24px; line-height: 1.1; letter-spacing: -0.01em; }
+.crown { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: var(--icon-bg); box-shadow: 0 4px 14px rgb(0 0 0 / .18); }
+.crown svg { width: 28px; height: auto; display: block; }
 
 /* Buttons and forms */
 button {
@@ -41,12 +48,8 @@ label { display: grid; gap: 6px; margin: 16px 0; font-weight: 600; }
 input, select { width: 100%; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: inherit; }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 
-/* Tabs: a segmented bar that stays in reach while the feed scrolls. */
-nav.tabs {
-  position: sticky; top: 0; z-index: 2; display: flex; gap: 4px; overflow-x: auto;
-  margin: 20px -16px 0; padding: 10px 16px; background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(12px); scrollbar-width: none;
-}
+/* Tabs: a segmented bar beside the name, scrolling sideways when the window is narrow. */
+nav.tabs { flex: 1; min-width: 0; display: flex; gap: 4px; margin-left: 8px; overflow-x: auto; scrollbar-width: none; }
 nav.tabs button { flex: none; background: transparent; color: var(--muted); padding: 6px 14px; }
 nav.tabs button:hover { color: var(--text); background: var(--placeholder); }
 nav.tabs button[aria-selected="true"] { background: var(--text); color: var(--bg); }
@@ -143,7 +146,6 @@ button.save[aria-pressed="true"] { color: var(--heart); }
 /* Docked player: stays at the top while the feed scrolls and tabs switch. */
 #player { position: sticky; top: 0; z-index: 3; margin: 16px -16px 0; background: #000; }
 #player[hidden] { display: none; }
-#player:not([hidden]) + nav.tabs { position: static; }
 .player-frame { max-width: calc(48vh * 16 / 9); margin: 0 auto; aspect-ratio: 16 / 9; }
 .player-frame iframe { display: block; width: 100%; height: 100%; border: 0; }
 .player-bar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--line); }

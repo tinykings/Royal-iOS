@@ -10,8 +10,16 @@
 <body>
   <main>
     <header>
-      <span class="crown" aria-hidden="true">♛</span>
-      <div><h1>Royal</h1><p>Desktop</p></div>
+      <span class="crown" aria-hidden="true"><svg viewBox="200 250 624 520"><defs><linearGradient id="crown-gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fee25f"/><stop offset=".5" stop-color="#fedd59"/><stop offset="1" stop-color="#fec744"/></linearGradient></defs><path fill="url(#crown-gold)" d="M310 640L232.7 436.1A40 40 0 0 1 294.4 390.1L395 467Q440 505 480 460Q500 435 485 410L446.2 358.3A14 14 0 0 1 446.2 341.6L499.1 269.6A16 16 0 0 1 524.9 269.6L577.8 341.6A14 14 0 0 1 577.8 358.3L539 410Q524 435 544 460Q584 505 629 467L729.6 390.1A40 40 0 0 1 791.3 436.1L714 640ZM340 668H684A30 30 0 0 1 714 698V730A30 30 0 0 1 684 760H340A30 30 0 0 1 310 730V698A30 30 0 0 1 340 668Z"/></svg></span>
+      <h1>Royal</h1>
+      <nav class="tabs" role="tablist" aria-label="Royal">
+        <button role="tab" data-tab="all" aria-selected="true">All</button>
+        <button role="tab" data-tab="reddit">Reddit</button>
+        <button role="tab" data-tab="hn">Hacker News</button>
+        <button role="tab" data-tab="youtube">YouTube</button>
+        <button role="tab" data-tab="saved">Saved</button>
+        <button role="tab" data-tab="settings">Settings</button>
+      </nav>
     </header>
     <aside id="player" aria-label="Video player" hidden>
       <div class="player-frame"><iframe title="YouTube video" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
@@ -21,14 +29,6 @@
         <button id="player-close" class="icon-button" aria-label="Close video" title="Close video">✕</button>
       </div>
     </aside>
-    <nav class="tabs" role="tablist" aria-label="Royal">
-      <button role="tab" data-tab="all" aria-selected="true">All</button>
-      <button role="tab" data-tab="reddit">Reddit</button>
-      <button role="tab" data-tab="hn">Hacker News</button>
-      <button role="tab" data-tab="youtube">YouTube</button>
-      <button role="tab" data-tab="saved">Saved</button>
-      <button role="tab" data-tab="settings">Settings</button>
-    </nav>
     <p class="note">Fetched with this browser’s own Reddit and YouTube logins. <span id="sync-note">Stored in this browser only.</span> <button id="sync-sign-in" class="inline-button" hidden>Sign in to iCloud</button></p>
     <section id="tab-all" class="tab-panel" role="tabpanel">
       <div class="actions"><button id="refresh-all">Refresh All</button><button id="mark-read" class="secondary">Mark all read</button></div>
