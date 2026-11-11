@@ -204,6 +204,21 @@ function callbackHint(loginURL) {
   return `Apple's login link returns to ${ids.join(", ")}; this extension is ${chrome.runtime.id}${mine ? " (match)." : ". MISMATCH: the token's redirect URL isn't in effect yet."}`;
 }
 
+// With sync on, Refresh All first pulls what other devices have seen, through the
+// CloudKit queue, so posts already shown on iOS land under Earlier instead of New
+// even when this page has been open since before they were seen. A failed sync
+// (offline, signed out) doesn't stop the refresh; its message is shown instead.
+async function refreshAllAfterSync() {
+  let synced = null;
+  if (await library.settings()) {
+    const operation = queue.then(async () => { await storageReady; return syncNow(await client()); });
+    queue = operation.catch(() => {});
+    synced = await operation.catch(() => null);
+  }
+  const view = await library.refreshAll();
+  return synced ? { ...view, syncMessage: synced.syncMessage, signInNeeded: synced.signInNeeded } : view;
+}
+
 const feedContext = { hasHostAccess: origin => chrome.permissions.contains({ origins: [origin] }) };
 const library = createLibrary({ storage: chrome.storage.local, fetchFeed: request => fetchFeed(request, feedContext), onChange: scheduleSync });
 
@@ -214,7 +229,7 @@ chrome.runtime.onMessage.addListener((request, sender, respond) => {
   const libraryOperations = {
     feed: () => fetchFeed(request, feedContext),
     library: () => library.view(),
-    refreshAll: () => library.refreshAll(),
+    refreshAll: () => refreshAllAfterSync(),
     markAllRead: () => library.markAllRead(),
     setSaved: () => library.setSaved(request.post, request.saved),
   };

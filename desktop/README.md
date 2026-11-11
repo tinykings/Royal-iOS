@@ -113,7 +113,10 @@ still syncs between desktop browsers only.
   and reapply the pending intention.
 - Pending changes are stored with the library, so they survive being offline and
   browser restarts, and are sent on the next sync. Royal syncs when the page opens,
-  about 1.5 s after each change, and on **Sync now**. There's no background timer.
+  about 1.5 s after each change, on **Sync now**, and (since 0.5.2) just before
+  **Refresh All**, so posts another device has shown since the page opened are
+  already seen and land under Earlier. If that sync fails (offline, signed out),
+  the refresh still runs and the sync message says why. There's no background timer.
 - The iCloud sign-in (CloudKit web auth token) is kept in `chrome.storage.local`
   (trusted contexts only) since 0.5.1, so it survives browser restarts and
   extension updates and reloads. Before that it was in `chrome.storage.session`,
@@ -421,21 +424,32 @@ database or application server would be needed; CloudKit would supply storage.
 
 ## Next
 
-Saved posts sync live between iOS and desktop (2026-11-11). Remaining, roughly in order:
+Saved posts and seen posts sync live between iOS and desktop (tested on real
+devices, 2026-11-11). Remaining, roughly in order:
 
-1. **Live-test seen sync from iOS.** Refresh All on the desktop and sync; then
-   refresh All on iOS: posts the desktop showed are under Earlier, not new. And
-   the other way round.
-2. **Sync edge cases, live.** Concurrent saves on both sides, offline unsave then
+1. **Sync edge cases, live.** Concurrent saves on both sides, offline unsave then
    reconnect, same-post conflict, Apple Account switch, an interrupted first
    import, and saves above the old key-value size limit.
-3. **Extension UI.** First pass done in 0.5.0 (see
+2. **Extension UI.** First pass done in 0.5.0 (see
    [Page design and video](#page-design-and-video-050)). Remaining: check it
    with real feeds, Settings-like choices (card/list per source, open link vs.
    comments), NSFW handling for saved posts, and the iCloud tab's design.
+3. **Match Hacker News's load count to iOS.** In All, iOS shows Hacker News's
+   first page of 30 stories (`FeedSession.hackerNewsPageSize`, then more on
+   scrolling), but the desktop fetches 50 (`FEED_LIMIT` in `feeds.mjs`). So after
+   refreshing and marking all read on iOS, a desktop Refresh All shows stories
+   31–50 as New though they're old, unless they were scrolled to on iOS. Give
+   Hacker News its own limit of 30 in `SOURCES.hn` (Reddit and YouTube stay at 50;
+   iOS fetches 100 of those, which only means more of them count as seen), and
+   add a test for it in `feeds.test.mjs`.
 4. **All snapshot on iOS.** Read and write `RoyalAllSnapshot` so a refresh or
-   Mark all read on one device shows on the other. Decide first whether iOS's
-   YouTube "videos above the newest seen" rule uses the synced snapshot.
+   Mark all read on one device shows on the other. Leaning towards not doing
+   it: seen sync already keeps posts one device showed from coming back as New
+   on the other. Adopting it would make iOS's All a stored snapshot (refreshing
+   the YouTube tab would no longer change All), and iOS would have to split it
+   with the snapshot's own `previouslySeen`/`previousRefresh` and YouTube list,
+   not its merged seen ids, or everything the desktop just showed would land
+   under Earlier on iOS unread.
 5. **Out of experiment.** Move the toggle out of Web Sync Experiment, retire the
    probe, and decide when iOS stops mirroring saves into iCloud key-value storage.
 6. **Policy and polish.** Retention for saved snapshots of content deleted

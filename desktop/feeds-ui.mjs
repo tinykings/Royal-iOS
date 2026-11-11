@@ -217,7 +217,7 @@ function applyLibrary(result, { all = true } = {}) {
 async function library(action) {
   const buttons = document.querySelectorAll("#tab-all .actions button");
   buttons.forEach(button => { button.disabled = true; });
-  if (action === "refreshAll") allStatus.textContent = "Refreshing…";
+  if (action === "refreshAll") allStatus.textContent = document.querySelector("#sync-note").textContent.startsWith("Synced") ? "Syncing, then refreshing…" : "Refreshing…";
   const result = await send({ action });
   buttons.forEach(button => { button.disabled = false; });
   if (result.ok) applyLibrary(result);

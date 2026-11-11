@@ -23,7 +23,9 @@ test("worker isolates callers/accounts, serializes token use, and requires rerea
     identity: { getRedirectURL: () => "https://royal-test.chromiumapp.org/cloudkit", launchWebAuthFlow: async () => "https://royal-test.chromiumapp.org/cloudkit?ckWebAuthToken=initial-token" },
   };
   const savedFetch = globalThis.fetch;
+  const requests = [];
   globalThis.fetch = async (url, options) => {
+    requests.push(`${new URL(url).host}${new URL(url).pathname}`);
     if (networkFails) throw new TypeError(`Failed to fetch ${url}`);
     active++; maximumActive = Math.max(maximumActive, active);
     await new Promise(resolve => setTimeout(resolve, 1));
@@ -123,6 +125,15 @@ test("worker isolates callers/accounts, serializes token use, and requires rerea
     const resumed = await send({ action: "sync" });
     assert.match(resumed.message, /^Synced\./);
     assert.equal(resumed.signInNeeded, false);
+
+    // With sync on, Refresh All pulls other devices' seen posts before fetching feeds.
+    requests.length = 0;
+    const refreshed = await send({ action: "refreshAll" });
+    assert.equal(refreshed.ok, true);
+    assert.match(refreshed.syncMessage, /^Synced\./);
+    const pulled = requests.findIndex(path => path.endsWith("records/changes"));
+    const fetchedFeed = requests.findIndex(path => !path.startsWith("api.apple-cloudkit.com"));
+    assert.ok(pulled >= 0 && fetchedFeed > pulled, `sync before feeds: ${requests.join(", ")}`);
   } finally {
     globalThis.fetch = savedFetch;
     delete globalThis.chrome;
