@@ -217,6 +217,7 @@ function renderAll(all) {
   earlierTitle.hidden = all.seen.length === 0;
   earlierTitle.textContent = all.previousRefresh ? `Earlier · shown before ${when(all.previousRefresh)}` : "Earlier";
   renderEarlierToggle();
+  document.querySelector("#mark-read").hidden = all.new.length === 0;
   allStatus.textContent = all.refreshedAt
     ? `Refreshed ${when(all.refreshedAt)}: ${all.new.length} new, ${all.seen.length} earlier.`
     : "Not refreshed yet.";
@@ -237,26 +238,22 @@ function renderSaved(saved) {
 }
 
 let isSignedIn = false;
+let isSyncing = false;
 
 function renderSync(sync, message, signedIn) {
   if (signedIn !== undefined) isSignedIn = signedIn;
   const signInNeeded = sync?.enabled && !isSignedIn;
-  const note = document.querySelector("#sync-note");
-  document.querySelector("#sync-sign-in").hidden = !signInNeeded;
+  isSyncing = Boolean(sync?.enabled && isSignedIn);
   const account = document.querySelector("#account");
   account.textContent = isSignedIn ? "Sign out" : "Sign in with Apple";
   account.classList.toggle("secondary", isSignedIn);
   const status = document.querySelector("#sync-status");
   if (!sync?.enabled) {
-    note.textContent = "Stored in this browser only.";
     status.textContent = message ?? "Not signed in.";
     return;
   }
   const last = sync.lastSync ? `last synced ${when(sync.lastSync)}` : "not synced yet";
   const pending = sync.pending ? `, ${sync.pending} change${sync.pending === 1 ? "" : "s"} pending` : "";
-  note.textContent = signInNeeded
-    ? `iCloud sync is paused until you sign in again${pending}.`
-    : `Synced through iCloud: ${last}${pending}.`;
   status.textContent = message ?? (signInNeeded ? `Sync is paused until you sign in again${pending}.` : `Signed in and syncing: ${last}${pending}.`);
 }
 
@@ -271,7 +268,7 @@ function applyLibrary(result, { all = true } = {}) {
 async function library(action) {
   const buttons = document.querySelectorAll("#tab-all .actions button");
   buttons.forEach(button => { button.disabled = true; });
-  if (action === "refreshAll") allStatus.textContent = document.querySelector("#sync-note").textContent.startsWith("Synced") ? "Syncing, then refreshing…" : "Refreshing…";
+  if (action === "refreshAll") allStatus.textContent = isSyncing ? "Syncing, then refreshing…" : "Refreshing…";
   const result = await send({ action });
   buttons.forEach(button => { button.disabled = false; });
   if (result.ok) applyLibrary(result);
@@ -360,7 +357,7 @@ for (const button of document.querySelectorAll("nav.tabs button")) button.addEve
 
 // --- Sync ---
 async function syncAction(action) {
-  const buttons = document.querySelectorAll("#account, #sync-sign-in");
+  const buttons = document.querySelectorAll("#account");
   buttons.forEach(button => { button.disabled = true; });
   document.querySelector("#sync-status").textContent = action === "signOut" ? "Signing out…" : action === "signIn" ? "Signing in…" : "Syncing…";
   const result = await send({ action });
@@ -369,13 +366,7 @@ async function syncAction(action) {
   else document.querySelector("#sync-status").textContent = result.message ?? "Sync failed.";
   return result;
 }
-// Signing in from the feed page, when sync paused for it, then syncing straight away.
-// Signing in (from the iCloud tab, or the feed page when sync paused for it) turns
-// sync on and syncs straight away; signing out turns it off.
-document.querySelector("#sync-sign-in").addEventListener("click", async () => {
-  const result = await syncAction("signIn");
-  if (!result.ok) document.querySelector("#sync-note").textContent = result.message ?? "Sign-in failed.";
-});
+// Signing in turns sync on and syncs straight away; signing out turns it off.
 document.querySelector("#account").addEventListener("click", () => syncAction(isSignedIn ? "signOut" : "signIn"));
 // The worker syncs after local changes and tells open pages when it's done.
 chrome.runtime.onMessage.addListener(message => {
