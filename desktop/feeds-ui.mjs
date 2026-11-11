@@ -4,42 +4,146 @@
 const send = request => chrome.runtime.sendMessage(request).catch(() => ({ ok: false, message: "Could not reach the Royal extension worker. Reload this page and try again." }));
 let savedIDs = new Set();
 
-function age(created) {
-  if (!created) return null;
-  const minutes = Math.max(0, Math.round((Date.now() / 1000 - created) / 60));
-  if (minutes < 60) return `${minutes}m`;
-  if (minutes < 48 * 60) return `${Math.round(minutes / 60)}h`;
-  return `${Math.round(minutes / 1440)}d`;
+// Ages in the largest whole unit, like iOS PostRow: "now", "5m", "3h", "2d", "4w", "3mo", "1y".
+const AGE_UNITS = [[31536000, "y"], [2592000, "mo"], [604800, "w"], [86400, "d"], [3600, "h"], [60, "m"]];
+function age(seconds) {
+  for (const [unit, suffix] of AGE_UNITS) if (seconds >= unit) return `${Math.floor(seconds / unit)}${suffix}`;
+  return "now";
 }
+const since = epochSeconds => age(Math.max(0, Date.now() / 1000 - epochSeconds));
+// YouTube's "3 hours ago" or "Streamed 2 hours ago", counted from publishedAt; other text ("Live") as is.
+function published(post) {
+  if (!post.published) return null;
+  if (post.publishedAt == null) return post.published;
+  return (/^(Streamed|Premiered) /.exec(post.published)?.[0] ?? "") + since(post.publishedAt);
+}
+const compact = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 });
+const count = (value, noun) => `${compact.format(value)} ${noun}${value === 1 ? "" : "s"}`;
 const when = ms => new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
 function link(href, label, className) {
   const a = document.createElement("a");
-  a.href = href; a.textContent = label; a.target = "_blank"; a.rel = "noopener noreferrer";
+  a.href = href; a.target = "_blank"; a.rel = "noopener noreferrer";
+  if (label) a.textContent = label;
   if (className) a.className = className;
   return a;
 }
 
-const SOURCE_NAMES = { reddit: "Reddit", hn: "Hacker News", youtube: "YouTube" };
+function element(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+}
 
-function renderPost(post, showsSource) {
-  const item = document.createElement("li");
-  const body = document.createElement("div");
-  body.append(link(post.url, post.title, "title"));
-  const meta = document.createElement("span");
-  meta.className = "meta";
-  const label = showsSource && post.source !== "hn" ? `${SOURCE_NAMES[post.source]} · ${post.label}` : post.label;
-  const parts = [label, post.score != null && `${post.score} points`, post.published ?? age(post.created), post.nsfw && "NSFW"].filter(Boolean);
-  meta.append(parts.join(" · "));
-  if (post.comments != null && post.commentsUrl !== post.url) meta.append(" · ", link(post.commentsUrl, `${post.comments} comments`));
+function image(src, className) {
+  const img = element("img", className);
+  img.src = src; img.alt = ""; img.loading = "lazy"; img.decoding = "async"; img.referrerPolicy = "no-referrer";
+  return img;
+}
+
+const SOURCE_NAMES = { reddit: "Reddit", hn: "Hacker News", youtube: "YouTube" };
+const SOURCE_MARKS = { reddit: "r", hn: "Y", youtube: "" };
+
+// hqdefault exists for every video; larger sizes can be missing.
+const thumbnail = post => (post.videoId ? `https://i.ytimg.com/vi/${post.videoId}/hqdefault.jpg` : post.image);
+// Taller images are letterboxed to a square so one image can't fill the screen.
+const TALLEST_IMAGE_ASPECT = 1;
+
+// --- Player: YouTube plays in a player docked above the tabs, like iOS. ---
+const player = document.querySelector("#player");
+let playingID = null;
+function markPlaying() {
+  for (const item of document.querySelectorAll("li.post")) item.classList.toggle("playing", item.dataset.postId === playingID);
+}
+function play(post) {
+  playingID = post.id;
+  player.querySelector("iframe").src = `https://www.youtube.com/embed/${encodeURIComponent(post.videoId)}?autoplay=1&rel=0`;
+  document.querySelector("#player-title").textContent = post.title;
+  document.querySelector("#player-label").textContent = post.label;
+  document.querySelector("#player-open").href = post.url;
+  player.hidden = false;
+  markPlaying();
+}
+function closePlayer() {
+  playingID = null;
+  player.hidden = true;
+  player.querySelector("iframe").src = "about:blank";
+  markPlaying();
+}
+document.querySelector("#player-close").addEventListener("click", closePlayer);
+
+// A plain click on a video plays it here; modified and middle clicks open YouTube as links do.
+function playsHere(anchor, post) {
+  if (!post.videoId) return;
+  anchor.addEventListener("click", event => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    play(post);
+  });
+}
+
+function media(post, layout) {
+  const src = thumbnail(post);
+  if (!src) return null;
+  const anchor = link(post.url, null, layout === "card" ? "media" : "thumb");
+  anchor.tabIndex = -1;
+  anchor.setAttribute("aria-hidden", "true");
+  if (layout === "card" && post.videoId) {
+    anchor.style.setProperty("--aspect", "16 / 9");
+    anchor.append(image(src));
+  } else if (layout === "card") {
+    // Sized from Reddit's reported shape, not the loaded image, so the card doesn't jump.
+    anchor.style.setProperty("--aspect", String(Math.max(post.imageAspect ?? 4 / 3, TALLEST_IMAGE_ASPECT)));
+    anchor.append(image(src, "backdrop"), image(src, "fit"));
+  } else anchor.append(image(src));
+  // A dead image leaves the post as text rather than an empty frame.
+  anchor.querySelector("img:last-child").addEventListener("error", () => anchor.remove(), { once: true });
+  playsHere(anchor, post);
+  return anchor;
+}
+
+// Reddit and YouTube show as cards with a large image; Hacker News, and Saved
+// (which mixes every source), as rows with a small thumbnail. As on iOS.
+function renderPost(post, { showsSource = false, layout } = {}) {
+  layout ??= post.source === "hn" ? "row" : "card";
+  const item = element("li", `post ${layout}${post.videoId ? " video" : ""}`);
+  item.dataset.postId = post.id;
+  item.classList.toggle("playing", post.id === playingID);
+  const body = element("div", "details");
+  const title = link(post.url, post.title, "title");
+  playsHere(title, post);
+  body.append(title);
+
+  const meta = element("span", "meta");
+  if (showsSource) {
+    const mark = element("span", `source-icon ${post.source}`, SOURCE_MARKS[post.source]);
+    mark.title = SOURCE_NAMES[post.source];
+    mark.setAttribute("aria-hidden", "true");
+    meta.append(mark);
+  }
+  const text = element("span");
+  const parts = [post.label || SOURCE_NAMES[post.source], post.score != null && count(post.score, "pt"),
+    post.created != null ? since(post.created) : published(post), post.nsfw && "NSFW"].filter(Boolean);
+  text.append(parts.join(" · "));
+  if (post.comments != null) {
+    text.append(" · ");
+    text.append(post.commentsUrl !== post.url ? link(post.commentsUrl, count(post.comments, "comment")) : count(post.comments, "comment"));
+  }
+  meta.append(text);
   body.append(meta);
-  const save = document.createElement("button");
-  save.className = "save";
+
+  const picture = media(post, layout);
+  if (layout === "card") item.append(...[picture, body].filter(Boolean));
+  else item.append(...[body, picture].filter(Boolean));
+
+  const save = element("button", "save");
   const update = () => {
     const saved = savedIDs.has(post.id);
     save.setAttribute("aria-pressed", String(saved));
-    save.textContent = saved ? "♥ Saved" : "♡ Save";
+    save.textContent = saved ? "♥" : "♡";
     save.title = saved ? "Unsave" : "Save";
+    save.setAttribute("aria-label", saved ? `Unsave ${post.title}` : `Save ${post.title}`);
   };
   save.dataset.postId = post.id;
   save.update = update;
@@ -50,7 +154,7 @@ function renderPost(post, showsSource) {
     if (result.ok) applyLibrary(result, { all: false });
   });
   update();
-  item.append(body, save);
+  item.append(save);
   return item;
 }
 
@@ -63,10 +167,10 @@ function renderProblem(target, result) {
 const allStatus = document.querySelector("#all-status");
 function renderAll(all) {
   const earlierTitle = document.querySelector("#all-earlier-title");
-  document.querySelector("#all-new").replaceChildren(...all.new.map(post => renderPost(post, true)));
-  document.querySelector("#all-seen").replaceChildren(...all.seen.map(post => renderPost(post, true)));
+  document.querySelector("#all-new").replaceChildren(...all.new.map(post => renderPost(post, { showsSource: true })));
+  document.querySelector("#all-seen").replaceChildren(...all.seen.map(post => renderPost(post, { showsSource: true })));
   earlierTitle.hidden = all.seen.length === 0;
-  earlierTitle.textContent = all.previousRefresh ? `Earlier — shown before ${when(all.previousRefresh)}` : "Earlier";
+  earlierTitle.textContent = all.previousRefresh ? `Earlier · shown before ${when(all.previousRefresh)}` : "Earlier";
   allStatus.textContent = all.refreshedAt
     ? `Refreshed ${when(all.refreshedAt)}: ${all.new.length} new, ${all.seen.length} earlier.`
     : "Not refreshed yet.";
@@ -81,8 +185,8 @@ function renderAll(all) {
 
 // --- Saved ---
 function renderSaved(saved) {
-  document.querySelector("#saved-list").replaceChildren(...saved.map(post => renderPost(post, true)));
-  document.querySelector("#saved-status").textContent = saved.length ? `${saved.length} saved` : "Nothing saved yet. Use ♡ Save on any post.";
+  document.querySelector("#saved-list").replaceChildren(...saved.map(post => renderPost(post, { showsSource: true, layout: "row" })));
+  document.querySelector("#saved-status").textContent = saved.length ? `${saved.length} saved` : "Nothing saved yet. Use ♡ on any post.";
 }
 
 function renderSync(sync, message) {
@@ -136,7 +240,7 @@ async function loadSource(panel) {
   const list = panel.querySelector("ol");
   if (result.ok && result.state === "ok") {
     status.textContent = result.posts.length ? `${result.posts.length} posts` : "No posts.";
-    list.replaceChildren(...result.posts.map(post => renderPost(post, false)));
+    list.replaceChildren(...result.posts.map(post => renderPost(post)));
   } else {
     status.classList.add("problem");
     status.replaceChildren();

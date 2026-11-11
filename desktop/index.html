@@ -10,14 +10,25 @@
 </head>
 <body>
   <main>
-    <header><span class="crown" aria-hidden="true">♛</span><div><h1>Royal</h1><p>Desktop experiment</p></div></header>
+    <header>
+      <span class="crown" aria-hidden="true">♛</span>
+      <div><h1>Royal</h1><p>Desktop experiment</p></div>
+    </header>
+    <aside id="player" aria-label="Video player" hidden>
+      <div class="player-frame"><iframe title="YouTube video" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
+      <div class="player-bar">
+        <div class="player-text"><strong id="player-title"></strong><span id="player-label"></span></div>
+        <a id="player-open" target="_blank" rel="noopener noreferrer">Open on YouTube</a>
+        <button id="player-close" class="icon-button" aria-label="Close video" title="Close video">✕</button>
+      </div>
+    </aside>
     <nav class="tabs" role="tablist" aria-label="Royal">
       <button role="tab" data-tab="all" aria-selected="true">All</button>
       <button role="tab" data-tab="reddit">Reddit</button>
       <button role="tab" data-tab="hn">Hacker News</button>
       <button role="tab" data-tab="youtube">YouTube</button>
       <button role="tab" data-tab="saved">Saved</button>
-      <button role="tab" data-tab="icloud">iCloud probe</button>
+      <button role="tab" data-tab="icloud">iCloud</button>
     </nav>
     <p class="note">Fetched with this browser’s own Reddit and YouTube logins. <span id="sync-note">Stored in this browser only.</span></p>
     <section id="tab-all" class="tab-panel" role="tabpanel">
@@ -25,7 +36,7 @@
       <p class="feed-status" id="all-status" role="status">Loading…</p>
       <ul class="problems" id="all-problems"></ul>
       <ol id="all-new" class="posts"></ol>
-      <h3 id="all-earlier-title" hidden></h3>
+      <h3 id="all-earlier-title" class="divider" hidden></h3>
       <ol id="all-seen" class="posts"></ol>
     </section>
     <section id="tab-reddit" class="tab-panel source-tab" role="tabpanel" data-source="reddit" hidden>

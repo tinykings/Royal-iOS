@@ -42,6 +42,30 @@ It does not migrate saves or sync timeline/seen/saved data. Existing iOS storage
   `NotLoggedInError`, with a link to the site), **no access** (host permission
   withheld via Site access), or an error message.
 
+### Page design and video (0.5.0)
+
+`feeds-ui.mjs` and `style.css` follow iOS `PostRow` and the site's palette, in
+light and dark mode:
+
+- **Cards** for Reddit and YouTube: a large image above the title. Reddit images
+  keep their reported shape (`imageAspect`), capped at square, on a blurred copy
+  of themselves; YouTube uses `hqdefault` cropped to 16:9 with a play badge.
+  **Rows** with a 96×54 thumbnail for Hacker News and Saved. Source marks,
+  compact points/comments, iOS-style ages, and a heart in the corner (shown on
+  hover until saved). All's new/earlier divider is a gold rule.
+- **Video**: a plain click on a YouTube post plays it in a player docked above
+  the tabs (the playing post is outlined); ⌘/Ctrl/middle click opens YouTube.
+  The embed refuses to play without a referrer and extension pages send none, so
+  the worker adds one session `declarativeNetRequest` rule setting `Referer:
+  https://tinykings.github.io/` (as iOS does) on `www.youtube.com/embed/`
+  sub-frames whose initiator is this extension only. Permission:
+  `declarativeNetRequestWithHostAccess` (no install warning; uses the existing
+  YouTube host access).
+- Verified 2026-11-11 in Chromium 157 headless with the unpacked extension: the
+  embed autoplays (video advancing, no `.ytp-error`); with the rule removed it
+  stays at 0:00. Layout checked with mock posts in light and dark. Not yet
+  checked with real logged-in feeds.
+
 ### All, seen, and saved
 
 Added in 0.3.0 (`library.mjs`, `store.mjs`); a port of `Royal/FeedStore.swift`:
@@ -313,7 +337,9 @@ The native probe writes only the probe record and uses revision-checked saves.
 The extension's CloudKit operations are bounded to the probe and the opt-in
 sync zone described under [Sync experiment](#sync-experiment). Its only other
 network access is the feed hosts listed under [Feeds](#feeds); it has no
-`cookies` permission, content scripts, or external messaging.
+`cookies` permission, content scripts, or external messaging. Its one
+`declarativeNetRequest` rule only sets the referrer on YouTube embeds its own page
+loads.
 User tokens never return to the tab UI or console; the worker serializes requests
 and adopts rotated web auth tokens. Configuration changes clear the local session.
 “Clear Royal session” clears local credentials, not the global Apple login.
@@ -393,19 +419,17 @@ Saved posts sync live between iOS and desktop (2026-11-11). Remaining, roughly i
 2. **Sync edge cases, live.** Concurrent saves on both sides, offline unsave then
    reconnect, same-post conflict, Apple Account switch, an interrupted first
    import, and saves above the old key-value size limit.
-3. **Extension UI.** The feed page is very basic: no thumbnails or post images,
-   and none of Royal's design. Give it a proper web design: images (`image` /
-   `imageAspect` from `sources.js`), Royal's palette and type (as on the site,
-   `docs/index.html`, and in the iOS app), card layout, the All divider between
-   new and earlier, source/score/comment metadata, and light and dark modes,
-   keeping it responsive.
+3. **Extension UI.** First pass done in 0.5.0 (see
+   [Page design and video](#page-design-and-video-050)). Remaining: check it
+   with real feeds, Settings-like choices (card/list per source, open link vs.
+   comments), NSFW handling for saved posts, and the iCloud tab's design.
 4. **All snapshot on iOS.** Read and write `RoyalAllSnapshot` so a refresh or
    Mark all read on one device shows on the other. Decide first whether iOS's
    YouTube "videos above the newest seen" rule uses the synced snapshot.
 5. **Out of experiment.** Move the toggle out of Web Sync Experiment, retire the
    probe, and decide when iOS stops mirroring saves into iCloud key-value storage.
 6. **Policy and polish.** Retention for saved snapshots of content deleted
-   upstream (Reddit's terms), in-app video on desktop, and extension packaging.
+   upstream (Reddit's terms), and extension packaging.
 
 ## Local checks
 

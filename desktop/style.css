@@ -1,32 +1,161 @@
-:root { color-scheme: light dark; --gold: #d6a700; }
+/* Royal's palette, as on the site (docs/index.html) and in the iOS app. */
+:root {
+  color-scheme: light dark;
+  --bg: #f2f1ec; --surface: #ffffff; --text: #1b1c20; --muted: #5d606a; --line: #e2dfd4;
+  --edge: rgb(0 0 0 / .12); --placeholder: rgb(0 0 0 / .06);
+  --gold: #f5c432; --gold-ink: #8a6500; --icon-bg: #16181d;
+  --reddit: #f97316; --hn: #a2754c; --youtube: #e5322d; --heart: #e0457b;
+  --radius: 14px; --inset: 12px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e0f12; --surface: #1c1e23; --text: #ecebe6; --muted: #a2a4ad; --line: #2a2c33;
+    --edge: rgb(255 255 255 / .12); --placeholder: rgb(255 255 255 / .07);
+    --gold: #fed655; --gold-ink: #fed655; --icon-bg: #22252c;
+  }
+}
 * { box-sizing: border-box; }
-body { margin: 0; font: 16px/1.55 system-ui, sans-serif; background: light-dark(#fbfaf6, #101114); color: light-dark(#1b1c20, #eeece5); }
-main { max-width: 760px; margin: 36px auto; padding: 0 24px 48px; }
-header { display: flex; align-items: center; gap: 18px; }
-header h1 { margin: 0; font-size: 36px; } header p { margin: 0; }
-.crown { color: #fed655; background: #16181d; font-size: 48px; border-radius: 18px; padding: 0 15px; }
-section { background: light-dark(white, #1a1c21); border: 1px solid light-dark(#e7e4da, #34363e); padding: 24px; margin: 24px 0; border-radius: 16px; }
-h2 { font-size: 20px; margin-top: 0; } p { overflow-wrap: anywhere; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+main { max-width: 720px; margin: 0 auto; padding: 28px 16px 48px; }
+a { color: var(--gold-ink); }
+p { overflow-wrap: anywhere; }
+:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+
+header { display: flex; align-items: center; gap: 14px; }
+header h1 { margin: 0; font-size: 28px; line-height: 1.1; letter-spacing: -0.01em; }
+header p { margin: 0; color: var(--muted); font-size: 14px; }
+.crown { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 12px; background: var(--icon-bg); color: #fed655; font-size: 32px; box-shadow: 0 6px 20px rgb(0 0 0 / .18); }
+
+/* Buttons and forms */
+button {
+  background: var(--gold); color: #16181d; font: inherit; font-weight: 600; font-size: 15px;
+  padding: 8px 16px; border: 1px solid transparent; border-radius: 999px; cursor: pointer;
+}
+button.secondary { background: var(--surface); color: var(--text); border-color: var(--line); }
+button:disabled { opacity: .5; cursor: wait; }
 label { display: grid; gap: 6px; margin: 16px 0; font-weight: 600; }
-input, select { width: 100%; font: inherit; padding: 10px; border: 1px solid #777; border-radius: 8px; background: light-dark(white, #101114); color: inherit; }
-button { background: #fed655; color: #16181d; font: inherit; font-weight: 600; padding: 10px 16px; border: 1px solid transparent; border-radius: 8px; cursor: pointer; }
-button.secondary { background: transparent; color: inherit; border-color: #888; }
-button:disabled { opacity: .5; cursor: wait; } :focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
-code { display: block; overflow-wrap: anywhere; user-select: all; }
-a { color: light-dark(#806000, #fed655); } dt { font-weight: 600; } dd { margin: 0 0 12px; overflow-wrap: anywhere; white-space: pre-wrap; }
-.actions { display: flex; gap: 12px; flex-wrap: wrap; } #status { position: sticky; bottom: 0; background: light-dark(#fbfaf6, #101114); padding: 12px 0; border-top: 2px solid var(--gold); }
-nav.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 24px; }
-nav.tabs button { background: transparent; color: inherit; border-color: #888; }
-nav.tabs button[aria-selected="true"] { background: #fed655; color: #16181d; border-color: transparent; }
-.note { font-size: .9em; opacity: .75; }
-.source-options { align-items: end; } .source-options label { margin: 0; }
-ol.posts { padding-left: 0; list-style: none; }
-ol.posts li { display: flex; gap: 10px; align-items: start; padding: 8px 0; border-bottom: 1px solid light-dark(#eee9dc, #2a2c33); }
-ol.posts li > div { flex: 1; min-width: 0; }
-ol.posts a.title { font-weight: 600; }
-ol.posts .meta { display: block; font-size: .85em; opacity: .75; }
-button.save { background: transparent; color: inherit; border-color: #888; padding: 4px 10px; flex: none; }
-button.save[aria-pressed="true"] { color: #e0457b; border-color: #e0457b; }
-.feed-status.problem, .problems { font-weight: 600; }
-#all-earlier-title { border-top: 2px solid var(--gold); padding-top: 12px; font-size: 16px; }
+input, select { width: 100%; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: inherit; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+/* Tabs: a segmented bar that stays in reach while the feed scrolls. */
+nav.tabs {
+  position: sticky; top: 0; z-index: 2; display: flex; gap: 4px; overflow-x: auto;
+  margin: 20px -16px 0; padding: 10px 16px; background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(12px); scrollbar-width: none;
+}
+nav.tabs button { flex: none; background: transparent; color: var(--muted); padding: 6px 14px; }
+nav.tabs button:hover { color: var(--text); background: var(--placeholder); }
+nav.tabs button[aria-selected="true"] { background: var(--text); color: var(--bg); }
+.note { font-size: 13px; color: var(--muted); margin: 4px 0 12px; }
+
+/* Feed panels */
+.tab-panel > .actions { margin: 8px 0; }
+.source-options label { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 500; color: var(--muted); }
+.source-options select { width: auto; padding: 6px 10px; border-radius: 999px; }
+.feed-status { font-size: 13px; color: var(--muted); margin: 8px 0; }
+.feed-status.problem, .problems { color: var(--text); font-weight: 600; }
+.problems:empty { display: none; }
 code.inline { display: inline; }
+
+ol.posts { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+ol.posts:empty { display: none; }
+
+/* A post tile, like iOS PostRow: rounded surface, hairline edge so dark images keep a border. */
+.post {
+  position: relative; overflow: hidden; background: var(--surface);
+  border-radius: var(--radius); box-shadow: inset 0 0 0 1px var(--edge);
+}
+.post.playing { box-shadow: inset 0 0 0 2px var(--gold); }
+.post .media, .post .thumb { display: block; position: relative; overflow: hidden; background: var(--placeholder); }
+.post img { display: block; width: 100%; height: 100%; }
+/* The image draws over the tile's edge; the outline goes back on top. */
+.post::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inherit; pointer-events: none; }
+
+/* Cards: a large image above the text. */
+.post.card .media { aspect-ratio: var(--aspect, 4 / 3); }
+.post.card .media img { position: absolute; inset: 0; }
+.post.card .media img.fit { object-fit: contain; }
+/* Narrow images sit on a blurred copy of themselves, so the sides match the image. */
+.post.card .media img.backdrop { position: absolute; inset: 0; object-fit: cover; filter: blur(24px) brightness(.85); transform: scale(1.15); }
+.post.card.video .media img { object-fit: cover; }
+.post.card .details { padding: var(--inset); }
+.post.card .title { font-size: 17px; font-weight: 600; }
+
+/* Video play badge */
+.post.video .media::before {
+  content: ""; position: absolute; z-index: 1; left: 50%; top: 50%; width: 64px; height: 44px; translate: -50% -50%;
+  border-radius: 12px; background: rgb(0 0 0 / .6); transition: background .15s;
+}
+.post.video .media::after {
+  content: ""; position: absolute; z-index: 1; left: 50%; top: 50%; translate: -35% -50%;
+  border-style: solid; border-width: 10px 0 10px 17px; border-color: transparent transparent transparent white;
+}
+.post.video .media:hover::before { background: var(--youtube); }
+.post.playing .media::before, .post.playing .media::after { display: none; }
+
+/* Rows: text with a small thumbnail on the right. */
+.post.row { display: flex; gap: 12px; align-items: flex-start; padding: var(--inset); }
+.post.row .details { flex: 1; min-width: 0; }
+.post.row .thumb { flex: none; width: 96px; height: 54px; border-radius: 6px; }
+.post.row .thumb img { object-fit: cover; }
+
+.post .title { display: block; color: var(--text); text-decoration: none; overflow-wrap: anywhere; line-height: 1.35; }
+.post .title:hover { text-decoration: underline; text-decoration-color: var(--muted); }
+.post a.title:visited { color: color-mix(in srgb, var(--text) 70%, var(--muted)); }
+.post .meta { display: flex; align-items: baseline; gap: 5px; margin-top: 4px; padding-right: 28px; font-size: 13px; color: var(--muted); }
+.post .meta a { color: inherit; }
+.post .meta a:hover { color: var(--text); }
+.post.row .meta { padding-right: 0; }
+.post.row .details { padding-right: 20px; }
+
+/* Source marks, like iOS's r.circle / y.square / play.rectangle symbols. */
+.source-icon { flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; translate: 0 2px; color: white; font: 700 9px/1 system-ui, sans-serif; }
+.source-icon.reddit { background: var(--reddit); border-radius: 50%; }
+.source-icon.hn { background: var(--hn); border-radius: 3px; }
+.source-icon.youtube { background: var(--youtube); border-radius: 4px; width: 16px; height: 12px; translate: 0 1px; }
+.source-icon.youtube::after { content: ""; border-style: solid; border-width: 3.5px 0 3.5px 6px; border-color: transparent transparent transparent white; margin-left: 1px; }
+.post.playing .source-icon { background: var(--gold); }
+
+/* Heart in the corner, like iOS; outlined until saved. */
+button.save {
+  position: absolute; right: 6px; bottom: 6px; z-index: 1; display: grid; place-items: center;
+  width: 30px; height: 30px; padding: 0; background: transparent; color: var(--muted); font-size: 16px; line-height: 1;
+  opacity: 0; transition: opacity .15s;
+}
+.post:hover button.save, .post:focus-within button.save, button.save[aria-pressed="true"] { opacity: 1; }
+button.save:hover { background: var(--placeholder); color: var(--heart); }
+button.save[aria-pressed="true"] { color: var(--heart); }
+@media (hover: none) { button.save { opacity: 1; } }
+
+/* All: the divider between new and earlier posts. */
+.divider { display: flex; align-items: center; gap: 12px; margin: 22px 0 12px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.divider::before, .divider::after { content: ""; flex: 1; height: 2px; background: var(--gold); border-radius: 1px; }
+
+/* Docked player: stays at the top while the feed scrolls and tabs switch. */
+#player { position: sticky; top: 0; z-index: 3; margin: 16px -16px 0; background: #000; }
+#player[hidden] { display: none; }
+#player:not([hidden]) + nav.tabs { position: static; }
+.player-frame { max-width: calc(48vh * 16 / 9); margin: 0 auto; aspect-ratio: 16 / 9; }
+.player-frame iframe { display: block; width: 100%; height: 100%; border: 0; }
+.player-bar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.player-text { flex: 1; min-width: 0; display: grid; }
+.player-text > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.player-text strong { font-size: 14px; }
+.player-text span { font-size: 12px; color: var(--muted); }
+#player-open { font-size: 13px; white-space: nowrap; }
+.icon-button { width: 32px; height: 32px; padding: 0; display: grid; place-items: center; background: var(--placeholder); color: var(--text); font-size: 14px; }
+
+/* iCloud tab */
+#tab-icloud section { background: var(--surface); border: 1px solid var(--line); padding: 20px; margin: 16px 0; border-radius: 16px; }
+#tab-icloud h2 { font-size: 18px; margin-top: 0; }
+code { display: block; overflow-wrap: anywhere; user-select: all; font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
+dt { font-weight: 600; } dd { margin: 0 0 12px; overflow-wrap: anywhere; white-space: pre-wrap; }
+#status { position: sticky; bottom: 0; background: var(--bg); padding: 12px 0; border-top: 2px solid var(--gold); }
+
+@media (min-width: 900px) {
+  main { padding-top: 40px; }
+}

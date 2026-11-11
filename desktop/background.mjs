@@ -7,6 +7,18 @@ import { CloudKitClient, CloudKitError, appleSignInURL, callbackToken, validateC
 const pageURL = chrome.runtime.getURL("index.html");
 chrome.action.onClicked.addListener(() => { chrome.tabs.create({ url: pageURL }); });
 
+// YouTube's embed refuses to play without a referrer (error 153), and extension
+// pages send none. Like iOS's player, name Royal's site, only for embeds Royal's
+// own page loads.
+chrome.declarativeNetRequest?.updateSessionRules({
+  removeRuleIds: [1],
+  addRules: [{
+    id: 1, priority: 1,
+    action: { type: "modifyHeaders", requestHeaders: [{ header: "referer", operation: "set", value: "https://tinykings.github.io/" }] },
+    condition: { urlFilter: "|https://www.youtube.com/embed/", resourceTypes: ["sub_frame"], initiatorDomains: [chrome.runtime.id] },
+  }],
+}).catch(error => console.warn(`[Royal player] Couldn't set the embed referrer: ${error?.message ?? error}`));
+
 // Do not expose configuration or authentication to content scripts. Session tokens
 // stay in the worker and expire when the browser closes; UI receives status only.
 const storageReady = Promise.all([
