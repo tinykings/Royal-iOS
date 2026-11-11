@@ -11,6 +11,7 @@ struct CloudKitProbeView: View {
     @State private var hasRead = false
     @State private var busy = false
     @State private var accountGeneration = 0
+    @State private var retryAfter: Date?
 
     private static let recordID = CKRecord.ID(recordName: "royal-sync-probe-v1")
     private var containerIdentifier: String? {
@@ -30,7 +31,7 @@ struct CloudKitProbeView: View {
                     LabeledContent("Environment", value: environment)
                     Text("Use the same Apple Account and CloudKit environment on desktop.")
                     Button("Read Private Probe") { Task { await read(identifier) } }
-                        .disabled(busy)
+                        .disabled(busy || isThrottled)
                 }
                 Section("Shared message") {
                     Text(record?["message"] as? String ?? "No probe loaded")
@@ -42,7 +43,7 @@ struct CloudKitProbeView: View {
                 Section {
                     TextField("New message", text: $message)
                     Button("Write Private Probe") { Task { await write(identifier) } }
-                        .disabled(busy || !hasRead || message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || message.count > 500)
+                        .disabled(busy || isThrottled || !hasRead || message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || message.count > 500)
                 } footer: {
                     Text("Read before writing. If another client changes the probe, read again to use its newer revision.")
                 }
@@ -64,6 +65,47 @@ struct CloudKitProbeView: View {
         }
     }
 
+    private var isThrottled: Bool {
+        guard let retryAfter else { return false }
+        return retryAfter > Date()
+    }
+
+    /// Checks the device's iCloud account locally before any authenticated call,
+    /// so a signed-out or restricted account never reaches accountsd's rate limit.
+    private func requireAvailableAccount(_ container: CKContainer) async throws -> String? {
+        switch try await container.accountStatus() {
+        case .available: return nil
+        case .noAccount: return "No Apple Account is signed in to iCloud on this device. Sign in from Settings, then read again."
+        case .restricted: return "iCloud is restricted on this device (Screen Time or device management)."
+        case .temporarilyUnavailable: return "iCloud needs attention. Open Settings › Apple Account and confirm your sign-in, then read again."
+        case .couldNotDetermine: return "iCloud account status could not be determined. Try again shortly."
+        @unknown default: return "iCloud account is unavailable."
+        }
+    }
+
+    /// Turns throttling and account errors into guidance, and blocks retries until
+    /// CloudKit's suggested delay passes so repeated taps don't extend the throttle.
+    private func describe(_ error: Error, action: String) -> String {
+        let nsError = error as NSError
+        let text = nsError.localizedDescription
+        let ckError = error as? CKError
+        let throttled = ckError?.code == .requestRateLimited || ckError?.code == .zoneBusy
+            || ckError?.code == .serviceUnavailable || text.localizedCaseInsensitiveContains("throttl")
+        if throttled {
+            let seconds = ckError?.retryAfterSeconds ?? 60
+            retryAfter = Date().addingTimeInterval(seconds)
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(seconds))
+                if let retryAfter, retryAfter <= Date() { self.retryAfter = nil }
+            }
+            return "iCloud is rate-limiting sign-in requests from this device (\(text)). Wait about \(Int(seconds.rounded(.up))) seconds before trying again. If it keeps happening, open Settings › Apple Account to confirm your sign-in."
+        }
+        if ckError?.code == .notAuthenticated {
+            return "iCloud is not signed in or needs you to sign in again. Open Settings › Apple Account, then read again."
+        }
+        return "CloudKit \(action) failed: \(text)"
+    }
+
     private var environment: String {
         Bundle.main.object(forInfoDictionaryKey: "RoyalCloudKitProbeEnvironment") as? String ?? "Unknown"
     }
@@ -78,6 +120,11 @@ struct CloudKitProbeView: View {
         defer { busy = false }
         do {
             let container = CKContainer(identifier: identifier)
+            if let problem = try await requireAvailableAccount(container) {
+                guard generation == accountGeneration else { return }
+                status = problem
+                return
+            }
             let currentAccount = try await container.userRecordID()
             let fetched: CKRecord?
             do {
@@ -93,7 +140,7 @@ struct CloudKitProbeView: View {
             status = record == nil ? "No probe yet. Write a message to create one." : "Private probe read."
         } catch {
             guard generation == accountGeneration else { return }
-            status = "CloudKit read failed: \(error.localizedDescription)"
+            status = describe(error, action: "read")
         }
     }
 
@@ -131,7 +178,7 @@ struct CloudKitProbeView: View {
             guard generation == accountGeneration else { return }
             hasRead = false
             // Fetch before retrying; never force-overwrite a conflicting revision.
-            status = "CloudKit write failed: \(error.localizedDescription). Read the probe again."
+            status = describe(error, action: "write") + " Read the probe again."
         }
     }
 }
