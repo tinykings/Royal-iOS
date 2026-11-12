@@ -218,11 +218,18 @@ struct FeedListView<Trailing: View>: View {
                         .allowsHitTesting(false)
                     }
                 }
-                // Pulling down past the top refreshes, with the header saying so in place of the
-                // system spinner. Only a drag counts, so the bounce after a fling leaves it alone.
+                // Pulling down past the top refreshes, with the king coming down into the gap in
+                // place of the system spinner, like the horse from the bottom. Only a drag counts,
+                // so the bounce after a fling leaves it alone.
                 .pullPast(.top, enabled: refresh?.finished != false, distance: $pullDown,
                           threshold: Self.pullThreshold, whileDragging: true) {
                     Task { await refreshFeeds() }
+                }
+                .overlay(alignment: .top) {
+                    if pullDown > 0 {
+                        PullIndicator.refresh(distance: pullDown, threshold: Self.pullThreshold)
+                            .allowsHitTesting(false)
+                    }
                 }
                 // Tapping the tab again scrolls to the top.
                 .onChange(of: store.reselected?.count) {
@@ -237,13 +244,7 @@ struct FeedListView<Trailing: View>: View {
                 .navigationTitle(Trailing.self == EmptyView.self ? title : "")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    // A pull takes over the whole header.
-                    if pullDown > 0 {
-                        PlainToolbarItem(placement: .principal) {
-                            PullDownHeader(distance: pullDown, threshold: Self.pullThreshold)
-                        }
-                    }
-                    if pullDown == 0 && Trailing.self != EmptyView.self {
+                    if Trailing.self != EmptyView.self {
                         PlainToolbarItem(placement: .topBarLeading) {
                             HStack(spacing: 8) {
                                 if let titleMenu {
@@ -284,7 +285,7 @@ struct FeedListView<Trailing: View>: View {
                         }
                     }
                     // No controls here and a centered title, so the status has this side to itself.
-                    if pullDown == 0 && Trailing.self == EmptyView.self {
+                    if Trailing.self == EmptyView.self {
                         PlainToolbarItem(placement: .topBarTrailing) {
                             refreshStatus(split: split, loggedOut: loggedOut, showsText: true)
                                 .fixedSize()
@@ -1220,29 +1221,15 @@ extension View {
     }
 }
 
-// Fills the header while the feed is pulled down; letting go once it says so refreshes.
-struct PullDownHeader: View {
-    let distance: CGFloat
-    let threshold: CGFloat
-
-    private var armed: Bool { distance >= threshold }
-
-    var body: some View {
-        Text(armed ? "Release to refresh" : "Pull down to refresh")
-            .font(.headline)
-            .foregroundStyle(armed ? Color.royalAccent : Color.primary)
-            .fixedSize()
-            .sensoryFeedback(.impact(weight: .medium), trigger: armed) { _, armed in armed }
-    }
-}
-
-// Comes in from the bottom as the feed is pulled up past its end: the horse fills with gold
-// from the bottom up, and once full, letting go does what the caption says.
+// Comes in from the edge the feed is pulled away from: from the bottom, the horse fills with
+// gold from the bottom up; from the top, the king fills from the top down. Once full, letting
+// go does what the caption says.
 struct PullIndicator: View {
     let prompt: String
     let release: String
     let distance: CGFloat
     let threshold: CGFloat
+    var edge = VerticalEdge.bottom
 
     static func markRead(distance: CGFloat, threshold: CGFloat) -> PullIndicator {
         PullIndicator(prompt: "Pull up to mark as read", release: "Release to mark as read",
@@ -1254,43 +1241,55 @@ struct PullIndicator: View {
                       distance: distance, threshold: threshold)
     }
 
+    static func refresh(distance: CGFloat, threshold: CGFloat) -> PullIndicator {
+        PullIndicator(prompt: "Pull down to refresh", release: "Release to refresh",
+                      distance: distance, threshold: threshold, edge: .top)
+    }
+
+    private var isTop: Bool { edge == .top }
+    private var imageName: String { isTop ? "PullKing" : "PullHorse" }
     // The art's width over its height.
-    private static let aspect: CGFloat = 360 / 315
-    private static let width: CGFloat = 80
-    private var height: CGFloat { Self.width / Self.aspect }
+    private var aspect: CGFloat { isTop ? 240 / 340 : 360 / 315 }
+    private var width: CGFloat { isTop ? 48 : 80 }
+    private var height: CGFloat { width / aspect }
 
     private var progress: CGFloat { min(distance / threshold, 1) }
     private var armed: Bool { distance >= threshold }
 
     var body: some View {
         VStack(spacing: 6) {
+            if isTop { caption }
             ZStack {
                 art
                     .opacity(0.8)
                 // The art is light gray, so multiplying keeps its shading and lines in gold.
                 art
                     .colorMultiply(.royalAccent)
-                    .mask(alignment: .bottom) {
+                    .mask(alignment: isTop ? .top : .bottom) {
                         Rectangle().frame(height: height * progress)
                     }
             }
-            .frame(width: Self.width, height: height)
-            .scaleEffect(armed ? 1.15 : 0.7 + 0.3 * progress)
-            Text(armed ? release : prompt)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
+            .frame(width: width, height: height)
+            .scaleEffect(armed ? 1.15 : 0.7 + 0.3 * progress, anchor: isTop ? .top : .center)
+            if !isTop { caption }
         }
-        // Clears the floating tab bar, which the list runs under.
-        .padding(.bottom, 44)
+        // Clears the floating tab bar, which the list runs under; at the top, just the header.
+        .padding(isTop ? .top : .bottom, isTop ? 8 : 44)
         .opacity(Double(progress))
         // Comes in with the gap the pull opens, rather than ahead of it.
-        .offset(y: max(0, threshold - distance) * 0.6)
+        .offset(y: max(0, threshold - distance) * (isTop ? -0.6 : 0.6))
         .animation(.spring(duration: 0.25), value: armed)
         .sensoryFeedback(.impact(weight: .medium), trigger: armed) { _, armed in armed }
     }
 
+    private var caption: some View {
+        Text(armed ? release : prompt)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+    }
+
     private var art: some View {
-        Image("PullHorse")
+        Image(imageName)
             .resizable()
             .scaledToFit()
     }
