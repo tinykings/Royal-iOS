@@ -11,7 +11,7 @@ SCREEN RECORDING
 Recorded on [iPhone model], iOS [version], starting from launch.
 
 1. PURPOSE AND AUDIENCE
-Royal is a reader for people who follow Reddit, RSS feeds, and YouTube and want one place to catch up. It shows posts from the subreddits a user already follows, items from RSS feeds the user adds (Hacker News stories by default), and new uploads from the user's YouTube subscriptions, in separate tabs and in a combined "All" feed that marks what is new since the last visit. Users can save posts for later (synced through the user's private iCloud database) and play YouTube videos in the app. It is for adults who already use these services; it has no algorithmic recommendations, ads, or tracking.
+Royal is a reader for people who follow Reddit, RSS feeds, and YouTube and want one place to catch up. It shows posts from the subreddits a user already follows, items from RSS feeds the user adds (by default Hacker News stories, Krebs on Security, Pitchfork's Best New Albums and The Verge), and new uploads from the user's YouTube subscriptions, in separate tabs and in a combined "All" feed that marks what is new since the last visit. Users can save posts for later (synced through the user's private iCloud database) and play YouTube videos in the app. It is for adults who already use these services; it has no algorithmic recommendations, ads, or tracking.
 
 2. HOW TO USE / DEMO ACCOUNTS
 - RSS works with no login: turn on RSS in Settings > Sources, then open the RSS tab. Its list button, or Settings > RSS > Feeds, looks up and adds feeds from a feed's or website's address, removes them, and imports or exports OPML files.
@@ -32,7 +32,7 @@ USER-GENERATED CONTENT: Royal does not host or let users post content of its own
 
 3. EXTERNAL SERVICES
 - Reddit (reddit.com): post listings for the user's followed subreddits, with the user's own login.
-- RSS feeds the user adds, fetched from each feed's own site with no cookies (by default hnrss.org, for Hacker News stories).
+- RSS feeds the user adds, fetched from each feed's own site with no cookies (by default hnrss.org, krebsonsecurity.com, pitchfork.com and theverge.com).
 - YouTube / Google (youtube.com, accounts.google.com): the user's subscription feed and sign-in; videos play through YouTube's embedded player.
 - Apple CloudKit (the user's private iCloud database): syncs saved posts, and which posts the All feed has shown, between the user's devices, and shows saved posts on the Royal Saved website (royal.tinyk.ing/saved) when the user signs in there with Apple. It uses the Apple Account signed in to iCloud; Settings > Sync shows its state. Data stays in the user's own iCloud account; there is no Royal server.
 No analytics, ads, AI services, payment processors, or backend of our own. There are no in-app purchases.

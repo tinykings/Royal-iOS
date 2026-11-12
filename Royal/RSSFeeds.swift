@@ -16,8 +16,13 @@ struct RSSFeed: Codable, Hashable, Identifiable {
         return URL(string: url)?.host ?? url
     }
 
-    // What turning RSS on starts with; it can be removed like any other feed.
-    static let defaults = [RSSFeed(url: "https://hnrss.org/newest?points=150", title: "Hacker News: Newest")]
+    // What turning RSS on starts with; each can be removed like any other feed.
+    static let defaults = [
+        RSSFeed(url: "https://hnrss.org/newest?points=150", title: "Hacker News: Newest"),
+        RSSFeed(url: "https://krebsonsecurity.com/feed/", title: "Krebs on Security"),
+        RSSFeed(url: "https://pitchfork.com/feed/reviews/best/albums/rss", title: "Best New Albums"),
+        RSSFeed(url: "https://www.theverge.com/rss/index.xml", title: "The Verge"),
+    ]
 
     // The list in Settings; the defaults until it's first changed.
     static func load() -> [RSSFeed] {
