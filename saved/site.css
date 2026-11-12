@@ -9,6 +9,8 @@ header .account { margin-left: auto; padding: 6px 14px; }
 .intro { margin: 32px 0 16px; text-align: center; }
 .intro h2 { margin: 0 0 8px; font-size: 22px; }
 .intro p { margin: 0 auto; max-width: 52ch; color: var(--muted); }
+.intro button { margin-top: 20px; padding: 10px 22px; }
+header .account[hidden], .settings-panel[hidden] { display: none; }
 
 #notice[hidden], #undo[hidden] { display: none; }
 .undo { margin: 8px 0; font-size: 14px; color: var(--muted); }

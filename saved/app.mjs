@@ -225,10 +225,15 @@ function render() {
   if (!current) return;
   const signedIn = current.signedIn;
   const synced = current.sync?.enabled;
+  // Until the first sign-in, the button to sign in sits under the intro, and the
+  // settings stay hidden; after that the header's button signs out or in again.
+  const firstVisit = !(synced || signedIn);
   const account = $("#account");
-  account.textContent = signedIn ? "Sign out" : synced ? "Sign in again" : "Sign in with Apple";
+  account.textContent = signedIn ? "Sign out" : "Sign in again";
   account.classList.toggle("secondary", signedIn);
-  $("#intro").hidden = Boolean(synced || signedIn);
+  account.hidden = firstVisit;
+  $("#intro").hidden = !firstVisit;
+  $("#settings-panel").hidden = firstVisit;
   const saved = current.saved;
   $("#saved-list").replaceChildren(...saved.map(renderPost));
   $("#saved-status").textContent = !synced ? "" : saved.length ? `${saved.length} saved` : "Nothing saved yet. Save posts with ♥ in Royal on iPhone.";
@@ -284,7 +289,7 @@ $("#undo-button").addEventListener("click", async () => {
   apply(await site.setSaved(post, true), { message: null });
 });
 
-$("#account").addEventListener("click", async event => {
+async function onAccount(event) {
   const button = event.currentTarget;
   button.disabled = true;
   try {
@@ -303,7 +308,9 @@ $("#account").addEventListener("click", async event => {
       : /token/i.test(error?.message ?? "") ? "Royal Saved isn't set up yet: it needs its CloudKit web API token (site.mjs)."
         : "Couldn't start Apple sign-in. Check your connection and try again.");
   } finally { button.disabled = false; }
-});
+}
+$("#account").addEventListener("click", onAccount);
+$("#sign-in").addEventListener("click", onAccount);
 
 // Other Royal Saved tabs in this browser follow along.
 addEventListener("storage", event => {
