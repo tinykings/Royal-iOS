@@ -996,19 +996,9 @@ struct LoginCard: View {
         }
     }
 
-    private var message: String {
-        let reddit = "For Reddit, use a username and password; \"Continue with Google\" is blocked inside apps. "
-        // Closing the page is what checks the login and reloads the feed.
-        let done = "Once you're logged in, tap Done."
-        if combined {
-            let names = sources.map(\.title).joined(separator: " and ")
-            return "Log in to \(names) to see your subscriptions here alongside Hacker News. "
-                + (sources.contains(.reddit) ? reddit : "") + done
-        }
-        return sources[0] == .reddit
-            ? "Log in to see your Reddit home feed. " + reddit + done
-            : "Log in to see videos from your YouTube subscriptions. " + done
-    }
+    // Kept short; the title says what to log in to, and closing the page is what
+    // checks the login and reloads the feed.
+    private var message: String { "Once logged in, tap Done." }
 
     private func checkLogin() {
         Task { await store.finishLogin(sources, reloading: keys) }
