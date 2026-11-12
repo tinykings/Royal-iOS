@@ -1255,6 +1255,15 @@ struct PullIndicator: View {
 
     private var progress: CGFloat { min(distance / threshold, 1) }
     private var armed: Bool { distance >= threshold }
+    private var scale: CGFloat { armed ? 1.15 : 0.7 + 0.3 * progress }
+    // The laid-out height, before the art's scale.
+    @State private var laidOutHeight: CGFloat = 0
+    // From the top, how far it sits above where it would rest, so that its bottom, scaled art
+    // included, stays a little above the top card as the gap opens and never runs over it.
+    private var topOffset: CGFloat {
+        let bottom = laidOutHeight + height * (scale - 1) + 6
+        return min(0, distance - bottom)
+    }
 
     var body: some View {
         VStack(spacing: 6) {
@@ -1270,14 +1279,15 @@ struct PullIndicator: View {
                     }
             }
             .frame(width: width, height: height)
-            .scaleEffect(armed ? 1.15 : 0.7 + 0.3 * progress, anchor: isTop ? .top : .center)
+            .scaleEffect(scale, anchor: isTop ? .top : .center)
             if !isTop { caption }
         }
         // Clears the floating tab bar, which the list runs under; at the top, just the header.
         .padding(isTop ? .top : .bottom, isTop ? 8 : 44)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { laidOutHeight = $0 }
         .opacity(Double(progress))
         // Comes in with the gap the pull opens, rather than ahead of it.
-        .offset(y: max(0, threshold - distance) * (isTop ? -0.6 : 0.6))
+        .offset(y: isTop ? topOffset : max(0, threshold - distance) * 0.6)
         .animation(.spring(duration: 0.25), value: armed)
         .sensoryFeedback(.impact(weight: .medium), trigger: armed) { _, armed in armed }
     }
