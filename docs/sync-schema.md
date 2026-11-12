@@ -83,8 +83,9 @@ another device that nobody looked at still makes those posts not-new on iOS's ne
 }
 ```
 
-`lists` are the per-source lists of the last explicit All refresh (Reddit Top
-today, HN Top, YouTube Subscriptions), before interleaving; each client
+Only the retired desktop extension wrote this record, from before RSS replaced
+Hacker News, so its keys still say `hn`. `lists` are the per-source lists of the
+last explicit All refresh (Reddit Top today, HN Top, YouTube Subscriptions), before interleaving; each client
 interleaves them (iOS `FeedStore.posts(_:)`) and splits new from earlier
 (`splitByRefresh`) itself. Per-device fetch errors are not synced. Only an
 explicit All refresh or Mark all read changes this record; single-source tabs never do.

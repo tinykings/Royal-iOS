@@ -24,7 +24,7 @@ Royal is a reader for people who follow Reddit, RSS feeds, and YouTube and want 
   Password: [demo password]
   [If Google asks for verification, use: ... / contact: phone or email]
   This account subscribes to several channels, so the YouTube tab fills in.
-- Tap a post to open its link or comments (choosable in Settings); long-press for the other, plus Save. Tap the heart to save; see them via the All tab's header menu > Saved. Tap the current tab to scroll to the top, and again to refresh.
+- Tap a Reddit post to open its link or comments, or an RSS item to read its description or open its link (each choosable in Settings); long-press for the other, plus Save. Tap the heart to save; see them via the All tab's header menu > Saved. Tap the current tab to scroll to the top, and again to refresh.
 
 ACCOUNTS: Royal has no accounts of its own and no server. Logging in happens on Reddit's and Google's own web pages inside the app; Royal never sees or stores passwords. Settings has a Log Out button for each service, which clears that service's session from the app. Account creation and deletion for Reddit and Google are handled by those services, not by Royal.
 

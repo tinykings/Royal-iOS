@@ -44,11 +44,12 @@ export function layoutFor(post, preferences, { saved = false, playing = false } 
   return "row";
 }
 
-// Where a click on a Reddit or Hacker News post goes; the other is a link in its details.
-// YouTube posts have no separate comments page.
+// Where a click on a Reddit or RSS post goes; the other is a link in its details.
+// YouTube posts have no separate comments page. RSS replaced Hacker News, so both
+// use the setting still stored as hnOpen.
 export function opensComments(post, preferences) {
   if (post.source === "reddit") return preferences.redditOpen === "comments";
-  if (post.source === "hn") return preferences.hnOpen === "comments";
+  if (post.source === "hn" || post.source === "rss") return preferences.hnOpen === "comments";
   return false;
 }
 

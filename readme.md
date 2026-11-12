@@ -6,8 +6,10 @@ iOS app combining Reddit, RSS feeds, and your YouTube subscriptions in one feed.
 
 ## Features
 
-- Tabs for RSS, Reddit, a combined **All** feed, YouTube, and settings. Posts can be saved for later.
-- Reddit sort: **Best** or **Top** (today), from the subreddits you follow only, or **Top** (today) from one of them picked from the menu at the top. RSS: any RSS or Atom feeds, newest first, as cards with each item's image from the feed or as a list, starting with Hacker News stories over 150 points ([hnrss](https://hnrss.org/)), Krebs on Security, Pitchfork's Best New Albums and The Verge; paste a feed's or website's address to look up its feeds, and remove, import or export them (OPML) in Settings or from the tab's list button. Tapping an item shows its description from the feed, or opens its link. YouTube: your **Subscriptions** or the **Recommended** videos from your Home page, with any that are new since the last refresh first.
+- Tabs for RSS, Reddit, a combined **All** feed, YouTube, and settings. Each source can be turned off in Settings. Posts can be saved for later.
+- **RSS**: any RSS 2.0, RSS 1.0 or Atom feeds, newest first, as cards with each item's image from the feed, or as a list. New installs start with Hacker News stories over 150 points ([hnrss](https://hnrss.org/)), Krebs on Security, Pitchfork's Best New Albums and The Verge. Manage feeds from the tab's list button or Settings › RSS › Feeds: paste a feed's address, or a website's to look up the feeds it offers; swipe to remove, drag to reorder; import or export an OPML file. Tapping an item shows its description from the feed in the app, or opens its link (Settings); swipe right or press and hold for the other.
+- **Reddit**: **Best** or **Top** (today), from the subreddits you follow only, or **Top** (today) from one of them picked from the menu at the top.
+- **YouTube**: your **Subscriptions** or the **Recommended** videos from your Home page, with any that are new since the last refresh first.
 - Uses your Reddit and YouTube logins from in-app sign-in pages—no API keys or OAuth setup. Reddit links open with that login, so you can vote and reply.
 - Plays YouTube videos in-app.
 - **iCloud sync**: saved posts, and the posts the All feed has shown, sync through your private iCloud database (CloudKit) between your devices, and saved posts appear on [Royal Saved](saved/README.md) on the web ([format](docs/sync-schema.md)). It uses the Apple Account signed in to iCloud; until one is, saves stay on the device.
@@ -28,7 +30,9 @@ Select your signing team, then build and run on a simulator or device.
 
 ## How it works
 
-Fetching and parsing lives in `sources.js`. A build phase copies it into the app bundle, and `FeedSession` runs it in a hidden `WKWebView`, routing its `fetch()` calls through `URLSession` with the web view's login cookies. RSS feeds are fetched natively in `RSSFeeds.swift`, without login cookies. Requests go directly to Reddit, YouTube, and each feed's own site; there is no backend.
+Fetching and parsing lives in `sources.js`. A build phase copies it into the app bundle, and `FeedSession` runs it in a hidden `WKWebView`, routing its `fetch()` calls through `URLSession` with the web view's login cookies. RSS feeds can be on any site, so they are fetched natively in `RSSFeeds.swift` instead, with no cookies, and parsed with `XMLParser`; descriptions show in a web view with scripts off. Requests go directly to Reddit, YouTube, and each feed's own site; there is no backend.
+
+RSS replaced the Hacker News tab. Stored `hn` sources, settings and saved posts read as RSS, and hnrss items keep their Hacker News ids (`hn_<id>`), so earlier saves and seen posts carry over.
 
 YouTube access relies on undocumented page data and may break when YouTube changes its layout.
 
@@ -42,9 +46,11 @@ Edit `CONFIG` in `sources.js`:
 | `redditTimeWindow` | `"day"` | Reddit Top window when none is given (the app always asks for `day`) |
 | `maxPerSubreddit` | `5` | Maximum posts selected per subreddit |
 
+The RSS feeds a new install starts with are `RSSFeed.defaults` in `Royal/RSSFeeds.swift`. The RSS tab shows the newest 100 items across all feeds.
+
 ## Tests
 
-`sources.js` has Node tests that mock network requests. Run with Node.js 22 or later:
+`sources.js` and the Royal Saved website have Node tests that mock network requests. Run with Node.js 22 or later:
 
 ```sh
 node --test
