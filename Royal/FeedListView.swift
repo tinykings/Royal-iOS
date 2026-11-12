@@ -235,7 +235,11 @@ struct FeedListView<Trailing: View>: View {
                 }
                 .overlay(alignment: .top) {
                     if pullDown > 0 {
+                        // Clipped to the area under the header, so the king slides out
+                        // from beneath it rather than being drawn over it.
                         PullIndicator.refresh(distance: pullDown, threshold: Self.pullThreshold)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                            .clipped()
                             .allowsHitTesting(false)
                     }
                 }
