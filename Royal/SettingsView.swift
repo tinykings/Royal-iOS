@@ -11,7 +11,7 @@ struct SettingsView: View {
     @AppStorage(Preference.redditLayout) private var redditLayout = FeedLayout.cards
     @AppStorage(Preference.redditOpen) private var redditOpen = OpenTarget.link
     @AppStorage(Preference.redditNSFW) private var redditNSFW = false
-    @AppStorage(Preference.hnOpen) private var hnOpen = OpenTarget.link
+    @AppStorage(Preference.rssOpen) private var rssOpen = RSSOpenTarget.description
     @AppStorage(Preference.feedTextSize) private var feedTextSize = FeedTextSize.standard
 
     var body: some View {
@@ -124,13 +124,20 @@ struct SettingsView: View {
                     }
                 }
                 // Shown only while the source is on.
-                if store.isEnabled(.hn) {
+                if store.isEnabled(.rss) {
                     Section {
-                        Picker("Tapping a post opens", selection: $hnOpen) {
-                            ForEach(OpenTarget.allCases) { Text($0.title).tag($0) }
+                        NavigationLink {
+                            RSSFeedsView()
+                        } label: {
+                            LabeledContent("Feeds", value: "\(store.rssFeeds.count)")
+                        }
+                        Picker("Tapping a post opens", selection: $rssOpen) {
+                            ForEach(RSSOpenTarget.allCases) { Text($0.title).tag($0) }
                         }
                     } header: {
-                        Text("Hacker News")
+                        Text("RSS")
+                    } footer: {
+                        Text("Add, remove, import or export feeds under Feeds. Swipe right on a post, or press and hold it, to open the other, or its comments when the feed links them.")
                     }
                 }
                 SyncSection(sync: store.savedSync)

@@ -29,6 +29,35 @@ enum TabIcons {
         renderer.scale = 3
         return (renderer.uiImage ?? UIImage()).withRenderingMode(.alwaysTemplate)
     }()
+
+    // The RSS feed icon: a dot with two waves spreading from it.
+    static let rss: UIImage = {
+        let renderer = ImageRenderer(content: RSSGlyph().frame(width: 26, height: 26).foregroundStyle(.black))
+        renderer.scale = 3
+        return (renderer.uiImage ?? UIImage()).withRenderingMode(.alwaysTemplate)
+    }()
+}
+
+// The standard RSS icon drawn in the current foreground style, since SF Symbols has
+// none: a dot in the bottom-left corner and two quarter circles around it.
+struct RSSGlyph: View {
+    var body: some View {
+        Canvas { context, size in
+            let side = min(size.width, size.height)
+            let origin = CGPoint(x: (size.width - side) / 2, y: (size.height + side) / 2)
+            let line = side * 0.15
+            let dot = side * 0.13
+            context.fill(Path(ellipseIn: CGRect(x: origin.x, y: origin.y - dot * 2, width: dot * 2, height: dot * 2)),
+                         with: .foreground)
+            let corner = CGPoint(x: origin.x + dot * 0.2, y: origin.y - dot * 0.2)
+            for radius in [side * 0.52, side * 0.88] {
+                var arc = Path()
+                arc.addArc(center: corner, radius: radius, startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false)
+                context.stroke(arc, with: .foreground, style: StrokeStyle(lineWidth: line, lineCap: .round))
+            }
+        }
+        .accessibilityHidden(true)
+    }
 }
 
 // The crown from the app icon: two side points and a diamond center over a separate

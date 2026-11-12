@@ -91,8 +91,8 @@ function heart() {
   return svg;
 }
 
-const SOURCE_NAMES = { reddit: "Reddit", hn: "Hacker News", youtube: "YouTube" };
-const SOURCE_MARKS = { reddit: "r", hn: "Y", youtube: "" };
+const SOURCE_NAMES = { reddit: "Reddit", hn: "Hacker News", rss: "RSS", youtube: "YouTube" };
+const SOURCE_MARKS = { reddit: "r", hn: "Y", rss: "", youtube: "" };
 // YouTube thumbnails, sharpest first: 1280×720, then 640×480, then 480×360, which
 // every video has. A size a video lacks comes back as a 404 or a 120×90 gray stand-in.
 const YOUTUBE_SIZES = ["maxresdefault", "sddefault", "hqdefault"];

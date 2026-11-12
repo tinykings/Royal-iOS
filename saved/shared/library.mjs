@@ -37,7 +37,7 @@ const text = value => (typeof value === "string" ? value : null);
 export function normalizePost(post) {
   if (!post || typeof post !== "object") return null;
   const url = httpURL(post.url);
-  if (!["reddit", "hn", "youtube"].includes(post.source) || !url || typeof post.title !== "string" ||
+  if (!["reddit", "hn", "rss", "youtube"].includes(post.source) || !url || typeof post.title !== "string" ||
       typeof post.id !== "string" || !/^[\w-]{1,100}$/.test(post.id)) return null;
   return {
     source: post.source, id: post.id, title: post.title, url,

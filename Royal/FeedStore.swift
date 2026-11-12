@@ -4,7 +4,8 @@ enum FeedKey: Hashable, Codable {
     case reddit(sort: String, timeframe: String)
     // One followed subreddit's Top today, chosen on the Reddit tab.
     case subreddit(name: String)
-    case hn(list: String)
+    // Every RSS feed in Settings, newest first.
+    case rss
     case youtube
     // The recommendations on YouTube's Home page, chosen on the YouTube tab.
     case youtubeHome
@@ -12,14 +13,14 @@ enum FeedKey: Hashable, Codable {
     var source: FeedSource {
         switch self {
         case .reddit, .subreddit: .reddit
-        case .hn: .hn
+        case .rss: .rss
         case .youtube, .youtubeHome: .youtube
         }
     }
 
-    // The combined page: Reddit's top posts today, Hacker News top stories, YouTube subscriptions.
+    // The combined page: Reddit's top posts today, the RSS feeds, YouTube subscriptions.
     // FeedStore.combinedKeys leaves out the sources turned off in Settings.
-    static let combined: [FeedKey] = [.reddit(sort: "top", timeframe: "day"), .hn(list: "top"), .youtube]
+    static let combined: [FeedKey] = [.reddit(sort: "top", timeframe: "day"), .rss, .youtube]
 }
 
 struct FeedState {
@@ -37,7 +38,7 @@ struct FeedState {
 }
 
 enum AppTab: Hashable {
-    case hn, reddit, all, youtube, settings
+    case rss, reddit, all, youtube, settings
 }
 
 // Holds every loaded feed so the combined page and single-source tabs share results.
@@ -59,14 +60,14 @@ final class FeedStore: ObservableObject {
     @Published private(set) var saved = SavedPostsStorage.load()
     let savedSync: SavedSync
     // Sources turned off in Settings: their tabs show a dot and the All feed leaves them out.
-    // A new install starts with Hacker News off, offered on the All feed beside the logins;
+    // A new install starts with RSS off, offered on the All feed beside the logins;
     // an install from before sources could be turned off keeps them all on.
     @Published private(set) var disabledSources: Set<FeedSource> = {
         let defaults = UserDefaults.standard
         guard let stored = defaults.string(forKey: Preference.disabledSources) else {
-            return defaults.object(forKey: FeedStore.seenKey) == nil ? [.hn] : []
+            return defaults.object(forKey: FeedStore.seenKey) == nil ? [.rss] : []
         }
-        return Set(stored.split(separator: ",").compactMap { FeedSource(rawValue: String($0)) })
+        return Set(stored.split(separator: ",").compactMap { FeedSource(stored: String($0)) })
     }()
     // Whether sources have been turned on or off yet. Until then the All feed offers
     // to turn on the sources that start off.
@@ -236,7 +237,7 @@ final class FeedStore: ObservableObject {
     private func fetch(_ key: FeedKey) async {
         let state = state(key)
         do {
-            let page = try await session.posts(key)
+            let page = key == .rss ? try await fetchRSS() : try await session.posts(key)
             var posts = page.posts
             // YouTube's Home mostly reshuffles below its first videos, which is all that fits on
             // screen, so videos the last fetch didn't have go first. This only orders this feed;
@@ -320,6 +321,33 @@ final class FeedStore: ObservableObject {
         let previouslySeen: Set<String>
         let previousSources: Set<FeedSource>
         let pagedSinceRefresh: Set<String>
+
+        init(feeds: [Feed], lastRefresh: Date?, previousRefresh: Date?, previouslySeen: Set<String>,
+             previousSources: Set<FeedSource>, pagedSinceRefresh: Set<String>) {
+            self.feeds = feeds
+            self.lastRefresh = lastRefresh
+            self.previousRefresh = previousRefresh
+            self.previouslySeen = previouslySeen
+            self.previousSources = previousSources
+            self.pagedSinceRefresh = pagedSinceRefresh
+        }
+
+        // A feed this build no longer has, like Hacker News before RSS, is dropped
+        // rather than losing the rest of the cache.
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            feeds = try container.decode([Lossy<Feed>].self, forKey: .feeds).compactMap(\.value)
+            lastRefresh = try container.decodeIfPresent(Date.self, forKey: .lastRefresh)
+            previousRefresh = try container.decodeIfPresent(Date.self, forKey: .previousRefresh)
+            previouslySeen = try container.decode(Set<String>.self, forKey: .previouslySeen)
+            previousSources = try container.decode(Set<FeedSource>.self, forKey: .previousSources)
+            pagedSinceRefresh = try container.decode(Set<String>.self, forKey: .pagedSinceRefresh)
+        }
+
+        private struct Lossy<Value: Decodable>: Decodable {
+            let value: Value?
+            init(from decoder: Decoder) throws { value = try? Value(from: decoder) }
+        }
     }
 
     private static let cacheURL = URL.applicationSupportDirectory.appending(path: "feeds.json")
@@ -346,17 +374,110 @@ final class FeedStore: ObservableObject {
         guard let data = try? Data(contentsOf: Self.cacheURL),
               let cache = try? JSONDecoder().decode(Cache.self, from: data) else { return }
         for feed in cache.feeds {
-            // Apply the Hacker News cap to feeds cached before the limit existed too.
-            let isHackerNews = feed.key.source == .hn
-            let posts = isHackerNews ? Array(feed.posts.prefix(100)) : feed.posts
-            let next = isHackerNews && (feed.next ?? 100) >= 100 ? nil : feed.next
-            feeds[feed.key] = FeedState(posts: posts, loaded: true, next: next, loadedAt: feed.loadedAt)
+            feeds[feed.key] = FeedState(posts: feed.posts, loaded: true, next: feed.next, loadedAt: feed.loadedAt)
         }
         lastRefresh = cache.lastRefresh
         previousRefresh = cache.previousRefresh
         previouslySeen = cache.previouslySeen
         previousSources = cache.previousSources
         pagedSinceRefresh = cache.pagedSinceRefresh
+    }
+
+    // MARK: RSS
+
+    // The feeds the RSS tab shows, in the order added.
+    @Published private(set) var rssFeeds = RSSFeed.load()
+    // Why each feed failed in the last fetch, by address, for the feed list in Settings.
+    @Published private(set) var rssFeedErrors: [String: String] = [:]
+
+    // Adds the feed at a pasted address once it loads as a feed, then reloads the tab.
+    func addRSSFeed(_ text: String) async throws {
+        guard let url = RSSFeed.address(text) else { throw FeedError.failed("That isn't a web address.") }
+        guard !rssFeeds.contains(where: { $0.url == url.absoluteString }) else {
+            throw FeedError.failed("That feed is already in the list.")
+        }
+        let result: RSSFetcher.Result
+        do {
+            result = try await RSSFetcher.fetch(url)
+        } catch {
+            throw FeedError.failed("Couldn't add that feed: \(error.localizedDescription)")
+        }
+        guard !rssFeeds.contains(where: { $0.url == url.absoluteString }) else { return }
+        rssFeeds.append(RSSFeed(url: url.absoluteString, title: result.title))
+        saveRSSFeeds()
+    }
+
+    func removeRSSFeeds(at offsets: IndexSet) {
+        let removed = Set(offsets.map { rssFeeds[$0].url })
+        rssFeeds.remove(atOffsets: offsets)
+        for url in removed { rssFeedErrors[url] = nil }
+        saveRSSFeeds()
+    }
+
+    func moveRSSFeeds(from offsets: IndexSet, to destination: Int) {
+        rssFeeds.move(fromOffsets: offsets, toOffset: destination)
+        RSSFeed.save(rssFeeds)
+    }
+
+    // Adds an OPML file's feeds that aren't in the list yet; returns how many.
+    @discardableResult
+    func importRSSFeeds(_ feeds: [RSSFeed]) -> Int {
+        var known = Set(rssFeeds.map(\.url))
+        let added = feeds.filter { known.insert($0.url).inserted }
+        guard !added.isEmpty else { return 0 }
+        rssFeeds += added
+        saveRSSFeeds()
+        return added.count
+    }
+
+    private func saveRSSFeeds() {
+        RSSFeed.save(rssFeeds)
+        if isEnabled(.rss) { Task { await load([.rss], force: true) } }
+    }
+
+    // Every feed at once, newest items first. A feed that fails leaves the rest showing,
+    // and its error shows in the feed list; it's an error for the tab only when all fail.
+    private func fetchRSS() async throws -> FeedSession.Page {
+        let list = rssFeeds
+        let results = await withTaskGroup(of: (String, Result<RSSFetcher.Result, Error>).self) { group in
+            for feed in list {
+                group.addTask {
+                    guard let url = URL(string: feed.url) else {
+                        return (feed.url, .failure(FeedError.failed("Not a web address")))
+                    }
+                    do { return (feed.url, .success(try await RSSFetcher.fetch(url))) } catch { return (feed.url, .failure(error)) }
+                }
+            }
+            var out: [String: Result<RSSFetcher.Result, Error>] = [:]
+            for await (url, result) in group { out[url] = result }
+            return out
+        }
+        var errors: [String: String] = [:]
+        var posts: [FeedPost] = []
+        var titled = false
+        for (index, feed) in rssFeeds.enumerated() {
+            switch results[feed.url] {
+            case .success(let result)?:
+                posts += result.posts
+                if let title = result.title, !title.isEmpty, title != feed.title {
+                    rssFeeds[index].title = title
+                    titled = true
+                }
+            case .failure(let error)?:
+                errors[feed.url] = error.localizedDescription
+            case nil:
+                break
+            }
+        }
+        if titled { RSSFeed.save(rssFeeds) }
+        rssFeedErrors = errors
+        if !list.isEmpty, errors.count == results.count, let first = errors.values.first {
+            throw FeedError.failed(list.count == 1 ? first : "None of your feeds loaded (\(first)).")
+        }
+        var seenIDs = Set<String>()
+        let newest = posts.filter { seenIDs.insert($0.id).inserted }
+            .sorted { ($0.created ?? 0) > ($1.created ?? 0) }
+        return FeedSession.Page(posts: Array(newest.prefix(100)), next: nil)
     }
 
     // MARK: Accounts
@@ -404,7 +525,7 @@ final class FeedStore: ObservableObject {
         previouslySeen = Set(stored)
         previousRefresh = defaults.object(forKey: Self.refreshedKey) as? Date
         let storedSources = Set(defaults.stringArray(forKey: Self.sourcesKey) ?? [])
-        previousSources = Set(storedSources.compactMap(FeedSource.init(rawValue:)))
+        previousSources = Set(storedSources.compactMap(FeedSource.init(stored:)))
         let currentPosts = posts(combinedKeys)
         defaults.set(Array(storedSources.union(currentPosts.map(\.source.rawValue))), forKey: Self.sourcesKey)
         let current = currentPosts.map(\.id)
@@ -463,7 +584,7 @@ final class FeedStore: ObservableObject {
     }
 
     // Splits the All feed into posts new since the previous refresh and those already seen.
-    // Reddit and HN rank posts, so an older post can be new to the feed. YouTube is
+    // Reddit ranks posts, and RSS items can arrive dated earlier, so an older post can be new to the feed. YouTube is
     // chronological, so its new videos are the ones above the newest video already seen.
     // YouTube can add a video to the feed a while after it went up, so its age alone
     // can't say whether it arrived since the previous refresh; that's the fallback only

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fetchHackerNews, fetchHackerNewsPage, fetchReddit, fetchSubscribedSubreddits, NotLoggedInError } from "./sources.js";
+import { fetchReddit, fetchSubscribedSubreddits, NotLoggedInError } from "./sources.js";
 
 test("Reddit sort uses personalized Best and score-ranked Top with timeframe, and has no New", async () => {
   const originalFetch = globalThis.fetch;
@@ -110,52 +110,6 @@ test("Reddit requires a followed subreddit instead of falling back to all of Red
   }
 });
 
-test("Hacker News list picks top or new stories", async () => {
-  const originalFetch = globalThis.fetch;
-  const requests = [];
-  globalThis.fetch = async (url) => {
-    requests.push(new URL(url).pathname);
-    return {
-      ok: true,
-      json: async () => url.includes("stories.json")
-        ? [1]
-        : { id: 1, title: "Story", url: "https://example.com/", time: 0 },
-    };
-  };
-  try {
-    await fetchHackerNews(1);
-    assert.equal(requests[0], "/v0/topstories.json");
-    requests.length = 0;
-    await fetchHackerNews(1, { list: "new" });
-    assert.equal(requests[0], "/v0/newstories.json");
-    await assert.rejects(fetchHackerNews(1, { list: "best" }), /Invalid Hacker News list/);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("Hacker News pages walk the story list and report the next offset", async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (url) => ({
-    ok: true,
-    json: async () => {
-      if (url.includes("stories.json")) return [1, 2, 3, 4, 5];
-      const id = Number(new URL(url).pathname.match(/(\d+)\.json$/)[1]);
-      return id === 2 ? { id, dead: true } : { id, title: `Story ${id}`, time: 0 };
-    },
-  });
-  try {
-    const first = await fetchHackerNewsPage(3);
-    assert.deepEqual(first.posts.map((p) => p.id), ["hn_1", "hn_3"]);
-    assert.equal(first.next, 3);
-    const last = await fetchHackerNewsPage(3, { offset: first.next });
-    assert.deepEqual(last.posts.map((p) => p.id), ["hn_4", "hn_5"]);
-    assert.equal(last.next, null);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
 test("A single subreddit uses its own listing, only sorts by Top, and isn't capped per subreddit", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];
@@ -239,37 +193,6 @@ test("A Reddit block page isn't reported as being logged out, but other refusals
     await assert.rejects(fetchReddit(3), (error) => !(error instanceof NotLoggedInError) && /Reddit blocked/.test(error.message));
     body = "Forbidden";
     await assert.rejects(fetchReddit(3), NotLoggedInError);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
-test("Hacker News pagination stops at 100 stories for both lists", async () => {
-  const originalFetch = globalThis.fetch;
-  const requested = [];
-  globalThis.fetch = async (url) => ({
-    ok: true,
-    json: async () => {
-      if (url.includes("stories.json")) return Array.from({ length: 500 }, (_, i) => i + 1);
-      const id = Number(new URL(url).pathname.match(/(\d+)\.json$/)[1]);
-      requested.push(id);
-      return { id, title: `Story ${id}`, time: 0 };
-    },
-  });
-  try {
-    for (const list of ["top", "new"]) {
-      const posts = [];
-      let offset = 0;
-      do {
-        const page = await fetchHackerNewsPage(30, { list, offset });
-        posts.push(...page.posts);
-        offset = page.next;
-      } while (offset !== null);
-      assert.equal(posts.length, 100);
-      assert.equal(posts.at(-1).id, "hn_100");
-      assert.deepEqual(await fetchHackerNewsPage(30, { list, offset: 120 }), { posts: [], next: null });
-    }
-    assert.ok(requested.every((id) => id <= 100));
   } finally {
     globalThis.fetch = originalFetch;
   }

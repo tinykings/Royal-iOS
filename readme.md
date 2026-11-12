@@ -2,12 +2,12 @@
 
 Website: <https://royal.tinyk.ing/> · Saved posts on the web: <https://royal.tinyk.ing/saved/> ([`saved/`](saved/README.md))
 
-iOS app combining Reddit, Hacker News, and your YouTube subscriptions in one feed. SwiftUI, no third-party dependencies.
+iOS app combining Reddit, RSS feeds, and your YouTube subscriptions in one feed. SwiftUI, no third-party dependencies.
 
 ## Features
 
-- Tabs for Hacker News, Reddit, a combined **All** feed, YouTube, and settings. Posts can be saved for later.
-- Reddit sort: **Best** or **Top** (today), from the subreddits you follow only, or **Top** (today) from one of them picked from the menu at the top. Hacker News: **Top** or **New**. YouTube: your **Subscriptions** or the **Recommended** videos from your Home page, with any that are new since the last refresh first.
+- Tabs for Reddit, RSS, a combined **All** feed, YouTube, and settings. Posts can be saved for later.
+- Reddit sort: **Best** or **Top** (today), from the subreddits you follow only, or **Top** (today) from one of them picked from the menu at the top. RSS: any RSS or Atom feeds, newest first, starting with Hacker News stories over 150 points ([hnrss](https://hnrss.org/)); add, remove, import or export them (OPML) in Settings or from the tab's list button. Tapping an item shows its description from the feed, or opens its link. YouTube: your **Subscriptions** or the **Recommended** videos from your Home page, with any that are new since the last refresh first.
 - Uses your Reddit and YouTube logins from in-app sign-in pages—no API keys or OAuth setup. Reddit links open with that login, so you can vote and reply.
 - Plays YouTube videos in-app.
 - **iCloud sync**: saved posts, and the posts the All feed has shown, sync through your private iCloud database (CloudKit) between your devices, and saved posts appear on [Royal Saved](saved/README.md) on the web ([format](docs/sync-schema.md)). It uses the Apple Account signed in to iCloud; until one is, saves stay on the device.
@@ -28,7 +28,7 @@ Select your signing team, then build and run on a simulator or device.
 
 ## How it works
 
-Fetching and parsing lives in `sources.js`. A build phase copies it into the app bundle, and `FeedSession` runs it in a hidden `WKWebView`, routing its `fetch()` calls through `URLSession` with the web view's login cookies. Requests go directly to Reddit, Hacker News, and YouTube; there is no backend.
+Fetching and parsing lives in `sources.js`. A build phase copies it into the app bundle, and `FeedSession` runs it in a hidden `WKWebView`, routing its `fetch()` calls through `URLSession` with the web view's login cookies. RSS feeds are fetched natively in `RSSFeeds.swift`, without login cookies. Requests go directly to Reddit, YouTube, and each feed's own site; there is no backend.
 
 YouTube access relies on undocumented page data and may break when YouTube changes its layout.
 
@@ -57,5 +57,6 @@ node --test
 | `Royal/` | SwiftUI app sources |
 | `Royal.xcodeproj` | Xcode project |
 | `Info.plist`, `Royal.entitlements` | App configuration |
-| `sources.js` | Reddit, Hacker News, and YouTube fetching and normalization |
+| `sources.js` | Reddit and YouTube fetching and normalization |
+| `Royal/RSSFeeds.swift` | RSS and Atom fetching and parsing, OPML, and the feed list |
 | `sources.test.mjs`, `youtube.test.mjs` | Tests for `sources.js` |

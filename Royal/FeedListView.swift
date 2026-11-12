@@ -28,7 +28,9 @@ struct FeedListView<Trailing: View>: View {
     @AppStorage(Preference.redditLayout) private var redditLayout = FeedLayout.cards
     @AppStorage(Preference.youtubeLayout) private var youtubeLayout = FeedLayout.cards
     @AppStorage(Preference.redditOpen) private var redditOpen = OpenTarget.link
-    @AppStorage(Preference.hnOpen) private var hnOpen = OpenTarget.link
+    @AppStorage(Preference.rssOpen) private var rssOpen = RSSOpenTarget.description
+    // The RSS description showing.
+    @State private var descriptionPost: FeedPost?
     @AppStorage(Preference.youtubePlayback) private var youtubePlayback = VideoPlayback.inApp
     @AppStorage(Preference.listWhilePlaying) private var listWhilePlaying = true
     @AppStorage(Preference.redditNSFW) private var showsNSFW = false
@@ -43,6 +45,8 @@ struct FeedListView<Trailing: View>: View {
     var subtitle: String? = nil
     // A menu to show in place of the title.
     var titleMenu: AnyView? = nil
+    // What to say when the feed has nothing to show, in place of "No posts to show."
+    var emptyText: String? = nil
     // Called when a pull to refresh of the All feed brings nothing new, after a short countdown.
     var onNothingNew: (() -> Void)? = nil
     // Optional nav bar control; when present the title moves to the leading edge.
@@ -109,10 +113,8 @@ struct FeedListView<Trailing: View>: View {
                                     Text("\(key.source.title): \(error)")
                                         .font(.footnote)
                                         .foregroundStyle(.secondary)
-                                    if key.source != .hn {
-                                        Button("Settings") { store.selectedTab = .settings }
-                                            .font(.footnote)
-                                    }
+                                    Button("Settings") { store.selectedTab = .settings }
+                                        .font(.footnote)
                                 }
                                 .listRowBackground(Color.clear)
                             }
@@ -135,7 +137,7 @@ struct FeedListView<Trailing: View>: View {
                     } else if posts.isEmpty && loggedOut.isEmpty && !noSources
                                 && keys.allSatisfy({ store.state($0).loaded && !store.state($0).loading && store.state($0).error == nil }) {
                         // A quiet subreddit can have nothing in Top today.
-                        Text("No posts to show.")
+                        Text(emptyText ?? "No posts to show.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)
@@ -318,6 +320,9 @@ struct FeedListView<Trailing: View>: View {
                 .onChange(of: savedOnly) { cancelNothingNew() }
                 .onDisappear { cancelNothingNew() }
                 .task(id: keys) { await store.load(keys) }
+                .sheet(item: $descriptionPost) { post in
+                    RSSDescriptionView(post: post)
+                }
                 .fullScreenCover(item: $browserURL) { item in
                     AppBrowser(url: item.url)
                         // Clear so the feed shows behind while swiping the browser away.
@@ -524,7 +529,7 @@ struct FeedListView<Trailing: View>: View {
         switch post.source {
         case .reddit: return redditLayout
         case .youtube: return youtubeLayout
-        case .hn: return .list
+        case .rss: return .list
         }
     }
 
@@ -553,10 +558,23 @@ struct FeedListView<Trailing: View>: View {
     }
 
     // The open options a tap doesn't use: the other of link/comments, or for a video,
-    // its YouTube page in a Safari view without leaving the app.
+    // its YouTube page in a Safari view without leaving the app. RSS offers the other
+    // of description/link, and the item's comments when it links some.
     @ViewBuilder
     private func alternateActions(for post: FeedPost) -> some View {
-        if post.source == .youtube {
+        if post.source == .rss {
+            if rssOpen == .link {
+                Button { descriptionPost = post } label: { Label("Open description", systemImage: "doc.text") }
+                    .tint(.blue)
+            } else {
+                Button { openInBrowser(post.url) } label: { Label("Open link", systemImage: "link") }
+                    .tint(.blue)
+            }
+            if post.commentsUrl != post.url {
+                Button { openInBrowser(post.commentsUrl) } label: { Label("Open comments", systemImage: "bubble.left.and.bubble.right") }
+                    .tint(.indigo)
+            }
+        } else if post.source == .youtube {
             Button {
                 if let url = URL(string: post.url) { SafariView.present(url) }
             } label: {
@@ -573,14 +591,16 @@ struct FeedListView<Trailing: View>: View {
     }
 
     private func openTarget(for post: FeedPost) -> OpenTarget {
-        post.source == .hn ? hnOpen : redditOpen
+        redditOpen
     }
 
-    // Videos play where Settings says; Reddit and Hacker News open their link or
-    // comments, per Settings, in the in-app browser.
+    // Videos play where Settings says; Reddit opens its link or comments, and RSS its
+    // description or link, per Settings.
     private func open(_ post: FeedPost) {
         if post.source == .youtube {
             play(post, with: youtubePlayback)
+        } else if post.source == .rss {
+            if rssOpen == .description { descriptionPost = post } else { openInBrowser(post.url) }
         } else {
             openInBrowser(openTarget(for: post) == .comments ? post.commentsUrl : post.url)
         }
@@ -1542,7 +1562,7 @@ struct PostRow: View {
     private var icon: String {
         switch post.source {
         case .reddit: "r.circle.fill"
-        case .hn: "y.square.fill"
+        case .rss: "dot.radiowaves.up.forward"
         case .youtube: "play.rectangle.fill"
         }
     }
@@ -1550,7 +1570,7 @@ struct PostRow: View {
     private var color: Color {
         switch post.source {
         case .reddit: .orange
-        case .hn: .brown
+        case .rss: .teal
         case .youtube: .red
         }
     }
@@ -1664,7 +1684,7 @@ struct NoSourcesCard: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("No sources turned on")
                 .font(.title3.bold())
-            Text("Turn on Reddit, Hacker News or YouTube in Settings to fill your feed.")
+            Text("Turn on Reddit, RSS or YouTube in Settings to fill your feed.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Button {

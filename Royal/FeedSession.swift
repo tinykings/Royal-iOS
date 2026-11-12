@@ -3,25 +3,40 @@ import UIKit
 import WebKit
 
 enum FeedSource: String, Codable, CaseIterable, Identifiable {
-    case reddit, hn, youtube
+    case reddit, rss, youtube
 
     var id: String { rawValue }
+
+    // Also takes "hn": Hacker News, which RSS replaced, as saved posts, settings and
+    // synced records name it.
+    init?(stored: String) {
+        self.init(rawValue: stored == "hn" ? FeedSource.rss.rawValue : stored)
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        guard let source = FeedSource(stored: raw) else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown source \(raw)")
+        }
+        self = source
+    }
 
     var title: String {
         switch self {
         case .reddit: "Reddit"
-        case .hn: "Hacker News"
+        case .rss: "RSS"
         case .youtube: "YouTube"
         }
     }
 
-    // Where to log in; Hacker News needs no account.
+    // Where to log in; RSS needs no account.
     var loginURL: URL? {
         switch self {
         case .reddit: URL(string: "https://www.reddit.com/login/")!
         case .youtube: URL(string: "https://accounts.google.com/ServiceLogin?service=youtube"
             + "&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26next%3D%252Ffeed%252Fsubscriptions")!
-        case .hn: nil
+        case .rss: nil
         }
     }
 }
@@ -48,6 +63,8 @@ struct FeedPost: Codable, Identifiable {
     let nsfw: Bool?
     // YouTube only: the channel the video is from, when the page links it.
     var channelId: String? = nil
+    // RSS only: the item's description (or full content), as the feed's HTML.
+    var summary: String? = nil
 }
 
 enum FeedError: LocalizedError {
@@ -99,7 +116,7 @@ enum WebProfile {
 @MainActor
 final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerWithReply {
     // Hosts sources.js may reach.
-    private static let allowedHosts: Set<String> = ["www.reddit.com", "hacker-news.firebaseio.com", "www.youtube.com"]
+    private static let allowedHosts: Set<String> = ["www.reddit.com", "www.youtube.com"]
     // YouTube serves its mobile site, with different page data, to phone user agents.
     private static let desktopUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
         + "(KHTML, like Gecko) Version/\(WebProfile.safariVersion).0 Safari/605.1.15"
@@ -133,7 +150,7 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
               return res;
             };
             \(body)
-            return { fetchReddit, fetchSubscribedSubreddits, fetchHackerNewsPage, fetchYouTube, NotLoggedInError };
+            return { fetchReddit, fetchSubscribedSubreddits, fetchYouTube, NotLoggedInError };
             })();
 
             """
@@ -259,7 +276,7 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         switch source {
         case .reddit: return cookies.contains { $0.name == "reddit_session" && $0.domain.hasSuffix("reddit.com") }
         case .youtube: return cookies.contains { $0.name == "LOGIN_INFO" && $0.domain.hasSuffix("youtube.com") }
-        case .hn: return true
+        case .rss: return true
         }
     }
 
@@ -269,7 +286,7 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         let (domain, names): (String, [String]) = switch source {
         case .reddit: ("reddit.com", ["reddit_session"])
         case .youtube: ("youtube.com", ["LOGIN_INFO", "__Secure-1PSIDTS"])
-        case .hn: ("", [])
+        case .rss: ("", [])
         }
         let cookies = await cookieStore.allCookies()
         return names.compactMap { name in
@@ -284,7 +301,7 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         let domains: Set<String> = switch source {
         case .reddit: ["reddit.com"]
         case .youtube: ["youtube.com", "google.com"]
-        case .hn: []
+        case .rss: []
         }
         let store = webView.configuration.websiteDataStore
         let types = WKWebsiteDataStore.allWebsiteDataTypes()
@@ -393,10 +410,6 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         }
     }
 
-    // Hacker News loads a page at a time; each story is its own request, so a full
-    // 100 up front is slow. Reddit and YouTube return everything in one request.
-    static let hackerNewsPageSize = 30
-
     struct Page {
         let posts: [FeedPost]
         // Where the next page starts, when the source has more.
@@ -416,7 +429,7 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
 
     func posts(_ key: FeedKey, offset: Int = 0, limit: Int = 100) async throws -> Page {
         var arguments: [String: Any] = ["source": key.source.rawValue, "limit": limit,
-                                        "offset": offset, "pageSize": Self.hackerNewsPageSize, "subreddit": "",
+                                        "offset": offset, "subreddit": "",
                                         "nsfw": Self.showsNSFW]
         switch key {
         case .reddit(let sort, let timeframe):
@@ -426,8 +439,9 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
             arguments["sort"] = "top"
             arguments["timeframe"] = "day"
             arguments["subreddit"] = name
-        case .hn(let list):
-            arguments["list"] = list
+        case .rss:
+            // Fetched natively; see FeedStore.fetchRSS.
+            throw FeedError.failed("RSS feeds aren't fetched by sources.js")
         case .youtube:
             arguments["feed"] = "subscriptions"
         case .youtubeHome:
@@ -437,7 +451,6 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         let result = try await run(sourcesScript + """
             const fetchers = {
               reddit: async () => ({ posts: await Royal.fetchReddit(limit, { sort, timeframe, subreddit, nsfw }), next: null }),
-              hn: () => Royal.fetchHackerNewsPage(pageSize, { list, offset }),
               youtube: async () => ({ posts: await Royal.fetchYouTube(limit, { feed }), next: null }),
             };
             try {

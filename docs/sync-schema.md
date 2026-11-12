@@ -38,7 +38,7 @@ with a higher version rather than misreading or overwriting them.
 |---|---|
 | recordName | `saved.<postID>`, e.g. `saved.t3_abc123`, `saved.hn_42`, `saved.yt_dQw4w9WgXcQ` |
 | `postID` | STRING, the `FeedPost.id` |
-| `post` | STRING, JSON of the normalized post (`sources.js` / `FeedPost` keys) |
+| `post` | STRING, JSON of the normalized post (`sources.js` / `FeedPost` keys). `source` is `reddit`, `rss` or `youtube`; `hn` (Hacker News, which RSS replaced) still appears in older saves and means `rss`. RSS posts may carry `summary`, the item's HTML description (at most 20,000 characters), which iOS shows with scripts off |
 | `savedAt` | STRING, ISO 8601 UTC, time of the last save **or** unsave |
 | `isSaved` | INT64, `1` saved, `0` unsaved (tombstone) |
 | `schemaVersion` | INT64 |
@@ -51,7 +51,7 @@ resurrect them. Saved lists show `isSaved = 1` newest `savedAt` first.
 | | |
 |---|---|
 | `ids` | STRING, JSON array of post ids All has shown, oldest first, at most 3000 |
-| `sources` | STRING, JSON array of sources that have had posts in All (`reddit`, `hn`, `youtube`) |
+| `sources` | STRING, JSON array of sources that have had posts in All (`reddit`, `rss`, `youtube`; older clients send `hn` for `rss`) |
 | `schemaVersion` | INT64 |
 
 A grow-only set. Merge = union: remote order first, then local ids it lacks, then

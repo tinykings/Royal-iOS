@@ -165,7 +165,7 @@ export function applyRemoteChanges(state, records) {
       if (!pending || pending.mode === "import") next.saved[decoded.postID] = decoded.entry;
     } else if (decoded.kind === "seen") {
       next.seen = mergeSeen(decoded.ids, next.seen);
-      next.sources = [...new Set([...decoded.sources, ...next.sources])].filter(source => ["reddit", "hn", "youtube"].includes(source));
+      next.sources = [...new Set([...decoded.sources, ...next.sources])].filter(source => ["reddit", "hn", "rss", "youtube"].includes(source));
       // Local ids the remote lacks still need pushing.
       const remoteIDs = new Set(decoded.ids);
       if (!sync.dirty.seen && next.seen.some(id => !remoteIDs.has(id))) sync.dirty.seen = { rev: sync.rev };

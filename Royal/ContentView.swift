@@ -6,7 +6,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     // The tabs in the order TabView lays them out, for mapping tab bar indexes back.
-    private static let tabOrder: [AppTab] = [.reddit, .hn, .all, .youtube, .settings]
+    private static let tabOrder: [AppTab] = [.reddit, .rss, .all, .youtube, .settings]
 
     var body: some View {
         // Landscape has no room for feeds under the video, so it plays full screen.
@@ -22,8 +22,8 @@ struct ContentView: View {
             TabView(selection: $store.selectedTab) {
                 sourceTab(.reddit, icon: Image(uiImage: TabIcons.reddit)) { RedditFeedView() }
                     .tag(AppTab.reddit)
-                sourceTab(.hn, icon: Image(systemName: "y.square")) { HackerNewsFeedView() }
-                    .tag(AppTab.hn)
+                sourceTab(.rss, icon: Image(uiImage: TabIcons.rss)) { RSSFeedView() }
+                    .tag(AppTab.rss)
                 CombinedFeedView()
                     .tabItem {
                         Image(uiImage: TabIcons.crown)
@@ -77,7 +77,7 @@ extension AppTab {
     var source: FeedSource? {
         switch self {
         case .reddit: .reddit
-        case .hn: .hn
+        case .rss: .rss
         case .youtube: .youtube
         case .all, .settings: nil
         }
@@ -162,15 +162,23 @@ struct RedditFeedView: View {
     }
 }
 
-struct HackerNewsFeedView: View {
-    @State private var list = "top"
+struct RSSFeedView: View {
+    @EnvironmentObject private var store: FeedStore
 
     var body: some View {
-        FeedListView(title: "Hacker News", tab: .hn, keys: [.hn(list: list)], subtitle: list.capitalized) {
-            HeaderPicker(title: "List", selection: $list, options: [
-                HeaderOption(value: "top", icon: "trophy", title: "Top"),
-                HeaderOption(value: "new", icon: "clock", title: "New"),
-            ])
+        let count = store.rssFeeds.count
+        FeedListView(title: "RSS", tab: .rss, keys: [.rss], subtitle: count == 1 ? "1 Feed" : "\(count) Feeds",
+                     emptyText: store.rssFeeds.isEmpty ? "No feeds yet. Tap the list button to add one." : nil) {
+            // The feed list from Settings, opened over the feed.
+            NavigationLink {
+                RSSFeedsView()
+            } label: {
+                Image(systemName: "list.bullet")
+                    .font(.body.weight(.medium))
+                    .frame(width: 44, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Manage Feeds")
         }
     }
 }

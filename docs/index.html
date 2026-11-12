@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Royal — Reddit, Hacker News &amp; YouTube in one feed</title>
-<meta name="description" content="Royal is a free, open-source iOS app that combines Reddit, Hacker News, and your YouTube subscriptions in one feed. No server, no tracking.">
+<title>Royal — Reddit, RSS &amp; YouTube in one feed</title>
+<meta name="description" content="Royal is a free, open-source iOS app that combines Reddit, RSS feeds, and your YouTube subscriptions in one feed. No server, no tracking.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1024 1024'%3E%3Crect width='1024' height='1024' rx='230' fill='%2316181d'/%3E%3Cpath fill='%23fed655' stroke='%23fed655' stroke-width='28' stroke-linejoin='round' d='M310 640 196 330 395 467Q440 505 480 460 500 435 485 410L445 355 512 262 579 355 539 410Q524 435 544 460 584 505 629 467L828 330 714 640Z'/%3E%3Crect x='310' y='668' width='404' height='92' rx='30' fill='%23fed655'/%3E%3C/svg%3E">
 <style>
   :root {
@@ -135,7 +135,7 @@
       </svg>
     </div>
     <h1>Royal</h1>
-    <p class="tagline">Reddit, Hacker News, and your YouTube subscriptions in one feed. Free, open source, and no tracking.</p>
+    <p class="tagline">Reddit, RSS feeds, and your YouTube subscriptions in one feed. Free, open source, and no tracking.</p>
     <div class="buttons">
       <a class="btn secondary" href="https://github.com/tinykings/Royal-iOS">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.6 22.4c.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0c2.2-1.5 3.2-1.2 3.2-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.9 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A11.5 11.5 0 0 0 12 .5z"/></svg>
@@ -161,8 +161,8 @@
         <p>Best or Top (today) from the subreddits you follow, or just one of them picked from the menu. Capped at five posts per subreddit, with pinned posts left out and NSFW posts hidden unless you turn them on.</p>
       </div>
       <div class="feature">
-        <h3><span class="dot" style="background:#ff6600"></span>Hacker News</h3>
-        <p>Top or New stories. Tap to open the link, swipe or long-press for the comments, or switch them around in Settings.</p>
+        <h3><span class="dot" style="background:#0d9488"></span>RSS</h3>
+        <p>Any RSS or Atom feeds, newest first, starting with the best of Hacker News. Paste a feed's address to add it, or bring your list over from another app with OPML. Tap for the description, swipe or long-press for the link or comments.</p>
       </div>
       <div class="feature">
         <h3><span class="dot" style="background:#ff0000"></span>YouTube</h3>
@@ -217,11 +217,11 @@
     <p>To show your feeds, Royal connects directly from your device to:</p>
     <ul>
       <li><strong>Reddit</strong> (reddit.com) for your subscribed subreddits and their posts</li>
-      <li><strong>Hacker News</strong> (hacker-news.firebaseio.com) for top and new stories</li>
+      <li><strong>The RSS feeds you add</strong>, on their own sites (by default hnrss.org, for Hacker News stories), with no cookies or logins</li>
       <li><strong>YouTube / Google</strong> (youtube.com, ytimg.com) for your subscriptions, recommendations, thumbnails, and video playback</li>
       <li>The websites that host post images and the links you choose to open</li>
     </ul>
-    <p>Like any app or browser, these requests reveal your IP address and device information to those services, and they handle it under their own privacy policies: <a href="https://www.reddit.com/policies/privacy-policy">Reddit</a>, <a href="https://www.ycombinator.com/legal/">Y Combinator (Hacker News)</a>, and <a href="https://policies.google.com/privacy">Google (YouTube)</a>. Royal does not send these services anything beyond what is needed to load your feeds and videos.</p>
+    <p>Like any app or browser, these requests reveal your IP address and device information to those services, and they handle it under their own privacy policies: <a href="https://www.reddit.com/policies/privacy-policy">Reddit</a>, <a href="https://policies.google.com/privacy">Google (YouTube)</a>, and the sites of the feeds you add. Royal does not send these services anything beyond what is needed to load your feeds and videos.</p>
 
     <h3>Data stored on your device</h3>
     <ul>

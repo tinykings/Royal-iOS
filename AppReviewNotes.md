@@ -11,10 +11,10 @@ SCREEN RECORDING
 Recorded on [iPhone model], iOS [version], starting from launch.
 
 1. PURPOSE AND AUDIENCE
-Royal is a reader for people who follow Reddit, Hacker News, and YouTube and want one place to catch up. It shows posts from the subreddits a user already follows, Hacker News top/new stories, and new uploads from the user's YouTube subscriptions, in separate tabs and in a combined "All" feed that marks what is new since the last visit. Users can save posts for later (synced through the user's private iCloud database) and play YouTube videos in the app. It is for adults who already use these services; it has no algorithmic recommendations, ads, or tracking.
+Royal is a reader for people who follow Reddit, RSS feeds, and YouTube and want one place to catch up. It shows posts from the subreddits a user already follows, items from RSS feeds the user adds (Hacker News stories by default), and new uploads from the user's YouTube subscriptions, in separate tabs and in a combined "All" feed that marks what is new since the last visit. Users can save posts for later (synced through the user's private iCloud database) and play YouTube videos in the app. It is for adults who already use these services; it has no algorithmic recommendations, ads, or tracking.
 
 2. HOW TO USE / DEMO ACCOUNTS
-- Hacker News works with no login: open the Hacker News tab.
+- RSS works with no login: turn on RSS in Settings > Sources, then open the RSS tab. Its list button, or Settings > RSS > Feeds, adds feeds by address, removes them, and imports or exports OPML files.
 - Reddit: Settings tab > Reddit > Account. Log in on Reddit's own login page with:
   Username: [demo username]
   Password: [demo password]
@@ -28,17 +28,17 @@ Royal is a reader for people who follow Reddit, Hacker News, and YouTube and wan
 
 ACCOUNTS: Royal has no accounts of its own and no server. Logging in happens on Reddit's and Google's own web pages inside the app; Royal never sees or stores passwords. Settings has a Log Out button for each service, which clears that service's session from the app. Account creation and deletion for Reddit and Google are handled by those services, not by Royal.
 
-USER-GENERATED CONTENT: Royal does not host or let users post content of its own. It shows content from Reddit, Hacker News, and YouTube. NSFW and pinned Reddit posts are excluded. Reporting and blocking use each service's own tools: Reddit and Hacker News posts open on their own sites (Reddit opens logged in), where users can report posts and block users; [describe any in-app hide/report/block added for this build].
+USER-GENERATED CONTENT: Royal does not host or let users post content of its own. It shows content from Reddit, the RSS feeds the user chooses, and YouTube. NSFW and pinned Reddit posts are excluded. Reporting and blocking use each service's own tools: Reddit posts and RSS items open on their own sites (Reddit opens logged in), where users can report posts and block users; [describe any in-app hide/report/block added for this build].
 
 3. EXTERNAL SERVICES
 - Reddit (reddit.com): post listings for the user's followed subreddits, with the user's own login.
-- Hacker News (Firebase API, hacker-news.firebaseio.com): public stories.
+- RSS feeds the user adds, fetched from each feed's own site with no cookies (by default hnrss.org, for Hacker News stories).
 - YouTube / Google (youtube.com, accounts.google.com): the user's subscription feed and sign-in; videos play through YouTube's embedded player.
 - Apple CloudKit (the user's private iCloud database): syncs saved posts, and which posts the All feed has shown, between the user's devices, and shows saved posts on the Royal Saved website (royal.tinyk.ing/saved) when the user signs in there with Apple. It uses the Apple Account signed in to iCloud; Settings > Sync shows its state. Data stays in the user's own iCloud account; there is no Royal server.
 No analytics, ads, AI services, payment processors, or backend of our own. There are no in-app purchases.
 
 4. REGIONAL DIFFERENCES
-The app works the same in all regions. Content comes from Reddit, Hacker News, and YouTube, so it is unavailable where those services are blocked, and in some regions (e.g. the EU) Google may show a consent prompt during YouTube sign-in. The interface is English only.
+The app works the same in all regions. Content comes from Reddit, RSS feeds, and YouTube, so it is unavailable where those services are blocked, and in some regions (e.g. the EU) Google may show a consent prompt during YouTube sign-in. The interface is English only.
 
 5. REGULATED INDUSTRY / THIRD-PARTY MATERIAL
 Royal is not in a regulated industry. It shows third-party content the way a browser does: each user sees content from their own accounts, signed in with their own credentials, with links back to the original posts. It does not download, re-host, or redistribute that content. YouTube videos play only through YouTube's official embedded player.

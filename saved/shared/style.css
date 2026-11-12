@@ -4,7 +4,7 @@
   --bg: #f2f1ec; --surface: #ffffff; --text: #1b1c20; --muted: #5d606a; --line: #e2dfd4;
   --edge: rgb(0 0 0 / .12); --placeholder: rgb(0 0 0 / .06);
   --gold: #f5c432; --gold-ink: #8a6500; --icon-bg: #16181d;
-  --reddit: #f97316; --hn: #a2754c; --youtube: #e5322d; --heart: #e0457b;
+  --reddit: #f97316; --hn: #a2754c; --rss: #0d9488; --youtube: #e5322d; --heart: #e0457b;
   --radius: 14px; --inset: 12px;
 }
 @media (prefers-color-scheme: dark) {
@@ -148,6 +148,8 @@ ol.posts:empty { display: none; }
 .source-icon { flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; translate: 0 2px; color: white; font: 700 9px/1 system-ui, sans-serif; }
 .source-icon.reddit { background: var(--reddit); border-radius: 50%; }
 .source-icon.hn { background: var(--hn); border-radius: 3px; }
+.source-icon.rss { background: var(--rss); border-radius: 3px; }
+.source-icon.rss::after { content: ""; width: 4px; height: 4px; border-radius: 50%; background: white; translate: -2px 2px; }
 .source-icon.youtube { background: var(--youtube); border-radius: 4px; width: 16px; height: 12px; translate: 0 1px; }
 .source-icon.youtube::after { content: ""; border-style: solid; border-width: 3.5px 0 3.5px 6px; border-color: transparent transparent transparent white; margin-left: 1px; }
 .post.playing .source-icon { background: var(--gold); }

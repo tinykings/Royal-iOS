@@ -1,4 +1,5 @@
-// Fetching and normalizing posts from Reddit, Hacker News, and YouTube.
+// Fetching and normalizing posts from Reddit and YouTube. RSS feeds are fetched
+// natively (Royal/RSSFeeds.swift), without the login cookies these requests use.
 // Every post is normalized to:
 //   { source, id, title, url, commentsUrl, score, comments, created, label, image?, imageAspect?, nsfw? }
 
@@ -9,7 +10,6 @@ export const CONFIG = {
 };
 
 const REDDIT = "https://www.reddit.com";
-const HN = "https://hacker-news.firebaseio.com/v0";
 const YOUTUBE = "https://www.youtube.com";
 
 export class NotLoggedInError extends Error {}
@@ -136,47 +136,6 @@ export async function fetchReddit(limit, { sort = "best", timeframe = CONFIG.red
     if (picked.length >= limit) break;
   }
   return picked;
-}
-
-async function hackerNewsIds(list) {
-  if (!["top", "new"].includes(list)) throw new Error("Invalid Hacker News list");
-  return getJson(`${HN}/${list}stories.json`);
-}
-
-// Fetches stories by id, dropping dead, deleted, and untitled ones.
-async function hackerNewsItems(ids) {
-  const items = await Promise.all(ids.map((id) => getJson(`${HN}/item/${id}.json`).catch(() => null)));
-  return items
-    .filter((it) => it && !it.dead && !it.deleted && it.title)
-    .map((it) => {
-      const commentsUrl = `https://news.ycombinator.com/item?id=${it.id}`;
-      return {
-        source: "hn",
-        id: `hn_${it.id}`,
-        title: it.title,
-        url: it.url || commentsUrl,
-        commentsUrl,
-        score: it.score ?? 0,
-        comments: it.descendants ?? 0,
-        created: it.time,
-        label: "Hacker News",
-      };
-    });
-}
-
-export async function fetchHackerNews(limit, { list = "top" } = {}) {
-  const ids = await hackerNewsIds(list);
-  // A few extra ids make up for stories that turn out dead or deleted.
-  return (await hackerNewsItems(ids.slice(0, limit + 10))).slice(0, limit);
-}
-
-// One page of stories, so callers can show the first page fast and fetch more on
-// demand, stopping after the first 100 stories. `next` is the offset of the
-// following page, or null after the last one.
-export async function fetchHackerNewsPage(count, { list = "top", offset = 0 } = {}) {
-  const ids = (await hackerNewsIds(list)).slice(0, 100);
-  const end = offset + count;
-  return { posts: await hackerNewsItems(ids.slice(offset, end)), next: end < ids.length ? end : null };
 }
 
 // YouTube only shows ages like "3 hours ago" or "3h ago", rounded down. Returns the latest

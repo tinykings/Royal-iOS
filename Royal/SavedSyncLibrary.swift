@@ -194,7 +194,8 @@ enum SeenSyncCodec {
     static let recordName = "seen"
     // As FeedStore's seenLimit and the web's SEEN_LIMIT.
     static let limit = 3000
-    static let knownSources = ["reddit", "hn", "youtube"]
+    // "hn" is Hacker News, which RSS replaced; older clients still send it.
+    static let knownSources = ["reddit", "rss", "hn", "youtube"]
 
     // Union: remote order first, then local ids it lacks, keeping the newest `limit`.
     static func merge(remote: [String], local: [String]) -> [String] {
@@ -272,7 +273,8 @@ enum SavedSyncCodec {
                         commentsUrl: httpURL(post.commentsUrl) ?? url, label: post.label,
                         score: post.score, comments: post.comments, created: post.created,
                         image: httpURL(post.image), imageAspect: post.imageAspect, videoId: post.videoId,
-                        published: post.published, publishedAt: post.publishedAt, nsfw: post.nsfw)
+                        published: post.published, publishedAt: post.publishedAt, nsfw: post.nsfw,
+                        summary: post.summary)
     }
 
     static func encodePost(_ post: FeedPost) -> String {
