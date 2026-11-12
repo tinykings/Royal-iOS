@@ -519,19 +519,17 @@ struct FeedListView<Trailing: View>: View {
         }
     }
 
-    // The open options a tap doesn't use: the other of link/comments, or the other
-    // two places to play a video.
+    // The open options a tap doesn't use: the other of link/comments, or for a video,
+    // its YouTube page in a Safari view without leaving the app.
     @ViewBuilder
     private func alternateActions(for post: FeedPost) -> some View {
         if post.source == .youtube {
-            ForEach(VideoPlayback.allCases.filter { $0 != youtubePlayback }) { playback in
-                Button {
-                    play(post, with: playback)
-                } label: {
-                    Label(playback == .inApp ? "Play in app" : "Open in \(playback.title)", systemImage: playback.icon)
-                }
-                .tint(playback == .youtubeApp ? .red : .blue)
+            Button {
+                if let url = URL(string: post.url) { SafariView.present(url) }
+            } label: {
+                Label("Open in Safari", systemImage: "safari")
             }
+            .tint(.blue)
         } else if openTarget(for: post) == .comments {
             Button { openInBrowser(post.url) } label: { Label("Open link", systemImage: "link") }
                 .tint(.blue)
