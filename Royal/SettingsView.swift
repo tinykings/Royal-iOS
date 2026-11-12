@@ -63,6 +63,21 @@ struct SettingsView: View {
                     Text("Sets the size of post text in every feed. Default follows the text size in the Settings app.")
                 }
                 Section {
+                    ForEach(FeedSource.allCases) { source in
+                        Toggle(source.title, isOn: Binding {
+                            store.isEnabled(source)
+                        } set: {
+                            store.setEnabled(source, $0)
+                        })
+                        // The last source on stays on.
+                        .disabled(store.isEnabled(source) && store.disabledSources.count == FeedSource.allCases.count - 1)
+                    }
+                } header: {
+                    Text("Sources")
+                } footer: {
+                    Text("A source turned off leaves the All feed, and its tab becomes a dot.")
+                }
+                Section {
                     NavigationLink {
                         LoginPage(title: "YouTube", url: FeedSource.youtube.loginURL!)
                     } label: {

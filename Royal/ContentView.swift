@@ -20,11 +20,9 @@ struct ContentView: View {
             // Hidden rather than removed so each tab keeps its scroll position.
             // All opens first. Tabs are icons only; labels are for VoiceOver.
             TabView(selection: $store.selectedTab) {
-                RedditFeedView()
-                    .tabItem { Image(uiImage: TabIcons.reddit).accessibilityLabel("Reddit") }
+                sourceTab(.reddit, icon: Image(uiImage: TabIcons.reddit)) { RedditFeedView() }
                     .tag(AppTab.reddit)
-                HackerNewsFeedView()
-                    .tabItem { Image(systemName: "y.square").accessibilityLabel("Hacker News") }
+                sourceTab(.hn, icon: Image(systemName: "y.square")) { HackerNewsFeedView() }
                     .tag(AppTab.hn)
                 CombinedFeedView()
                     .tabItem {
@@ -32,8 +30,7 @@ struct ContentView: View {
                             .accessibilityLabel("All")
                     }
                     .tag(AppTab.all)
-                YouTubeFeedView()
-                    .tabItem { Image(systemName: "play.rectangle").accessibilityLabel("YouTube") }
+                sourceTab(.youtube, icon: Image(systemName: "play.rectangle")) { YouTubeFeedView() }
                     .tag(AppTab.youtube)
                 SettingsView()
                     .tabItem { Image(systemName: "gearshape").accessibilityLabel("Settings") }
@@ -43,9 +40,12 @@ struct ContentView: View {
             .onChange(of: store.selectedTab) { oldTab, _ in
                 if oldTab == .settings { Task { await store.reloadFailed() } }
             }
-            .background(TabReselect { index in
+            .background(TabReselect(onReselect: { index in
                 if Self.tabOrder.indices.contains(index) { store.reselect(Self.tabOrder[index]) }
-            })
+            }, isBlocked: { index in
+                // A turned-off source's dot can't be picked.
+                Self.tabOrder.indices.contains(index) && Self.tabOrder[index].source.map { !store.isEnabled($0) } == true
+            }))
             .frame(maxHeight: tabsHidden ? 0 : .infinity)
             .opacity(tabsHidden ? 0 : 1)
             .allowsHitTesting(!tabsHidden)
@@ -59,14 +59,38 @@ struct ContentView: View {
         .tint(.royalAccent)
         .environmentObject(store)
     }
+
+    // A source's tab. Turned off in Settings, it keeps its place in the tab bar as a dot
+    // that can't be picked, and its feed isn't loaded.
+    @ViewBuilder
+    private func sourceTab<Feed: View>(_ source: FeedSource, icon: Image, @ViewBuilder feed: () -> Feed) -> some View {
+        if store.isEnabled(source) {
+            feed().tabItem { icon.accessibilityLabel(source.title) }
+        } else {
+            Color.clear.tabItem { Image(uiImage: TabIcons.dot).accessibilityLabel("\(source.title), turned off") }
+        }
+    }
+}
+
+extension AppTab {
+    // The source a tab shows on its own, if any.
+    var source: FeedSource? {
+        switch self {
+        case .reddit: .reddit
+        case .hn: .hn
+        case .youtube: .youtube
+        case .all, .settings: nil
+        }
+    }
 }
 
 // The All page: every feed mixed together, or just the saved posts.
 struct CombinedFeedView: View {
+    @EnvironmentObject private var store: FeedStore
     @State private var showSaved = false
 
     var body: some View {
-        FeedListView(title: "Royal", tab: .all, keys: FeedKey.combined, showsSource: true, savedOnly: showSaved,
+        FeedListView(title: "Royal", tab: .all, keys: store.combinedKeys, showsSource: true, savedOnly: showSaved,
                      subtitle: showSaved ? "Saved" : "All",
                      onNothingNew: { withAnimation { showSaved = true } }) {
             HeaderPicker(title: "Show", selection: $showSaved, options: [
@@ -172,10 +196,13 @@ struct YouTubeFeedView: View {
 private struct TabReselect: UIViewControllerRepresentable {
     // Called with the index of the tab tapped again.
     let onReselect: (Int) -> Void
+    // Whether the tab at an index is turned off and can't be selected.
+    let isBlocked: (Int) -> Bool
 
     func makeUIViewController(context: Context) -> Controller { Controller() }
     func updateUIViewController(_ controller: Controller, context: Context) {
         controller.filter.onReselect = onReselect
+        controller.filter.isBlocked = isBlocked
     }
 
     final class Controller: UIViewController {
@@ -211,6 +238,7 @@ private struct TabReselect: UIViewControllerRepresentable {
     final class ReselectFilter: NSObject, UITabBarControllerDelegate {
         weak var original: UITabBarControllerDelegate?
         var onReselect: ((Int) -> Void)?
+        var isBlocked: ((Int) -> Bool)?
         // Both delegate methods can be asked about one tap; report it once.
         private var lastReport = Date.distantPast
 
@@ -225,6 +253,8 @@ private struct TabReselect: UIViewControllerRepresentable {
                 reselected(tabBarController)
                 return false
             }
+            if let index = tabBarController.viewControllers?.firstIndex(of: viewController),
+               isBlocked?(index) == true { return false }
             return original?.tabBarController?(tabBarController, shouldSelect: viewController) ?? true
         }
 
@@ -234,6 +264,7 @@ private struct TabReselect: UIViewControllerRepresentable {
                 reselected(tabBarController)
                 return false
             }
+            if let index = tabBarController.tabs.firstIndex(of: tab), isBlocked?(index) == true { return false }
             return original?.tabBarController?(tabBarController, shouldSelectTab: tab) ?? true
         }
 

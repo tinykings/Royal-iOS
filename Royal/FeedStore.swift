@@ -18,6 +18,7 @@ enum FeedKey: Hashable, Codable {
     }
 
     // The combined page: Reddit's top posts today, Hacker News top stories, YouTube subscriptions.
+    // FeedStore.combinedKeys leaves out the sources turned off in Settings.
     static let combined: [FeedKey] = [.reddit(sort: "top", timeframe: "day"), .hn(list: "top"), .youtube]
 }
 
@@ -57,6 +58,29 @@ final class FeedStore: ObservableObject {
     // (SavedPostsStorage) until sync has turned on for an Apple Account.
     @Published private(set) var saved = SavedPostsStorage.load()
     let savedSync: SavedSync
+    // Sources turned off in Settings: their tabs show a dot and the All feed leaves them out.
+    @Published private(set) var disabledSources: Set<FeedSource> = Set(
+        (UserDefaults.standard.string(forKey: Preference.disabledSources) ?? "")
+            .split(separator: ",").compactMap { FeedSource(rawValue: String($0)) })
+
+    // The All feed's feeds, without the sources turned off.
+    var combinedKeys: [FeedKey] {
+        FeedKey.combined.filter { !disabledSources.contains($0.source) }
+    }
+
+    func isEnabled(_ source: FeedSource) -> Bool {
+        !disabledSources.contains(source)
+    }
+
+    // Turns a source on or off. The last one on stays on, so the All feed always has a feed.
+    func setEnabled(_ source: FeedSource, _ enabled: Bool) {
+        var disabled = disabledSources
+        if enabled { disabled.remove(source) } else { disabled.insert(source) }
+        guard disabled.count < FeedSource.allCases.count else { return }
+        disabledSources = disabled
+        UserDefaults.standard.set(FeedSource.allCases.filter(disabled.contains).map(\.rawValue).joined(separator: ","),
+                                  forKey: Preference.disabledSources)
+    }
 
     init() {
         savedSync = SavedSync()
@@ -190,7 +214,7 @@ final class FeedStore: ObservableObject {
             started.append(key)
             waiting.append(task)
         }
-        let refreshingAll = !started.isEmpty && keys == FeedKey.combined
+        let refreshingAll = !started.isEmpty && keys == combinedKeys
         // Catch up on what other devices have shown while the feeds load, so it isn't new here.
         if refreshingAll { savedSync.scheduleSync(after: 0) }
         for task in waiting { await task.value }
@@ -255,7 +279,7 @@ final class FeedStore: ObservableObject {
                 let known = Set(state.posts.map(\.id))
                 state.posts += page.posts.filter { !known.contains($0.id) }
                 state.next = page.next
-                if FeedKey.combined.contains(key) {
+                if combinedKeys.contains(key) {
                     pagedSinceRefresh.formUnion(page.posts.map(\.id))
                     rememberSeen(page.posts)
                 }
@@ -373,7 +397,7 @@ final class FeedStore: ObservableObject {
         previousRefresh = defaults.object(forKey: Self.refreshedKey) as? Date
         let storedSources = Set(defaults.stringArray(forKey: Self.sourcesKey) ?? [])
         previousSources = Set(storedSources.compactMap(FeedSource.init(rawValue:)))
-        let currentPosts = posts(FeedKey.combined)
+        let currentPosts = posts(combinedKeys)
         defaults.set(Array(storedSources.union(currentPosts.map(\.source.rawValue))), forKey: Self.sourcesKey)
         let current = currentPosts.map(\.id)
         let currentSet = Set(current)
@@ -420,7 +444,7 @@ final class FeedStore: ObservableObject {
     // Marks everything the All feed shows as read, so it moves in with the earlier posts.
     // The next refresh brings only what's arrived since.
     func markAllRead() {
-        let current = posts(FeedKey.combined)
+        let current = posts(combinedKeys)
         previouslySeen.formUnion(current.map(\.id))
         rememberSeen(current)
         // Published, so the feed redraws; the earlier posts now run up to the latest refresh.

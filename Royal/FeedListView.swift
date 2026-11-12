@@ -61,7 +61,7 @@ struct FeedListView<Trailing: View>: View {
         }
         // The All feed opens with the time of its latest refresh, and puts posts
         // new since the previous refresh first.
-        let isAll = keys == FeedKey.combined && !savedOnly
+        let isAll = tab == .all && !savedOnly
         let split = isAll ? store.splitByRefresh(posts) : nil
         // Posts seen before stay tucked away until asked for. Until the feed's first been marked
         // read they show when nothing's new, so a new install's feed doesn't start out empty.
@@ -399,7 +399,7 @@ struct FeedListView<Trailing: View>: View {
     // Whether the All feed's refresh just now found no new posts. A refresh where every
     // feed failed hasn't shown there's nothing new, so it doesn't count.
     private var nothingNew: Bool {
-        guard onNothingNew != nil, keys == FeedKey.combined, !savedOnly,
+        guard onNothingNew != nil, tab == .all, !savedOnly,
               keys.contains(where: { store.state($0).loaded && store.state($0).error == nil }) else { return false }
         let posts = store.posts(keys).filter { showsNSFW || $0.nsfw != true }
         return store.splitByRefresh(posts).new.isEmpty
@@ -973,8 +973,8 @@ struct LoginCard: View {
     let sources: [FeedSource]
     // The feeds to reload once logged in.
     let keys: [FeedKey]
-    // The All feed, which mixes in Hacker News.
-    private var combined: Bool { keys == FeedKey.combined }
+    // The All feed, mixing several sources.
+    private var combined: Bool { keys.count > 1 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {

@@ -15,6 +15,13 @@ enum TabIcons {
         return (renderer.uiImage ?? UIImage()).withRenderingMode(.alwaysTemplate)
     }()
 
+    // Stands in for a turned-off source's icon, keeping the tabs' spacing and order.
+    static let dot: UIImage = {
+        let renderer = ImageRenderer(content: Circle().fill(.black).frame(width: 7, height: 7))
+        renderer.scale = 3
+        return (renderer.uiImage ?? UIImage()).withRenderingMode(.alwaysTemplate)
+    }()
+
     // RedditGlyph rendered once as a template image, so the tab bar tints it
     // like the other icons.
     static let reddit: UIImage = {
