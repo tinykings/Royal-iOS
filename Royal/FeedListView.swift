@@ -540,7 +540,7 @@ struct FeedListView<Trailing: View>: View {
                 Label(subscribed ? "Unsubscribe" : "Subscribe",
                       systemImage: subscribed ? "person.crop.circle.badge.minus" : "person.crop.circle.badge.plus")
             }
-            .tint(subscribed ? .gray : .red)
+            .tint(subscribed ? .gray : .blue)
             .disabled(store.subscribing.contains(channel))
         }
     }

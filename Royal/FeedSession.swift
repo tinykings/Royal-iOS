@@ -318,10 +318,6 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         return lines.joined(separator: "\n")
     }
 
-    // The YouTube web client version the subscribe requests say they come from, read from
-    // YouTube's page once; YouTube accepts older versions, so a fixed one stands in.
-    private var youTubeClientVersion: String?
-
     // Subscribes to, or unsubscribes from, a YouTube channel as the logged-in account, the way
     // YouTube's own site does. Like the feeds, this relies on YouTube's undocumented web API.
     func setSubscribed(channelId: String, _ subscribed: Bool) async throws {
@@ -329,30 +325,36 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
             throw FeedError.failed("Unknown YouTube channel")
         }
         let origin = "https://www.youtube.com"
+        try await ensureLoaded()
+        // The page's settings say which signed-in account and session the request is for.
+        let (_, page, _) = try await nativeFetch(URL(string: origin + "/")!)
+        func setting(_ name: String) -> String? {
+            let pattern = "\"\(name)\"\\s*:\\s*\"?([\\w.%-]+)"
+            guard let regex = try? NSRegularExpression(pattern: pattern),
+                  let match = regex.firstMatch(in: page, range: NSRange(page.startIndex..., in: page)),
+                  let range = Range(match.range(at: 1), in: page) else { return nil }
+            return String(page[range])
+        }
+        guard setting("LOGGED_IN") != "false" else { throw FeedError.notLoggedIn("YouTube session is logged out") }
+        let version = setting("INNERTUBE_CLIENT_VERSION") ?? "2.20261101.00.00"
+        let userSession = setting("USER_SESSION_ID")
+
         let cookies = await cookieStore.allCookies().filter { $0.domain.hasSuffix("youtube.com") }
         func cookie(_ name: String) -> String? { cookies.first { $0.name == name }?.value }
         guard let sapisid = cookie("SAPISID") ?? cookie("__Secure-3PAPISID") else {
             throw FeedError.notLoggedIn("YouTube login required")
         }
-        // YouTube signs API requests with a hash of the time, the session's API cookie, and
-        // the origin; one per cookie it has.
-        let time = Int(Date().timeIntervalSince1970)
-        func hash(_ value: String) -> String {
-            let digest = Insecure.SHA1.hash(data: Data("\(time) \(value) \(origin)".utf8))
-            return "\(time)_" + digest.map { String(format: "%02x", $0) }.joined()
+        // YouTube signs API requests with a hash of the session, the time, the session's API
+        // cookie, and the origin; one per cookie it has.
+        let time = String(Int(Date().timeIntervalSince1970))
+        func hash(_ scheme: String, _ value: String) -> String {
+            let input = ([userSession].compactMap { $0 } + [time, value, origin]).joined(separator: " ")
+            let digest = Insecure.SHA1.hash(data: Data(input.utf8)).map { String(format: "%02x", $0) }.joined()
+            return "\(scheme) " + ([time, digest] + (userSession == nil ? [] : ["u"])).joined(separator: "_")
         }
-        var authorization = ["SAPISIDHASH \(hash(sapisid))"]
-        if let value = cookie("__Secure-1PAPISID") { authorization.append("SAPISID1PHASH \(hash(value))") }
-        if let value = cookie("__Secure-3PAPISID") { authorization.append("SAPISID3PHASH \(hash(value))") }
-
-        if youTubeClientVersion == nil {
-            try? await ensureLoaded()
-            if let (_, body, _) = try? await nativeFetch(URL(string: origin + "/")!),
-               let match = body.firstMatch(of: /"INNERTUBE_CLIENT_VERSION"\s*:\s*"([\w.]+)"/) {
-                youTubeClientVersion = String(match.1)
-            }
-        }
-        let version = youTubeClientVersion ?? "2.20261101.00.00"
+        var authorization = [hash("SAPISIDHASH", sapisid)]
+        if let value = cookie("__Secure-1PAPISID") { authorization.append(hash("SAPISID1PHASH", value)) }
+        if let value = cookie("__Secure-3PAPISID") { authorization.append(hash("SAPISID3PHASH", value)) }
 
         let action = subscribed ? "subscribe" : "unsubscribe"
         var request = URLRequest(url: URL(string: "\(origin)/youtubei/v1/subscription/\(action)?prettyPrint=false")!)
@@ -368,19 +370,26 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         request.setValue(authorization.joined(separator: " "), forHTTPHeaderField: "Authorization")
         request.setValue(origin, forHTTPHeaderField: "Origin")
         request.setValue(origin, forHTTPHeaderField: "X-Origin")
-        request.setValue("1", forHTTPHeaderField: "X-Goog-AuthUser")
+        request.setValue(setting("SESSION_INDEX") ?? "0", forHTTPHeaderField: "X-Goog-AuthUser")
+        if let pageId = setting("DELEGATED_SESSION_ID") { request.setValue(pageId, forHTTPHeaderField: "X-Goog-PageId") }
+        if let visitor = setting("VISITOR_DATA") { request.setValue(visitor, forHTTPHeaderField: "X-Goog-Visitor-Id") }
         request.setValue("1", forHTTPHeaderField: "X-YouTube-Client-Name")
         request.setValue(version, forHTTPHeaderField: "X-YouTube-Client-Version")
+        request.setValue("1", forHTTPHeaderField: "X-YouTube-Bootstrap-Logged-In")
         request.setValue(Self.desktopUserAgent, forHTTPHeaderField: "User-Agent")
         let (data, response) = try await session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let body = String(decoding: data, as: UTF8.self)
         #if DEBUG
-        NSLog("Royal %@ %@ -> %d %@", action, channelId, status, String(decoding: data.prefix(200), as: UTF8.self))
+        NSLog("Royal %@ %@ -> %d %@", action, channelId, status, body.replacingOccurrences(of: "\n", with: " "))
         #endif
         if status == 401 || status == 403 { throw FeedError.notLoggedIn("YouTube login required") }
-        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        guard status == 200, json?["error"] == nil else {
-            throw FeedError.failed("YouTube couldn't \(action) (HTTP \(status))")
+        guard status == 200 else { throw FeedError.failed("YouTube couldn't \(action) (HTTP \(status))") }
+        // A request YouTube didn't take as signed in still answers 200, just without saying the
+        // channel's button changed.
+        let confirmed = body.range(of: "\"subscribed\"\\s*:\\s*\(subscribed)", options: .regularExpression) != nil
+        guard confirmed else {
+            throw FeedError.failed("YouTube didn't confirm the change. Check you're logged in to YouTube in Settings.")
         }
     }
 
