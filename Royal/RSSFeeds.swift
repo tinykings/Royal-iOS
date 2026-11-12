@@ -116,9 +116,21 @@ enum RSSFetcher {
             return out.sorted { $0.0 < $1.0 }.map(\.1)
         }
         guard !found.isEmpty else {
-            throw FeedError.failed("No RSS or Atom feed found at \(url.host ?? url.absoluteString).")
+            let host = url.host ?? url.absoluteString
+            // Sites behind a bot check (Cloudflare's "Just a moment…") answer apps with that
+            // page instead of their own, though their feeds may still load.
+            if isBotCheck(data, status: status) {
+                throw FeedError.failed("\(host) only shows its pages to web browsers, so Royal can't look for feeds there. Paste the feed's own address instead; it may still load.")
+            }
+            throw FeedError.failed("No RSS or Atom feed found at \(host).")
         }
         return found
+    }
+
+    private static func isBotCheck(_ data: Data, status: Int) -> Bool {
+        guard [403, 429, 503].contains(status) else { return false }
+        let page = String(decoding: data.prefix(20_000), as: UTF8.self)
+        return ["<title>Just a moment...</title>", "challenge-platform", "cf-chl", "Attention Required!"].contains { page.contains($0) }
     }
 
     // <link rel="alternate" type="application/rss+xml" href="…"> and its Atom and RDF
@@ -202,7 +214,9 @@ enum RSSFetcher {
                 .prefix(12).map { String(format: "%02x", $0) }.joined()
         // hnrss lists points and comments in each description.
         let score = plainSummary.flatMap { number(after: "Points:", in: $0) }
-        let commentCount = item.commentCount ?? plainSummary.flatMap { number(after: "# Comments:", in: $0) }
+        // Feeds without comments of their own often still say "0" in slash:comments.
+        let commentCount = item.commentCount.flatMap { $0 > 0 ? $0 : nil }
+            ?? plainSummary.flatMap { number(after: "# Comments:", in: $0) }
         return FeedPost(source: .rss, id: id, title: shownTitle, url: url, commentsUrl: comments ?? url, label: label,
                         score: score, comments: commentCount, created: item.date.flatMap(date)?.timeIntervalSince1970,
                         image: image?.url, imageAspect: image?.aspect, videoId: nil, published: nil,
