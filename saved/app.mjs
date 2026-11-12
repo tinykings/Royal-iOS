@@ -19,7 +19,7 @@ try {
   localStorage.getItem(PREFERENCES_KEY);
   site = createSite({ storage: localStorage, pending: sessionStorage, locks: navigator.locks });
 } catch {
-  showNotice("Royal Saved needs this browser to allow site data (cookies and storage) for royal.tinyk.ing.");
+  showNotice("Royal needs this browser to allow site data (cookies and storage) for royal.tinyk.ing.");
   throw new Error("Storage unavailable.");
 }
 
@@ -305,7 +305,7 @@ async function onAccount(event) {
     location.assign(await site.beginSignIn());
   } catch (error) {
     showNotice(error instanceof CloudKitError ? describeCloudKitError(error)
-      : /token/i.test(error?.message ?? "") ? "Royal Saved isn't set up yet: it needs its CloudKit web API token (site.mjs)."
+      : /token/i.test(error?.message ?? "") ? "Royal isn't set up yet: it needs its CloudKit web API token (site.mjs)."
         : "Couldn't start Apple sign-in. Check your connection and try again.");
   } finally { button.disabled = false; }
 }
