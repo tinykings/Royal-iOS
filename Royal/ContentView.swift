@@ -99,6 +99,11 @@ struct CombinedFeedView: View {
                              selectedIcon: "heart.fill", selectedColor: .systemPink),
             ])
         }
+        // Tapping the crown tab again on Saved goes back to All.
+        .onChange(of: store.reselected?.count) {
+            guard store.reselected?.tab == .all, showSaved else { return }
+            withAnimation { showSaved = false }
+        }
     }
 }
 
