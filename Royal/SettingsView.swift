@@ -116,7 +116,7 @@ struct SettingsView: View {
                     } header: {
                         Text("Reddit")
                     } footer: {
-                        Text("Log in with a username and password; \"Continue with Google\" is blocked inside apps. Long-press a post to open the other. NSFW posts are left out.")
+                        Text("Log in with a username and password; \"Continue with Google\" is blocked inside apps. Long-press a post to open the other.")
                     }
                 }
                 // Shown only while the source is on.
