@@ -59,9 +59,18 @@ final class FeedStore: ObservableObject {
     @Published private(set) var saved = SavedPostsStorage.load()
     let savedSync: SavedSync
     // Sources turned off in Settings: their tabs show a dot and the All feed leaves them out.
-    @Published private(set) var disabledSources: Set<FeedSource> = Set(
-        (UserDefaults.standard.string(forKey: Preference.disabledSources) ?? "")
-            .split(separator: ",").compactMap { FeedSource(rawValue: String($0)) })
+    // A new install starts with Hacker News off, offered on the All feed beside the logins;
+    // an install from before sources could be turned off keeps them all on.
+    @Published private(set) var disabledSources: Set<FeedSource> = {
+        let defaults = UserDefaults.standard
+        guard let stored = defaults.string(forKey: Preference.disabledSources) else {
+            return defaults.object(forKey: FeedStore.seenKey) == nil ? [.hn] : []
+        }
+        return Set(stored.split(separator: ",").compactMap { FeedSource(rawValue: String($0)) })
+    }()
+    // Whether sources have been turned on or off yet. Until then the All feed offers
+    // to turn on the sources that start off.
+    @Published private(set) var sourcesChosen = UserDefaults.standard.string(forKey: Preference.disabledSources) != nil
 
     // The All feed's feeds, without the sources turned off.
     var combinedKeys: [FeedKey] {
@@ -72,12 +81,11 @@ final class FeedStore: ObservableObject {
         !disabledSources.contains(source)
     }
 
-    // Turns a source on or off. The last one on stays on, so the All feed always has a feed.
+    // Turns a source on or off. With every source off, the All feed points to Settings.
     func setEnabled(_ source: FeedSource, _ enabled: Bool) {
-        var disabled = disabledSources
-        if enabled { disabled.remove(source) } else { disabled.insert(source) }
-        guard disabled.count < FeedSource.allCases.count else { return }
-        disabledSources = disabled
+        if enabled { disabledSources.remove(source) } else { disabledSources.insert(source) }
+        sourcesChosen = true
+        let disabled = disabledSources
         UserDefaults.standard.set(FeedSource.allCases.filter(disabled.contains).map(\.rawValue).joined(separator: ","),
                                   forKey: Preference.disabledSources)
     }

@@ -61,7 +61,12 @@ struct FeedListView<Trailing: View>: View {
         }
         // The All feed opens with the time of its latest refresh, and puts posts
         // new since the previous refresh first.
-        let isAll = tab == .all && !savedOnly
+        let isAll = tab == .all && !savedOnly && !keys.isEmpty
+        // Every source turned off in Settings leaves the All feed with nothing to show.
+        let noSources = tab == .all && !savedOnly && keys.isEmpty
+        // Until sources are chosen, the All feed offers to turn on the ones that start off.
+        let offered = tab == .all && !savedOnly && !store.sourcesChosen
+            ? FeedSource.allCases.filter { !store.isEnabled($0) } : []
         let split = isAll ? store.splitByRefresh(posts) : nil
         // Posts seen before stay tucked away until asked for. Until the feed's first been marked
         // read they show when nothing's new, so a new install's feed doesn't start out empty.
@@ -80,8 +85,10 @@ struct FeedListView<Trailing: View>: View {
                         .listRowInsets(EdgeInsets())
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
-                    if !loggedOut.isEmpty {
-                        LoginCard(sources: loggedOut, keys: keys)
+                    if noSources {
+                        NoSourcesCard()
+                    } else if !loggedOut.isEmpty || !offered.isEmpty {
+                        LoginCard(sources: loggedOut, offered: offered, keys: keys)
                     }
                     ForEach(savedOnly ? [] : keys, id: \.self) { key in
                         // A feed reloading after an error, such as just after logging in, shows
@@ -125,7 +132,7 @@ struct FeedListView<Trailing: View>: View {
                             .frame(maxWidth: .infinity)
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
-                    } else if posts.isEmpty && loggedOut.isEmpty
+                    } else if posts.isEmpty && loggedOut.isEmpty && !noSources
                                 && keys.allSatisfy({ store.state($0).loaded && !store.state($0).loading && store.state($0).error == nil }) {
                         // A quiet subreddit can have nothing in Top today.
                         Text("No posts to show.")
@@ -971,14 +978,18 @@ struct LoginCard: View {
     @EnvironmentObject private var store: FeedStore
     @State private var loggingIn: FeedSource?
     let sources: [FeedSource]
+    // Sources that are off, offered to turn on; only on the All feed before sources are chosen.
+    var offered: [FeedSource] = []
     // The feeds to reload once logged in.
     let keys: [FeedKey]
-    // The All feed, mixing several sources.
-    private var combined: Bool { keys.count > 1 }
+    private var title: String {
+        if !offered.isEmpty { return "Set up your feeds" }
+        return keys.count > 1 ? "Log in to see your feeds" : "Log in to \(sources[0].title)"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(combined ? "Log in to see your feeds" : "Log in to \(sources[0].title)")
+            Text(title)
                 .font(.title3.bold())
             Text(message)
                 .font(.subheadline)
@@ -994,6 +1005,22 @@ struct LoginCard: View {
                         Image(systemName: "chevron.right")
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(.tertiary)
+                    }
+                    .padding(12)
+                    .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+            }
+            // Turning one on adds it to the feed, and counts as choosing sources, so
+            // these offers go away; Settings has the rest.
+            ForEach(offered) { source in
+                Button {
+                    withAnimation { store.setEnabled(source, true) }
+                } label: {
+                    HStack {
+                        Image(systemName: "plus.circle")
+                        Text("Turn on \(source.title)")
+                        Spacer()
                     }
                     .padding(12)
                     .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
@@ -1022,7 +1049,9 @@ struct LoginCard: View {
 
     // Kept short; the title says what to log in to, and closing the page is what
     // checks the login and reloads the feed.
-    private var message: String { "Once logged in, tap Done." }
+    private var message: String {
+        sources.isEmpty ? "Turn on the sources you'd like in your feed." : "Once logged in, tap Done."
+    }
 
     private func checkLogin() {
         Task { await store.finishLogin(sources, reloading: keys) }
@@ -1624,5 +1653,41 @@ struct CachedImage<Content: View>: View {
                 guard image == nil, let fetched = await ImageCache.load(url) else { return }
                 loaded = (url, fetched)
             }
+    }
+}
+
+// The All feed with every source turned off: a way to Settings to turn some on.
+struct NoSourcesCard: View {
+    @EnvironmentObject private var store: FeedStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("No sources turned on")
+                .font(.title3.bold())
+            Text("Turn on Reddit, Hacker News or YouTube in Settings to fill your feed.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Button {
+                store.selectedTab = .settings
+            } label: {
+                HStack {
+                    Image(systemName: "gearshape")
+                    Text("Open Settings")
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(12)
+                .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: PostRow.cornerRadius))
+        .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
     }
 }

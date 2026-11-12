@@ -69,8 +69,6 @@ struct SettingsView: View {
                         } set: {
                             store.setEnabled(source, $0)
                         })
-                        // The last source on stays on.
-                        .disabled(store.isEnabled(source) && store.disabledSources.count == FeedSource.allCases.count - 1)
                     }
                 } header: {
                     Text("Sources")
