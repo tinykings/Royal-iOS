@@ -559,7 +559,7 @@ struct FeedListView<Trailing: View>: View {
 
     // The open options a tap doesn't use: the other of link/comments, or for a video,
     // its YouTube page in a Safari view without leaving the app. RSS offers the other
-    // of description/link, and the item's comments when it links some.
+    // of description/link.
     @ViewBuilder
     private func alternateActions(for post: FeedPost) -> some View {
         if post.source == .rss {
@@ -569,10 +569,6 @@ struct FeedListView<Trailing: View>: View {
             } else {
                 Button { openInBrowser(post.url) } label: { Label("Open link", systemImage: "link") }
                     .tint(.blue)
-            }
-            if post.commentsUrl != post.url {
-                Button { openInBrowser(post.commentsUrl) } label: { Label("Open comments", systemImage: "bubble.left.and.bubble.right") }
-                    .tint(.indigo)
             }
         } else if post.source == .youtube {
             Button {

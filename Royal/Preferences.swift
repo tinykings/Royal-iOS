@@ -83,8 +83,7 @@ enum OpenTarget: String, CaseIterable, Identifiable {
 }
 
 // What tapping an RSS post opens: the item's description from the feed, or its link.
-// The other, and the item's comments when it links some, are in its swipe and
-// long-press menus.
+// The other is in its swipe and long-press menus.
 enum RSSOpenTarget: String, CaseIterable, Identifiable {
     case description, link
 

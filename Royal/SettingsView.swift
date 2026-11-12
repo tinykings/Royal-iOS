@@ -137,7 +137,7 @@ struct SettingsView: View {
                     } header: {
                         Text("RSS")
                     } footer: {
-                        Text("Add, remove, import or export feeds under Feeds. Swipe right on a post, or press and hold it, to open the other, or its comments when the feed links them.")
+                        Text("Add, remove, import or export feeds under Feeds. Swipe right on a post, or press and hold it, to open the other.")
                     }
                 }
                 SyncSection(sync: store.savedSync)
