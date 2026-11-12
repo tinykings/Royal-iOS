@@ -28,7 +28,7 @@ Royal is a reader for people who follow Reddit, RSS feeds, and YouTube and want 
 
 ACCOUNTS: Royal has no accounts of its own and no server. Logging in happens on Reddit's and Google's own web pages inside the app; Royal never sees or stores passwords. Settings has a Log Out button for each service, which clears that service's session from the app. Account creation and deletion for Reddit and Google are handled by those services, not by Royal.
 
-USER-GENERATED CONTENT: Royal does not host or let users post content of its own. It shows content from Reddit, the RSS feeds the user chooses, and YouTube. Pinned Reddit posts are excluded, and images on posts Reddit marks NSFW are blurred until the user taps them; the user's own Reddit mature-content setting also applies. Reporting and blocking use each service's own tools: Reddit posts and RSS items open on their own sites (Reddit opens logged in), where users can report posts and block users; [describe any in-app hide/report/block added for this build].
+USER-GENERATED CONTENT: Royal does not host or let users post content of its own. It shows content from Reddit, the RSS feeds the user chooses, and YouTube. NSFW and pinned Reddit posts are always excluded, along with NSFW subreddits. Reporting and blocking use each service's own tools: Reddit posts and RSS items open on their own sites (Reddit opens logged in), where users can report posts and block users; [describe any in-app hide/report/block added for this build].
 
 3. EXTERNAL SERVICES
 - Reddit (reddit.com): post listings for the user's followed subreddits, with the user's own login.
