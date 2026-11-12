@@ -447,7 +447,9 @@ private final class FeedReader: NSObject, XMLParserDelegate {
 // MARK: OPML
 
 extension UTType {
-    static let opml = UTType(filenameExtension: "opml", conformingTo: .xml) ?? .xml
+    // Declared in Info.plist, so the file picker knows .opml files are OPML. Without
+    // the declaration iOS sees them as plain data and won't let them be picked.
+    static let opml = UTType(importedAs: "org.opml.opml", conformingTo: .xml)
 }
 
 enum OPML {
