@@ -77,54 +77,63 @@ struct SettingsView: View {
                 } footer: {
                     Text("A source turned off leaves the All feed, and its tab becomes a dot.")
                 }
-                Section {
-                    NavigationLink {
-                        LoginPage(title: "YouTube", url: FeedSource.youtube.loginURL!)
-                    } label: {
-                        LabeledContent("Account", value: status(.youtube))
-                    }
-                    logOutButton(.youtube)
-                    Picker("View", selection: $youtubeLayout) {
-                        ForEach(FeedLayout.allCases) { Text($0.title).tag($0) }
-                    }
-                    Picker("Play videos in", selection: $youtubePlayback) {
-                        ForEach(VideoPlayback.allCases) { Text($0.title).tag($0) }
-                    }
-                    Toggle("Show list view when playing video", isOn: $listWhilePlaying)
-                        .disabled(youtubePlayback != .inApp)
-                } header: {
-                    Text("YouTube")
-                } footer: {
-                    Text("Cards show a large thumbnail with the title below. With the in-app player, every section can switch to List view while a video plays. YouTube feeds rely on undocumented page data and may break when YouTube changes its site.")
-                }
-                Section {
-                    NavigationLink {
-                        LoginPage(title: "Reddit", url: FeedSource.reddit.loginURL!)
-                    } label: {
-                        LabeledContent("Account", value: status(.reddit))
-                    }
-                    logOutButton(.reddit)
-                    Picker("View", selection: $redditLayout) {
-                        ForEach(FeedLayout.allCases) { Text($0.title).tag($0) }
-                    }
-                    Picker("Tapping a post opens", selection: $redditOpen) {
-                        ForEach(OpenTarget.allCases) { Text($0.title).tag($0) }
-                    }
-                    Toggle("Show NSFW posts", isOn: $redditNSFW)
-                        .onChange(of: redditNSFW) {
-                            Task { await store.reloadRedditForNSFWChange() }
+                // Shown only while the source is on.
+                if store.isEnabled(.youtube) {
+                    Section {
+                        NavigationLink {
+                            LoginPage(title: "YouTube", url: FeedSource.youtube.loginURL!)
+                        } label: {
+                            LabeledContent("Account", value: status(.youtube))
                         }
-                } header: {
-                    Text("Reddit")
-                } footer: {
-                    Text("Log in with a username and password; \"Continue with Google\" is blocked inside apps. Long-press a post to open the other. Your Reddit account's own mature content setting may also limit NSFW posts.")
-                }
-                Section {
-                    Picker("Tapping a post opens", selection: $hnOpen) {
-                        ForEach(OpenTarget.allCases) { Text($0.title).tag($0) }
+                        logOutButton(.youtube)
+                        Picker("View", selection: $youtubeLayout) {
+                            ForEach(FeedLayout.allCases) { Text($0.title).tag($0) }
+                        }
+                        Picker("Play videos in", selection: $youtubePlayback) {
+                            ForEach(VideoPlayback.allCases) { Text($0.title).tag($0) }
+                        }
+                        Toggle("Show list view when playing video", isOn: $listWhilePlaying)
+                            .disabled(youtubePlayback != .inApp)
+                    } header: {
+                        Text("YouTube")
+                    } footer: {
+                        Text("Cards show a large thumbnail with the title below. With the in-app player, every section can switch to List view while a video plays. YouTube feeds rely on undocumented page data and may break when YouTube changes its site.")
                     }
-                } header: {
-                    Text("Hacker News")
+                }
+                // Shown only while the source is on.
+                if store.isEnabled(.reddit) {
+                    Section {
+                        NavigationLink {
+                            LoginPage(title: "Reddit", url: FeedSource.reddit.loginURL!)
+                        } label: {
+                            LabeledContent("Account", value: status(.reddit))
+                        }
+                        logOutButton(.reddit)
+                        Picker("View", selection: $redditLayout) {
+                            ForEach(FeedLayout.allCases) { Text($0.title).tag($0) }
+                        }
+                        Picker("Tapping a post opens", selection: $redditOpen) {
+                            ForEach(OpenTarget.allCases) { Text($0.title).tag($0) }
+                        }
+                        Toggle("Show NSFW posts", isOn: $redditNSFW)
+                            .onChange(of: redditNSFW) {
+                                Task { await store.reloadRedditForNSFWChange() }
+                            }
+                    } header: {
+                        Text("Reddit")
+                    } footer: {
+                        Text("Log in with a username and password; \"Continue with Google\" is blocked inside apps. Long-press a post to open the other. Your Reddit account's own mature content setting may also limit NSFW posts.")
+                    }
+                }
+                // Shown only while the source is on.
+                if store.isEnabled(.hn) {
+                    Section {
+                        Picker("Tapping a post opens", selection: $hnOpen) {
+                            ForEach(OpenTarget.allCases) { Text($0.title).tag($0) }
+                        }
+                    } header: {
+                        Text("Hacker News")
+                    }
                 }
                 SyncSection(sync: store.savedSync)
                 #if DEBUG
