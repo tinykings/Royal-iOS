@@ -109,17 +109,16 @@ enum RSSFetcher {
         }
         var candidates = (200..<300).contains(status) ? linkedFeeds(in: data, page: finalURL) : []
         if candidates.isEmpty { candidates = usualFeeds(for: finalURL) }
-        let found = await withTaskGroup(of: (Int, Found?).self) { group in
-            for (index, candidate) in candidates.enumerated() {
-                group.addTask {
-                    guard let result = try? await fetch(candidate) else { return (index, nil) }
-                    return (index, Found(url: candidate.absoluteString, title: result.title, itemCount: result.posts.count))
-                }
+        // All at once, kept in the candidates' order. Tasks rather than a task group, as in
+        // FeedStore.fetchRSS.
+        let tasks = candidates.map { candidate in
+            Task.detached { () -> Found? in
+                guard let result = try? await fetch(candidate) else { return nil }
+                return Found(url: candidate.absoluteString, title: result.title, itemCount: result.posts.count)
             }
-            var out: [(Int, Found)] = []
-            for await (index, found) in group { if let found { out.append((index, found)) } }
-            return out.sorted { $0.0 < $1.0 }.map(\.1)
         }
+        var found: [Found] = []
+        for task in tasks { if let result = await task.value { found.append(result) } }
         guard !found.isEmpty else {
             let host = url.host ?? url.absoluteString
             // Sites behind a bot check (Cloudflare's "Just a moment…") answer apps with that

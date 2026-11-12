@@ -433,19 +433,16 @@ final class FeedStore: ObservableObject {
     // and its error shows in the feed list; it's an error for the tab only when all fail.
     private func fetchRSS() async throws -> FeedSession.Page {
         let list = rssFeeds
-        let results = await withTaskGroup(of: (String, Result<RSSFetcher.Result, Error>).self) { group in
-            for feed in list {
-                group.addTask {
-                    guard let url = URL(string: feed.url) else {
-                        return (feed.url, .failure(FeedError.failed("Not a web address")))
-                    }
-                    do { return (feed.url, .success(try await RSSFetcher.fetch(url))) } catch { return (feed.url, .failure(error)) }
-                }
-            }
-            var out: [String: Result<RSSFetcher.Result, Error>] = [:]
-            for await (url, result) in group { out[url] = result }
-            return out
+        // One task per feed, all running at once, awaited in turn. Not a task group: on iOS 27
+        // a group's finishing child crashed Royal at launch (in swift::TaskGroup::offer).
+        let tasks = list.map { feed in
+            (feed.url, Task.detached { () -> Result<RSSFetcher.Result, Error> in
+                guard let url = URL(string: feed.url) else { return .failure(FeedError.failed("Not a web address")) }
+                do { return .success(try await RSSFetcher.fetch(url)) } catch { return .failure(error) }
+            })
         }
+        var results: [String: Result<RSSFetcher.Result, Error>] = [:]
+        for (url, task) in tasks { results[url] = await task.value }
         var errors: [String: String] = [:]
         var posts: [FeedPost] = []
         var titled = false
