@@ -5,9 +5,9 @@ import SwiftUI
 enum TabIcons {
     // The app icon's crown as a template image, so the tab bar tints it like the other
     // tabs: the app's gold when selected. Drawn larger than the other icons so it
-    // stands out.
+    // stands out, though not so wide that it crowds Reddit and YouTube.
     static let crown: UIImage = {
-        let width: CGFloat = 44
+        let width: CGFloat = 38
         let renderer = ImageRenderer(content: RoyalCrown()
             .fill(.black)
             .frame(width: width, height: width / RoyalCrown.aspectRatio))
@@ -30,9 +30,27 @@ enum TabIcons {
         return (renderer.uiImage ?? UIImage()).withRenderingMode(.alwaysTemplate)
     }()
 
-    // The RSS feed icon: a dot with two waves spreading from it.
+    // Tabs get equal slots, so the narrow end icons sit farther from their neighbors
+    // than the wide crown does. The end icons are drawn this far off center toward
+    // the middle to even out the gaps.
+    private static let endNudge: CGFloat = 6
+
+    // The RSS feed icon: a dot with two waves spreading from it, nudged right.
     static let rss: UIImage = {
-        let renderer = ImageRenderer(content: RSSGlyph().frame(width: 26, height: 26).foregroundStyle(.black))
+        let renderer = ImageRenderer(content: RSSGlyph().frame(width: 26, height: 26)
+            .padding(.leading, endNudge * 2)
+            .foregroundStyle(.black))
+        renderer.scale = 3
+        return (renderer.uiImage ?? UIImage()).withRenderingMode(.alwaysTemplate)
+    }()
+
+    // The Settings gear, drawn here rather than as a plain symbol so it can be
+    // nudged left.
+    static let settings: UIImage = {
+        let renderer = ImageRenderer(content: Image(systemName: "gearshape")
+            .font(.system(size: 23))
+            .padding(.trailing, endNudge * 2)
+            .foregroundStyle(.black))
         renderer.scale = 3
         return (renderer.uiImage ?? UIImage()).withRenderingMode(.alwaysTemplate)
     }()

@@ -33,7 +33,7 @@ struct ContentView: View {
                 sourceTab(.youtube, icon: Image(systemName: "play.rectangle")) { YouTubeFeedView() }
                     .tag(AppTab.youtube)
                 SettingsView()
-                    .tabItem { Image(systemName: "gearshape").accessibilityLabel("Settings") }
+                    .tabItem { Image(uiImage: TabIcons.settings).accessibilityLabel("Settings") }
                     .tag(AppTab.settings)
             }
             // After visiting Settings (possibly to log in), retry feeds that failed.
