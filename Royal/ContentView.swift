@@ -68,7 +68,7 @@ struct CombinedFeedView: View {
     var body: some View {
         FeedListView(title: "Royal", tab: .all, keys: FeedKey.combined, showsSource: true, savedOnly: showSaved,
                      subtitle: showSaved ? "Saved" : "All",
-                     onNothingNew: { withAnimation { showSaved = true } }) {
+                     onShowSaved: { withAnimation { showSaved = true } }) {
             HeaderPicker(title: "Show", selection: $showSaved, options: [
                 HeaderOption(value: false, icon: "square.stack", title: "All"),
                 HeaderOption(value: true, icon: "heart", title: "Saved",
