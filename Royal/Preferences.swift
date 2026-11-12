@@ -14,8 +14,6 @@ enum Preference {
     static let feedTextSize = "feedTextSize"
     // The Reddit tab's last chosen sort.
     static let redditSort = "redditSort"
-    // Whether Reddit feeds include NSFW posts; off unless turned on in Settings.
-    static let redditNSFW = "redditNSFW"
     // Sources turned off in Settings, comma separated. Their tabs show a dot and
     // their posts leave the All feed.
     static let disabledSources = "disabledSources"

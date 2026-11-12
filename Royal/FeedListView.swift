@@ -34,7 +34,6 @@ struct FeedListView<Trailing: View>: View {
     @State private var descriptionPost: FeedPost?
     @AppStorage(Preference.youtubePlayback) private var youtubePlayback = VideoPlayback.inApp
     @AppStorage(Preference.listWhilePlaying) private var listWhilePlaying = true
-    @AppStorage(Preference.redditNSFW) private var showsNSFW = false
     let title: String
     // The tab showing this feed; tapping it again scrolls to the top.
     let tab: AppTab
@@ -54,9 +53,7 @@ struct FeedListView<Trailing: View>: View {
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
-        // NSFW posts hide here too, so turning the setting off takes effect at once, saved
-        // posts included, without waiting on a reload.
-        let posts = (savedOnly ? store.savedPosts : store.posts(keys)).filter { showsNSFW || $0.nsfw != true }
+        let posts = savedOnly ? store.savedPosts : store.posts(keys)
         // The header slides away while scrolling down, leaving more room for the feed,
         // and comes back on scrolling up, so its controls stay in reach during a video.
         let headerHidden = scrolledAway
@@ -414,7 +411,7 @@ struct FeedListView<Trailing: View>: View {
     private var nothingNew: Bool {
         guard onNothingNew != nil, tab == .all, !savedOnly,
               keys.contains(where: { store.state($0).loaded && store.state($0).error == nil }) else { return false }
-        let posts = store.posts(keys).filter { showsNSFW || $0.nsfw != true }
+        let posts = store.posts(keys)
         return store.splitByRefresh(posts).new.isEmpty
     }
 
@@ -1480,6 +1477,7 @@ struct PostRow: View {
                     }
                 }
                 .frame(width: 96, height: 54)
+                .nsfwCover(hidden: hidesImage, compact: true) { revealed = true }
                 .clipShape(RoundedRectangle(cornerRadius: 6))
             }
         }
@@ -1526,6 +1524,7 @@ struct PostRow: View {
                                 }
                             }
                         }
+                        .nsfwCover(hidden: hidesImage) { revealed = true }
                         .clipped()
                 }
             }
@@ -1578,8 +1577,13 @@ struct PostRow: View {
         return post.image.flatMap(URL.init(string:))
     }
 
+    // NSFW images stay blurred until tapped.
+    @State private var revealed = false
+    private var hidesImage: Bool { post.nsfw == true && !revealed }
+
     private var meta: String {
         var parts = [post.label]
+        if post.nsfw == true { parts.append("NSFW") }
         if let score = post.score { parts.append(Self.count(score, "pt")) }
         if let comments = post.comments { parts.append(Self.count(comments, "comment")) }
         if showsDate {
@@ -1706,5 +1710,38 @@ struct NoSourcesCard: View {
         .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
+    }
+}
+
+extension View {
+    // Blurs an NSFW image with a label over it; tapping it shows the image. Once shown,
+    // taps go to the post as usual.
+    func nsfwCover(hidden: Bool, compact: Bool = false, reveal: @escaping () -> Void) -> some View {
+        blur(radius: hidden ? (compact ? 10 : 40) : 0, opaque: true)
+            .overlay {
+                if hidden {
+                    ZStack {
+                        Color.black.opacity(0.25)
+                        if compact {
+                            Text("NSFW")
+                                .font(.caption2.weight(.bold))
+                        } else {
+                            Label("NSFW · Tap to show", systemImage: "eye.slash")
+                                .font(.footnote.weight(.semibold))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(.ultraThinMaterial, in: Capsule())
+                        }
+                    }
+                    .foregroundStyle(.white)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("NSFW image hidden")
+                    .accessibilityHint("Shows the image")
+                    .accessibilityAddTraits(.isButton)
+                }
+            }
+            .contentShape(Rectangle())
+            .gesture(TapGesture().onEnded { withAnimation(.easeOut(duration: 0.2)) { reveal() } },
+                     including: hidden ? .all : .none)
     }
 }

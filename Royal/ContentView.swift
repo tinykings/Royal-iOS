@@ -127,8 +127,7 @@ struct RedditFeedView: View {
             }
         }
         .task { if store.subreddits.isEmpty { await store.loadSubreddits() } }
-        // Back to everything if the subreddit leaves the list, as an NSFW one does when
-        // that setting is turned off.
+        // Back to everything if the subreddit leaves the list, as one unfollowed elsewhere does.
         .onChange(of: store.subreddits) { _, names in
             if let subreddit, !names.contains(subreddit) { self.subreddit = nil }
         }

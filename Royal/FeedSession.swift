@@ -416,7 +416,8 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         let next: Int?
     }
 
-    private static var showsNSFW: Bool { UserDefaults.standard.bool(forKey: Preference.redditNSFW) }
+    // NSFW posts and subreddits are always fetched; their images stay blurred until tapped (PostRow).
+    private static let showsNSFW = true
 
     // The followed subreddits, A to Z.
     func subreddits() async throws -> [String] {
