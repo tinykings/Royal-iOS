@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CloudKitClient } from "./cloudkit.mjs";
+import { CloudKitClient } from "../shared/cloudkit.mjs";
 import { fakeCloudKit } from "./fake-cloudkit.mjs";
-import { createLibrary, LIBRARY_KEY, accountLibraryKey } from "./store.mjs";
-import { decodeRecord, startSync } from "./sync.mjs";
-import { runSync, SyncPausedError } from "./sync-runner.mjs";
+import { createLibrary, LIBRARY_KEY, accountLibraryKey } from "../shared/store.mjs";
+import { decodeRecord, startSync } from "../shared/sync.mjs";
+import { runSync, SyncPausedError } from "../shared/sync-runner.mjs";
 
 const CONFIG = { container: "iCloud.com.tinykings.Royal", environment: "development", apiToken: "public-token" };
 const post = (source, id) => ({ source, id, title: `Title ${id}`, url: `https://example.com/${id}`, commentsUrl: `https://example.com/${id}#c`, label: source });

@@ -1,5 +1,5 @@
 // Royal Saved's page: sign in with Apple, show the saved posts, play videos, unsave.
-// Storage, sign-in and sync are in site.mjs; posts render as the extension's Saved tab.
+// Storage, sign-in and sync are in site.mjs; posts render as in iOS Saved.
 import { createSite, describeCloudKitError, CloudKitError, takeCallback } from "./site.mjs";
 import { normalizePreferences, opensComments, PREFERENCES_KEY } from "./shared/preferences.mjs";
 
@@ -23,7 +23,7 @@ try {
   throw new Error("Storage unavailable.");
 }
 
-// --- Preferences: a few of the extension's Settings, for this browser only. ---
+// --- Preferences: a few of iOS's Settings, for this browser only. ---
 const readPreferences = () => { try { return normalizePreferences(JSON.parse(localStorage.getItem(PREFERENCES_KEY))); } catch { return normalizePreferences(null); } };
 let preferences = readPreferences();
 const settingsForm = $("#settings-form");
@@ -44,7 +44,7 @@ settingsForm.addEventListener("change", () => {
 });
 showPreferences();
 
-// --- Formatting, as in the extension (iOS PostRow). ---
+// --- Formatting, as in iOS PostRow. ---
 const AGE_UNITS = [[31536000, "y"], [2592000, "mo"], [604800, "w"], [86400, "d"], [3600, "h"], [60, "m"]];
 function age(seconds) {
   for (const [unit, suffix] of AGE_UNITS) if (seconds >= unit) return `${Math.floor(seconds / unit)}${suffix}`;

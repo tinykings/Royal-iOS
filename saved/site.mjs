@@ -1,7 +1,6 @@
 // Royal Saved: the website's storage, Apple sign-in and sync, without the page.
-// The CloudKit client, library and sync rules are the extension's own modules
-// (shared/ links to ../desktop/), so saves merge exactly as they do there. This
-// site only ever reads and writes saved posts: seen and All records are filtered
+// The CloudKit client, library and sync rules are in shared/ and follow
+// docs/sync-schema.md, so saves merge exactly as they do on iOS. This site only ever reads and writes saved posts: seen and All records are filtered
 // out before they reach the library, so it can never push them.
 import { CloudKitClient, CloudKitError, ROYAL_CLOUDKIT, appleSignInURL, callbackToken, describeCloudKitError } from "./shared/cloudkit.mjs";
 import { accountLibraryKey, createLibrary, LIBRARY_KEY, SYNC_SETTINGS_KEY } from "./shared/store.mjs";
@@ -26,7 +25,7 @@ export const SIGN_IN_STARTED_KEY = "royalSignInStarted";
 const SIGN_IN_WINDOW = 15 * 60 * 1000;
 const SIGN_IN_CODES = ["AUTHENTICATION_REQUIRED", "AUTHENTICATION_FAILED"];
 
-// chrome.storage.local's get/set/remove over Web Storage, for the shared library.
+// An async get/set/remove store over Web Storage, for the shared library.
 export function webStore(storage) {
   return {
     async get(key) {

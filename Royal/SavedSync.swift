@@ -1,7 +1,7 @@
 import CloudKit
 import Foundation
 
-// Syncs saved posts and seen posts between devices and with the desktop extension
+// Syncs saved posts and seen posts between devices, and saved posts with Royal Saved on the web,
 // through the RoyalSync zone of the private CloudKit database (docs/sync-schema.md).
 // Always on: it turns itself on for the Apple Account signed in to iCloud, and once
 // it has, the synced library is what the Saved tab shows. Until then (no account, or
@@ -10,7 +10,7 @@ import Foundation
 // shown on another device isn't new here at the next refresh. The All snapshot record
 // is left alone.
 //
-// Like the desktop it syncs when the app opens or returns to the foreground, about
+// It syncs when the app opens or returns to the foreground, about
 // 1.5 s after each change, and before an All refresh. There's no background timer.
 @MainActor
 final class SavedSync: ObservableObject {
@@ -221,7 +221,7 @@ final class SavedSync: ObservableObject {
     }
 
     // Pulls zone changes, then pushes pending intentions with conditional writes,
-    // pulling again after conflicts. Mirrors desktop/sync-runner.mjs.
+    // pulling again after conflicts. Mirrors saved/shared/sync-runner.mjs.
     private func runSync() async throws -> String {
         guard let settings else { throw Paused(message: "Sync is off.") }
         let container = CKContainer(identifier: settings.container)
@@ -501,7 +501,7 @@ final class SavedSync: ObservableObject {
         case .notAuthenticated?, .accountTemporarilyUnavailable?:
             return ("iCloud needs your Apple Account password confirmed. Open Settings › Apple Account if it asks.", .later)
         case .unknownItem?, .invalidArguments?, .serverRejectedRequest?:
-            return ("CloudKit rejected the request (\(text)). The RoyalSavedPost or RoyalSeen record type may not be deployed to \(environment) yet; see desktop/README.md.", .never)
+            return ("CloudKit rejected the request (\(text)). The RoyalSavedPost or RoyalSeen record type may not be deployed to \(environment) yet; see docs/sync-schema.md.", .never)
         default:
             break
         }

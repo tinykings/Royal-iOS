@@ -1,7 +1,6 @@
 # Builds and publishes the website at https://royal.tinyk.ing/ on every push to main:
 # the landing page and privacy policy (docs/index.html) at the root, and Royal Saved
-# (saved/) at /saved/. Royal Saved's shared/ files are links to desktop/, so the site
-# always ships the same CloudKit and sync code as the extension.
+# (saved/) at /saved/.
 name: Pages
 
 on:
@@ -10,7 +9,6 @@ on:
     paths:
       - "docs/index.html"
       - "saved/**"
-      - "desktop/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -37,8 +35,7 @@ jobs:
         run: |
           mkdir -p _site/saved
           cp docs/index.html _site/
-          # -L copies what the shared/ links point to, not the links.
-          cp -RL saved/index.html saved/app.mjs saved/site.mjs saved/site.css saved/icon.svg saved/shared _site/saved/
+          cp -R saved/index.html saved/app.mjs saved/site.mjs saved/site.css saved/icon.svg saved/shared _site/saved/
           echo royal.tinyk.ing > _site/CNAME
           touch _site/.nojekyll
           find _site -type f | sort

@@ -34,7 +34,7 @@ USER-GENERATED CONTENT: Royal does not host or let users post content of its own
 - Reddit (reddit.com): post listings for the user's followed subreddits, with the user's own login.
 - Hacker News (Firebase API, hacker-news.firebaseio.com): public stories.
 - YouTube / Google (youtube.com, accounts.google.com): the user's subscription feed and sign-in; videos play through YouTube's embedded player.
-- Apple CloudKit (the user's private iCloud database): syncs saved posts, and which posts the All feed has shown, between the user's devices and with Royal's open-source desktop browser extension. It uses the Apple Account signed in to iCloud; Settings > Sync shows its state. Data stays in the user's own iCloud account; there is no Royal server.
+- Apple CloudKit (the user's private iCloud database): syncs saved posts, and which posts the All feed has shown, between the user's devices, and shows saved posts on the Royal Saved website (royal.tinyk.ing/saved) when the user signs in there with Apple. It uses the Apple Account signed in to iCloud; Settings > Sync shows its state. Data stays in the user's own iCloud account; there is no Royal server.
 No analytics, ads, AI services, payment processors, or backend of our own. There are no in-app purchases.
 
 4. REGIONAL DIFFERENCES

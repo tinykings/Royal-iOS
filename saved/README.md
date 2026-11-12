@@ -1,7 +1,7 @@
 # Royal Saved
 
 A website at **https://royal.tinyk.ing/saved/** showing the posts saved with ♥ in Royal on
-iPhone (and the Royal desktop extension). Sign in with Apple; there's no Royal
+iPhone. Sign in with Apple; there's no Royal
 server. Saved posts sync through Apple's CloudKit Web Services API with your private
 iCloud database, the same `RoyalSavedPost` records iOS writes
 ([sync schema](https://github.com/tinykings/Royal-iOS/blob/main/docs/sync-schema.md)).
@@ -13,7 +13,7 @@ unsave syncs back to iOS as a tombstone, like everywhere else.
 
 ## Publishing
 
-Every push to `main` that touches `saved/`, `desktop/` or `docs/index.html` runs
+Every push to `main` that touches `saved/` or `docs/index.html` runs
 `.github/workflows/pages.yml`: it runs `node --test`, then publishes one GitHub
 Pages site at `royal.tinyk.ing`, with the landing page and privacy policy
 (`docs/index.html`) at `/` and this site at `/saved/`. The old
@@ -33,7 +33,7 @@ Pages site at `royal.tinyk.ing`, with the landing page and privacy policy
    `https://royal.tinyk.ing/saved/`. The allowed origin stays `royal.tinyk.ing`.
 
 The token is `SITE_CLOUDKIT.apiToken` in `site.mjs`. The record types are already
-deployed to Production for iOS and the extension.
+deployed to Production for iOS.
 
 ## Security
 
@@ -63,10 +63,9 @@ deployed to Production for iOS and the extension.
 
 - `index.html`, `app.mjs`, `site.css`: the page.
 - `site.mjs`: storage, Apple sign-in and sync, tested in `tests/site.test.mjs`.
-- `shared/`: links to the extension's modules in [`desktop/`](../desktop/): CloudKit
-  client, library, sync and conflict rules, preferences, stylesheet. Edit them
-  there; the Pages build copies the real files in. `tests/fake-cloudkit.mjs` links
-  to the extension's fake CloudKit server the same way.
+- `shared/`: CloudKit client, library, sync and conflict rules, preferences,
+  stylesheet, tested in `tests/` against the fake CloudKit server in
+  `tests/fake-cloudkit.mjs`.
 
 ## When it syncs
 
@@ -81,8 +80,8 @@ sign-in, the list stays and changes stay pending until you sign in again.
 node --test
 ```
 
-Run it from the repository root, which also runs the extension's tests. To try
+Run it from the repository root. To try
 the page locally, serve the repository root (for example `python3 -m http.server
-8123`) and open `/saved/`; the server follows the `shared/` links. Apple's sign-in
+8123`) and open `/saved/`. Apple's sign-in
 always returns to `https://royal.tinyk.ing/saved/`, so sign-in only completes on
 the real site.

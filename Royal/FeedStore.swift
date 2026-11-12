@@ -418,7 +418,7 @@ final class FeedStore: ObservableObject {
         sendSeen()
     }
 
-    // Offers this device's seen ids to sync with the desktop, when it's on.
+    // Offers this device's seen ids to sync with other devices, when it's on.
     private func sendSeen() {
         guard savedSync.isActive, let local = savedSync.localSeen?() else { return }
         savedSync.noteSeen(ids: local.ids, sources: local.sources)

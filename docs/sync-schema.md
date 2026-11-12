@@ -1,11 +1,10 @@
 # Royal CloudKit sync schema (v1)
 
-Status: in use. The desktop extension (`desktop/sync.mjs`) implements all three
-record types. iOS (`Royal/SavedSyncLibrary.swift`, `Royal/SavedSync.swift`,
+Status: in use. iOS (`Royal/SavedSyncLibrary.swift`, `Royal/SavedSync.swift`,
 always on, with the Apple Account signed in to iCloud) implements **`RoyalSavedPost` and
-`RoyalSeen`** and ignores `RoyalAllSnapshot`. Saved posts are verified live
-between iOS and desktop in Production; seen from iOS and the edge cases in
-[desktop/README.md](../desktop/README.md#still-to-do) are still to be checked live.
+`RoyalSeen`** and ignores `RoyalAllSnapshot`. Royal Saved (`saved/shared/sync.mjs`) reads and
+writes only `RoyalSavedPost`. `RoyalAllSnapshot` was written by the retired desktop
+extension; no current client writes it.
 For Production the record types below must be created in Development and
 deployed (Production never creates them). Every client must read and write
 exactly this format.
@@ -60,11 +59,11 @@ keep the newest 3000. Matches iOS `allFeedSeenIDs` / `allFeedSources`.
 
 iOS merges the remote set into `allFeedSeenIDs` / `allFeedSources` as it arrives,
 and sends its own after each All refresh, page loaded at the end of All, and Mark
-all read. As on the desktop, the merged set only takes effect at the next All
+all read. The merged set only takes effect at the next All
 refresh (it becomes that refresh's `previouslySeen`); the posts on screen don't move.
 An iOS All refresh syncs while the feeds load and waits up to 4 s for it before
-recording the refresh. Note that seen means *shown by All*, not read: a desktop
-refresh that nobody looked at still makes those posts not-new on iOS's next refresh.
+recording the refresh. Note that seen means *shown by All*, not read: a refresh on
+another device that nobody looked at still makes those posts not-new on iOS's next refresh.
 
 ### `RoyalAllSnapshot`: single record `all`
 
@@ -119,5 +118,4 @@ intentions apart, never pushing them to the new account.
 
 - Retention and deletion of saved snapshots for content removed upstream (Reddit's
   API terms require removing deleted content).
-- Whether iOS's YouTube "videos above the newest seen" rule stays per device or
-  uses the synced snapshot's YouTube list (desktop uses the snapshot).
+- Whether iOS's YouTube "videos above the newest seen" rule stays per device.

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { allPosts, applyAllRefresh, emptyState, interleave, markAllRead, normalizePost, savedPosts, SEEN_LIMIT, setSaved, splitByRefresh } from "./library.mjs";
-import { createLibrary, LIBRARY_KEY } from "./store.mjs";
+import { allPosts, applyAllRefresh, emptyState, interleave, markAllRead, normalizePost, savedPosts, SEEN_LIMIT, setSaved, splitByRefresh } from "../shared/library.mjs";
+import { createLibrary, LIBRARY_KEY } from "../shared/store.mjs";
 
 const post = (source, id, extra = {}) => ({ source, id, title: id, url: `https://example.com/${id}`, commentsUrl: `https://example.com/${id}#c`, label: source, ...extra });
 const ok = posts => ({ state: "ok", posts });

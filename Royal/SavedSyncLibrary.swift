@@ -1,7 +1,7 @@
 import Foundation
 
 // The iOS side of the RoyalSync saved-post and seen records (docs/sync-schema.md),
-// matching desktop/sync.mjs and desktop/library.mjs. Plain values only; SavedSync
+// matching saved/shared/sync.mjs and saved/shared/library.mjs. Plain values only; SavedSync
 // does the CloudKit requests.
 //
 // Local intentions are dirty marks, stored with the library so they survive being
@@ -192,7 +192,7 @@ struct SavedSyncLibrary: Codable {
 enum SeenSyncCodec {
     static let recordType = "RoyalSeen"
     static let recordName = "seen"
-    // As FeedStore's seenLimit and desktop SEEN_LIMIT.
+    // As FeedStore's seenLimit and the web's SEEN_LIMIT.
     static let limit = 3000
     static let knownSources = ["reddit", "hn", "youtube"]
 
@@ -219,7 +219,7 @@ enum SeenSyncCodec {
     }
 
     // A RoyalSeen record's fields; nil when it's not one Royal understands, including a
-    // newer schemaVersion. Limits match desktop decodeRecord.
+    // newer schemaVersion. Limits match the web's decodeRecord.
     static func decode(ids: String?, sources: String?, schemaVersion: Int?) -> (ids: [String], sources: [String])? {
         guard let schemaVersion, schemaVersion <= SavedSyncCodec.schemaVersion,
               let idData = ids?.data(using: .utf8), let sourceData = sources?.data(using: .utf8),
@@ -248,7 +248,7 @@ enum SavedSyncCodec {
     }()
     private static let isoPlain = ISO8601DateFormatter()
 
-    // `2026-11-10T22:04:05.123Z`, as the desktop writes it.
+    // `2026-11-10T22:04:05.123Z`, as the web writes it.
     static func iso(_ date: Date) -> String { isoOut.string(from: date) }
 
     static func date(_ string: String) -> Date? {
@@ -263,7 +263,7 @@ enum SavedSyncCodec {
         return value
     }
 
-    // The post with links limited to http(s), like desktop normalizePost; nil for
+    // The post with links limited to http(s), like the web's normalizePost; nil for
     // anything that can't be shown.
     static func sanitized(_ post: FeedPost) -> FeedPost? {
         guard let url = httpURL(post.url),

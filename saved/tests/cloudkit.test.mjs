@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CloudKitClient, CloudKitError, appleSignInURL, callbackToken, validateConfig, describeCloudKitError } from "./cloudkit.mjs";
+import { CloudKitClient, CloudKitError, appleSignInURL, callbackToken, validateConfig, describeCloudKitError } from "../shared/cloudkit.mjs";
 
 const config = { container: "iCloud.com.tinykings.Royal", apiToken: "public-api-token", environment: "development" };
 const reply = (value, ok = true) => ({ ok, json: async () => value });

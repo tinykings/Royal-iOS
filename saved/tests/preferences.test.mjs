@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_PREFERENCES, PREFERENCES_KEY, layoutFor, loadPreferences, normalizePreferences, opensComments, savePreferences } from "./preferences.mjs";
+import { DEFAULT_PREFERENCES, PREFERENCES_KEY, layoutFor, loadPreferences, normalizePreferences, opensComments, savePreferences } from "../shared/preferences.mjs";
 
 const reddit = { source: "reddit", image: "https://i.redd.it/a.jpg" }, hn = { source: "hn" }, youtube = { source: "youtube", videoId: "abc" };
 
