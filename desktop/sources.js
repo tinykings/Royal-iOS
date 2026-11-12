@@ -230,6 +230,17 @@ export function parseYouTubeFeed(html, limit = CONFIG.totalItems) {
     if (parts.some((part) => /\bwatching\b/i.test(part))) return "Live";
     return parts.find((part) => /\bago$|^(Streamed|Premiered|Scheduled for)\b/i.test(part)) ?? "";
   };
+  // The channel a video is from: the first channel link in its renderer, on its name or avatar.
+  const channelIdIn = (node) => {
+    if (!node || typeof node !== "object") return null;
+    const id = node.browseEndpoint?.browseId;
+    if (typeof id === "string" && /^UC[\w-]{22}$/.test(id)) return id;
+    for (const value of Object.values(node)) {
+      const found = channelIdIn(value);
+      if (found) return found;
+    }
+    return null;
+  };
   const posts = [], ids = new Set();
   function visit(node) {
     if (!node || typeof node !== "object" || posts.length >= limit) return;
@@ -262,6 +273,8 @@ export function parseYouTubeFeed(html, limit = CONFIG.totalItems) {
           published: text(video?.publishedTimeText) || lockupAge(metadata),
           image: `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,
         });
+        const channelId = channelIdIn(video ?? lockup);
+        if (channelId) posts[posts.length - 1].channelId = channelId;
       }
     }
     for (const value of Object.values(node)) visit(value);

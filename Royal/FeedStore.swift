@@ -115,6 +115,34 @@ final class FeedStore: ObservableObject {
         SavedPostsStorage.save(saved)
     }
 
+    // Channels subscribed to or unsubscribed from in the app while it runs, over what the
+    // subscriptions feed shows.
+    @Published private var subscriptionChanges: [String: Bool] = [:]
+    // Channels with a subscribe request on the way.
+    @Published private(set) var subscribing: Set<String> = []
+    // Why the last subscribe or unsubscribe failed, until it's dismissed.
+    @Published var subscribeError: String?
+
+    // Whether the account follows the video's channel, as far as the app knows: changed here,
+    // or with a video in the subscriptions feed.
+    func isSubscribed(_ post: FeedPost) -> Bool {
+        guard let channel = post.channelId else { return false }
+        return subscriptionChanges[channel] ?? state(.youtube).posts.contains { $0.channelId == channel }
+    }
+
+    func toggleSubscribed(_ post: FeedPost) async {
+        guard let channel = post.channelId, !subscribing.contains(channel) else { return }
+        let subscribe = !isSubscribed(post)
+        subscribing.insert(channel)
+        defer { subscribing.remove(channel) }
+        do {
+            try await session.setSubscribed(channelId: channel, subscribe)
+            subscriptionChanges[channel] = subscribe
+        } catch {
+            subscribeError = error.localizedDescription
+        }
+    }
+
     func state(_ key: FeedKey) -> FeedState {
         feeds[key] ?? FeedState()
     }

@@ -241,6 +241,13 @@ struct FeedListView<Trailing: View>: View {
                 // Animating the whole List can fade/reposition its lazily measured rows
                 // when the navigation bar changes the scroll view's insets.
                 .toolbar(headerHidden ? .hidden : .visible, for: .navigationBar)
+                .alert("Couldn't change subscription", isPresented: Binding(
+                    get: { store.subscribeError != nil && keys.contains(.youtubeHome) },
+                    set: { if !$0 { store.subscribeError = nil } })) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(store.subscribeError ?? "")
+                }
                 .navigationTitle(Trailing.self == EmptyView.self ? title : "")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -489,6 +496,7 @@ struct FeedListView<Trailing: View>: View {
             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                 saveButton(for: post, isSaved: isSaved)
                     .tint(.pink)
+                subscribeButton(for: post)
             }
             // Swiping right offers what a tap doesn't, per Settings.
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
@@ -496,6 +504,7 @@ struct FeedListView<Trailing: View>: View {
             }
             .contextMenu {
                 saveButton(for: post, isSaved: isSaved)
+                subscribeButton(for: post)
                 alternateActions(for: post)
             }
     }
@@ -517,6 +526,22 @@ struct FeedListView<Trailing: View>: View {
             withAnimation { store.toggleSaved(post) }
         } label: {
             Label(isSaved ? "Unsave" : "Save", systemImage: isSaved ? "heart.slash" : "heart")
+        }
+    }
+
+    // On YouTube's recommendations, following the video's channel, or no longer following it.
+    @ViewBuilder
+    private func subscribeButton(for post: FeedPost) -> some View {
+        if keys.contains(.youtubeHome), post.source == .youtube, let channel = post.channelId {
+            let subscribed = store.isSubscribed(post)
+            Button {
+                Task { await store.toggleSubscribed(post) }
+            } label: {
+                Label(subscribed ? "Unsubscribe" : "Subscribe",
+                      systemImage: subscribed ? "person.crop.circle.badge.minus" : "person.crop.circle.badge.plus")
+            }
+            .tint(subscribed ? .gray : .red)
+            .disabled(store.subscribing.contains(channel))
         }
     }
 

@@ -1,3 +1,4 @@
+import CryptoKit
 import UIKit
 import WebKit
 
@@ -45,6 +46,8 @@ struct FeedPost: Codable, Identifiable {
     let publishedAt: Double?
     // Reddit only: marked NSFW. Missing on posts fetched while NSFW was always left out.
     let nsfw: Bool?
+    // YouTube only: the channel the video is from, when the page links it.
+    var channelId: String? = nil
 }
 
 enum FeedError: LocalizedError {
@@ -313,6 +316,72 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
             }
         }
         return lines.joined(separator: "\n")
+    }
+
+    // The YouTube web client version the subscribe requests say they come from, read from
+    // YouTube's page once; YouTube accepts older versions, so a fixed one stands in.
+    private var youTubeClientVersion: String?
+
+    // Subscribes to, or unsubscribes from, a YouTube channel as the logged-in account, the way
+    // YouTube's own site does. Like the feeds, this relies on YouTube's undocumented web API.
+    func setSubscribed(channelId: String, _ subscribed: Bool) async throws {
+        guard channelId.range(of: "^UC[\\w-]{22}$", options: .regularExpression) != nil else {
+            throw FeedError.failed("Unknown YouTube channel")
+        }
+        let origin = "https://www.youtube.com"
+        let cookies = await cookieStore.allCookies().filter { $0.domain.hasSuffix("youtube.com") }
+        func cookie(_ name: String) -> String? { cookies.first { $0.name == name }?.value }
+        guard let sapisid = cookie("SAPISID") ?? cookie("__Secure-3PAPISID") else {
+            throw FeedError.notLoggedIn("YouTube login required")
+        }
+        // YouTube signs API requests with a hash of the time, the session's API cookie, and
+        // the origin; one per cookie it has.
+        let time = Int(Date().timeIntervalSince1970)
+        func hash(_ value: String) -> String {
+            let digest = Insecure.SHA1.hash(data: Data("\(time) \(value) \(origin)".utf8))
+            return "\(time)_" + digest.map { String(format: "%02x", $0) }.joined()
+        }
+        var authorization = ["SAPISIDHASH \(hash(sapisid))"]
+        if let value = cookie("__Secure-1PAPISID") { authorization.append("SAPISID1PHASH \(hash(value))") }
+        if let value = cookie("__Secure-3PAPISID") { authorization.append("SAPISID3PHASH \(hash(value))") }
+
+        if youTubeClientVersion == nil {
+            try? await ensureLoaded()
+            if let (_, body, _) = try? await nativeFetch(URL(string: origin + "/")!),
+               let match = body.firstMatch(of: /"INNERTUBE_CLIENT_VERSION"\s*:\s*"([\w.]+)"/) {
+                youTubeClientVersion = String(match.1)
+            }
+        }
+        let version = youTubeClientVersion ?? "2.20261101.00.00"
+
+        let action = subscribed ? "subscribe" : "unsubscribe"
+        var request = URLRequest(url: URL(string: "\(origin)/youtubei/v1/subscription/\(action)?prettyPrint=false")!)
+        request.httpMethod = "POST"
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "context": ["client": ["clientName": "WEB", "clientVersion": version, "hl": "en"]],
+            "channelIds": [channelId],
+        ])
+        for (field, value) in HTTPCookie.requestHeaderFields(with: cookies.filter { Self.cookie($0, matches: request.url!) }) {
+            request.setValue(value, forHTTPHeaderField: field)
+        }
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(authorization.joined(separator: " "), forHTTPHeaderField: "Authorization")
+        request.setValue(origin, forHTTPHeaderField: "Origin")
+        request.setValue(origin, forHTTPHeaderField: "X-Origin")
+        request.setValue("1", forHTTPHeaderField: "X-Goog-AuthUser")
+        request.setValue("1", forHTTPHeaderField: "X-YouTube-Client-Name")
+        request.setValue(version, forHTTPHeaderField: "X-YouTube-Client-Version")
+        request.setValue(Self.desktopUserAgent, forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await session.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        #if DEBUG
+        NSLog("Royal %@ %@ -> %d %@", action, channelId, status, String(decoding: data.prefix(200), as: UTF8.self))
+        #endif
+        if status == 401 || status == 403 { throw FeedError.notLoggedIn("YouTube login required") }
+        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard status == 200, json?["error"] == nil else {
+            throw FeedError.failed("YouTube couldn't \(action) (HTTP \(status))")
+        }
     }
 
     // Hacker News loads a page at a time; each story is its own request, so a full

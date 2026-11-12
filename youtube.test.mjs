@@ -138,3 +138,28 @@ test("YouTube ages become the latest possible publish time", () => {
   const at = parseYouTubeFeed(html)[0].publishedAt;
   assert.ok(at >= before - 7200 && at <= Date.now() / 1000 - 7200);
 });
+
+test("YouTube keeps the channel each video is from", () => {
+  const channel = "UC" + "a".repeat(22);
+  const html = page({ items: [
+    { videoRenderer: { ...video().videoRenderer, ownerText: { runs: [{
+      text: "Channel", navigationEndpoint: { browseEndpoint: { browseId: channel } },
+    }] } } },
+    { lockupViewModel: {
+      contentId: "12345678901", contentType: "LOCKUP_CONTENT_TYPE_VIDEO",
+      metadata: { lockupMetadataViewModel: {
+        title: { content: "Lockup" },
+        image: { decoratedAvatarViewModel: { rendererContext: { commandContext: { onTap: {
+          innertubeCommand: { browseEndpoint: { browseId: "FEwhat_to_watch" } },
+        } } } } },
+        metadata: { contentMetadataViewModel: { metadataRows: [{ metadataParts: [{
+          text: { content: "Other", commandRuns: [{ onTap: { innertubeCommand: {
+            browseEndpoint: { browseId: "UC" + "b".repeat(22) },
+          } } }] },
+        }] }] } },
+      } },
+    } },
+    video("noChannel01"),
+  ] });
+  assert.deepEqual(parseYouTubeFeed(html).map((p) => p.channelId), [channel, "UC" + "b".repeat(22), undefined]);
+});
