@@ -598,7 +598,14 @@ struct RSSFeedsView: View {
                             }
                             Spacer()
                             Button {
-                                withAnimation { store.addRSSFeed(feed) }
+                                // Adding closes the found feeds and clears the address for the next one.
+                                withAnimation {
+                                    store.addRSSFeed(feed)
+                                    address = ""
+                                    found = []
+                                    addError = nil
+                                }
+                                addressFocused = false
                             } label: {
                                 Image(systemName: added ? "checkmark.circle.fill" : "plus.circle.fill")
                                     .font(.title2)
