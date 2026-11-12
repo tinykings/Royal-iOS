@@ -31,8 +31,8 @@ struct SyncSection: View {
                 Text("Sync")
             } footer: {
                 Text(sync.isOn
-                     ? "Saved posts, and which posts the All feed has already shown, sync through your private iCloud database with your other devices and the Royal desktop browser extension. Posts seen on one device aren't new on another at its next refresh."
-                     : "Saved posts stay on this device until iCloud is ready, then sync through your private iCloud database with your other devices and the Royal desktop browser extension.")
+                     ? "Saved posts sync through your private iCloud database with your other devices and Royal on the web at royal.tinyk.ing/saved. Which posts the All feed has already shown syncs with your other devices, so posts seen on one aren't new on another at its next refresh."
+                     : "Saved posts stay on this device until iCloud is ready, then sync through your private iCloud database with your other devices and Royal on the web at royal.tinyk.ing/saved.")
             }
         }
     }

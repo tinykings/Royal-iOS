@@ -133,7 +133,7 @@ struct RedditFeedView: View {
 
     // Shortened by hand since the header sizes its title to fit.
     private var subredditTitle: String {
-        guard let subreddit else { return "Reddit" }
+        guard let subreddit else { return "All Subreddits" }
         return "r/" + (subreddit.count > 14 ? String(subreddit.prefix(13)) + "…" : subreddit)
     }
 }

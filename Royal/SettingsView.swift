@@ -17,6 +17,22 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
+                // The app's crown, its website, and its version, centered above everything else.
+                Section {
+                    VStack(spacing: 10) {
+                        RoyalCrown()
+                            .fill(Color.royalAccent)
+                            .frame(width: 72, height: 72 / RoyalCrown.aspectRatio)
+                            .accessibilityHidden(true)
+                        Link("royal.tinyk.ing", destination: URL(string: "https://royal.tinyk.ing")!)
+                            .font(.subheadline.weight(.medium))
+                        Text("Version \(appVersion)")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .listRowBackground(Color.clear)
+                }
                 Section {
                     VStack(spacing: 8) {
                         HStack(spacing: 12) {
@@ -96,16 +112,6 @@ struct SettingsView: View {
                     Text("Hacker News")
                 }
                 SyncSection(sync: store.savedSync)
-                Section {
-                    LabeledContent("Version", value: appVersion)
-                    Link(destination: URL(string: "https://github.com/tinykings/Royal-iOS")!) {
-                        Label("Source Code", systemImage: "chevron.left.forwardslash.chevron.right")
-                    }
-                } header: {
-                    Text("About")
-                } footer: {
-                    Text("Royal has no server. It talks directly to Reddit, Hacker News, and YouTube with your logins, and collects nothing.")
-                }
                 #if DEBUG
                 Section("Diagnostics") {
                     Button("Run diagnostics") {
