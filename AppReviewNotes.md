@@ -14,7 +14,7 @@ Recorded on [iPhone model], iOS [version], starting from launch.
 Royal is a reader for people who follow Reddit, RSS feeds, and YouTube and want one place to catch up. It shows posts from the subreddits a user already follows, items from RSS feeds the user adds (Hacker News stories by default), and new uploads from the user's YouTube subscriptions, in separate tabs and in a combined "All" feed that marks what is new since the last visit. Users can save posts for later (synced through the user's private iCloud database) and play YouTube videos in the app. It is for adults who already use these services; it has no algorithmic recommendations, ads, or tracking.
 
 2. HOW TO USE / DEMO ACCOUNTS
-- RSS works with no login: turn on RSS in Settings > Sources, then open the RSS tab. Its list button, or Settings > RSS > Feeds, adds feeds by address, removes them, and imports or exports OPML files.
+- RSS works with no login: turn on RSS in Settings > Sources, then open the RSS tab. Its list button, or Settings > RSS > Feeds, looks up and adds feeds from a feed's or website's address, removes them, and imports or exports OPML files.
 - Reddit: Settings tab > Reddit > Account. Log in on Reddit's own login page with:
   Username: [demo username]
   Password: [demo password]

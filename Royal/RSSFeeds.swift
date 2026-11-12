@@ -69,13 +69,102 @@ enum RSSFetcher {
     }()
 
     static func fetch(_ url: URL) async throws -> Result {
+        let (data, _, status) = try await get(url)
+        guard (200..<300).contains(status) else { throw FeedError.failed("HTTP \(status)") }
+        return try await Task.detached { try parse(data, feedURL: url) }.value
+    }
+
+    private static func get(_ url: URL) async throws -> (data: Data, url: URL, status: Int) {
         var request = URLRequest(url: url)
         request.setValue("application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5",
                          forHTTPHeaderField: "Accept")
         let (data, response) = try await session.data(for: request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard (200..<300).contains(status) else { throw FeedError.failed("HTTP \(status)") }
-        return try await Task.detached { try parse(data, feedURL: url) }.value
+        let http = response as? HTTPURLResponse
+        return (data, http?.url ?? url, http?.statusCode ?? 0)
+    }
+
+    // A feed found by looking up an address, before it's added.
+    struct Found: Identifiable, Hashable {
+        let url: String
+        let title: String?
+        let itemCount: Int
+        var id: String { url }
+
+        var name: String { RSSFeed(url: url, title: title).name }
+    }
+
+    // The feeds at an address: the address itself when it's a feed; otherwise the
+    // feeds a web page links in its head, or failing that, the usual feed addresses on
+    // its site. Only addresses that load as feeds are returned.
+    static func discover(_ url: URL) async throws -> [Found] {
+        let (data, finalURL, status) = try await get(url)
+        if (200..<300).contains(status),
+           let result = try? await Task.detached(operation: { try parse(data, feedURL: url) }).value {
+            return [Found(url: url.absoluteString, title: result.title, itemCount: result.posts.count)]
+        }
+        var candidates = (200..<300).contains(status) ? linkedFeeds(in: data, page: finalURL) : []
+        if candidates.isEmpty { candidates = usualFeeds(for: finalURL) }
+        let found = await withTaskGroup(of: (Int, Found?).self) { group in
+            for (index, candidate) in candidates.enumerated() {
+                group.addTask {
+                    guard let result = try? await fetch(candidate) else { return (index, nil) }
+                    return (index, Found(url: candidate.absoluteString, title: result.title, itemCount: result.posts.count))
+                }
+            }
+            var out: [(Int, Found)] = []
+            for await (index, found) in group { if let found { out.append((index, found)) } }
+            return out.sorted { $0.0 < $1.0 }.map(\.1)
+        }
+        guard !found.isEmpty else {
+            throw FeedError.failed("No RSS or Atom feed found at \(url.host ?? url.absoluteString).")
+        }
+        return found
+    }
+
+    // <link rel="alternate" type="application/rss+xml" href="…"> and its Atom and RDF
+    // kin, in page order, without repeats.
+    static func linkedFeeds(in data: Data, page: URL) -> [URL] {
+        let html = String(decoding: data.prefix(500_000), as: UTF8.self)
+        let tag = /<link\b[^>]*>/.ignoresCase()
+        let attribute = /([\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/
+        var seen = Set<String>()
+        var feeds: [URL] = []
+        for match in html.matches(of: tag) {
+            var attributes: [String: String] = [:]
+            for pair in match.output.matches(of: attribute) {
+                let value = pair.output.2 ?? pair.output.3 ?? pair.output.4 ?? ""
+                attributes[pair.output.1.lowercased()] = String(value).replacingOccurrences(of: "&amp;", with: "&")
+            }
+            let rel = attributes["rel"]?.lowercased().split(separator: " ") ?? []
+            let type = attributes["type"]?.lowercased() ?? ""
+            guard rel.contains("alternate"),
+                  ["application/rss+xml", "application/atom+xml", "application/rdf+xml"].contains(type),
+                  let href = attributes["href"], let resolved = URL(string: href, relativeTo: page)?.absoluteURL,
+                  let feed = RSSFeed.address(resolved.absoluteString),
+                  seen.insert(feed.absoluteString).inserted else { continue }
+            feeds.append(feed)
+        }
+        return feeds
+    }
+
+    // Where sites commonly keep a feed, under the page's folder and the site's root.
+    static func usualFeeds(for page: URL) -> [URL] {
+        guard var root = URLComponents(url: page, resolvingAgainstBaseURL: false) else { return [] }
+        root.query = nil
+        root.fragment = nil
+        var folder = root.path
+        if !folder.hasSuffix("/") { folder = folder.contains(".") ? String(folder[...(folder.lastIndex(of: "/") ?? folder.startIndex)]) : folder + "/" }
+        var folders = ["/"]
+        if folder != "/" { folders.insert(folder, at: 0) }
+        let names = ["feed", "rss", "feed.xml", "rss.xml", "atom.xml", "index.xml"]
+        var seen = Set<String>()
+        return folders.flatMap { folder in
+            names.compactMap { name -> URL? in
+                root.path = folder + name
+                guard let url = root.url, seen.insert(url.absoluteString).inserted else { return nil }
+                return url
+            }
+        }
     }
 
     // RSS 2.0, RSS 1.0 (RDF) and Atom.
@@ -348,8 +437,10 @@ struct OPMLDocument: FileDocument {
 struct RSSFeedsView: View {
     @EnvironmentObject private var store: FeedStore
     @State private var address = ""
-    @State private var adding = false
+    @State private var searching = false
     @State private var addError: String?
+    // The feeds the last lookup found, for picking which to add.
+    @State private var found: [RSSFetcher.Found] = []
     @State private var importing = false
     @State private var exporting = false
     @State private var notice: String?
@@ -365,24 +456,60 @@ struct RSSFeedsView: View {
                     .autocorrectionDisabled()
                     .submitLabel(.done)
                     .focused($addressFocused)
-                    .onSubmit(add)
-                Button(action: add) {
+                    .onSubmit(find)
+                    .onChange(of: address) {
+                        found = []
+                        addError = nil
+                    }
+                Button(action: find) {
                     HStack {
-                        Text(adding ? "Adding…" : "Add Feed")
-                        if adding {
+                        Text(searching ? "Looking for Feeds…" : "Find Feeds")
+                        if searching {
                             Spacer()
                             ProgressView()
                         }
                     }
                 }
-                .disabled(adding || address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(searching || address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             } header: {
                 Text("Add a Feed")
             } footer: {
                 if let addError {
                     Text(addError).foregroundStyle(.red)
                 } else {
-                    Text("Paste the address of an RSS or Atom feed.")
+                    Text("Paste a feed's address, or a website's, to look for its feeds.")
+                }
+            }
+            if !found.isEmpty {
+                Section {
+                    ForEach(found) { feed in
+                        let added = store.rssFeeds.contains { $0.url == feed.url }
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(feed.name)
+                                Text(feed.url)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Text(feed.itemCount == 1 ? "1 item" : "\(feed.itemCount) items")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button {
+                                withAnimation { store.addRSSFeed(feed) }
+                            } label: {
+                                Image(systemName: added ? "checkmark.circle.fill" : "plus.circle.fill")
+                                    .font(.title2)
+                            }
+                            .buttonStyle(.borderless)
+                            .disabled(added)
+                            .accessibilityLabel(added ? "Added" : "Add \(feed.name)")
+                        }
+                    }
+                } header: {
+                    Text(found.count == 1 ? "Found 1 Feed" : "Found \(found.count) Feeds")
                 }
             }
             Section {
@@ -456,20 +583,22 @@ struct RSSFeedsView: View {
         }
     }
 
-    private func add() {
+    private func find() {
         let text = address
-        guard !adding, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        adding = true
+        guard !searching, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        searching = true
         addError = nil
+        found = []
+        addressFocused = false
         Task {
             do {
-                try await store.addRSSFeed(text)
-                address = ""
-                addressFocused = false
+                let results = try await store.findRSSFeeds(text)
+                // Unless the address changed while looking.
+                if address == text { found = results }
             } catch {
-                addError = error.localizedDescription
+                if address == text { addError = error.localizedDescription }
             }
-            adding = false
+            searching = false
         }
     }
 

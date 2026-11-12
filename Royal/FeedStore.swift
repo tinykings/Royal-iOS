@@ -390,20 +390,22 @@ final class FeedStore: ObservableObject {
     // Why each feed failed in the last fetch, by address, for the feed list in Settings.
     @Published private(set) var rssFeedErrors: [String: String] = [:]
 
-    // Adds the feed at a pasted address once it loads as a feed, then reloads the tab.
-    func addRSSFeed(_ text: String) async throws {
+    // Looks up the feeds at a pasted address: the feed itself, or a website's feeds.
+    func findRSSFeeds(_ text: String) async throws -> [RSSFetcher.Found] {
         guard let url = RSSFeed.address(text) else { throw FeedError.failed("That isn't a web address.") }
-        guard !rssFeeds.contains(where: { $0.url == url.absoluteString }) else {
-            throw FeedError.failed("That feed is already in the list.")
-        }
-        let result: RSSFetcher.Result
         do {
-            result = try await RSSFetcher.fetch(url)
+            return try await RSSFetcher.discover(url)
+        } catch let error as FeedError {
+            throw error
         } catch {
-            throw FeedError.failed("Couldn't add that feed: \(error.localizedDescription)")
+            throw FeedError.failed("Couldn't look up \(url.host ?? "that address"): \(error.localizedDescription)")
         }
-        guard !rssFeeds.contains(where: { $0.url == url.absoluteString }) else { return }
-        rssFeeds.append(RSSFeed(url: url.absoluteString, title: result.title))
+    }
+
+    // Adds a feed found by looking up an address, then reloads the tab.
+    func addRSSFeed(_ found: RSSFetcher.Found) {
+        guard !rssFeeds.contains(where: { $0.url == found.url }) else { return }
+        rssFeeds.append(RSSFeed(url: found.url, title: found.title))
         saveRSSFeeds()
     }
 
