@@ -192,6 +192,9 @@ enum RSSFetcher {
         guard let shownTitle = title.flatMap({ $0.isEmpty ? nil : $0 })
                 ?? plainSummary.map({ String($0.prefix(120)) }).flatMap({ $0.isEmpty ? nil : $0 }) else { return nil }
         let comments = item.comments.flatMap(httpURL)
+        // The feed's own image for the item, else the first picture in its description.
+        let image = item.image.flatMap { picture in imageURL(picture, base: url).map { (url: $0, aspect: item.imageAspect) } }
+            ?? summary.flatMap { firstPicture(in: $0, base: url) }
         // Hacker News stories keep the ids they had from Hacker News itself, so what was
         // saved and seen there carries over.
         let id = [item.comments, item.guid, url].compactMap { $0 }.lazy.compactMap(hackerNewsID).first.map { "hn_\($0)" }
@@ -202,7 +205,7 @@ enum RSSFetcher {
         let commentCount = item.commentCount ?? plainSummary.flatMap { number(after: "# Comments:", in: $0) }
         return FeedPost(source: .rss, id: id, title: shownTitle, url: url, commentsUrl: comments ?? url, label: label,
                         score: score, comments: commentCount, created: item.date.flatMap(date)?.timeIntervalSince1970,
-                        image: item.image.flatMap(httpURL), imageAspect: nil, videoId: nil, published: nil,
+                        image: image?.url, imageAspect: image?.aspect, videoId: nil, published: nil,
                         publishedAt: nil, nsfw: nil,
                         summary: summary.flatMap { $0.isEmpty ? nil : String($0.prefix(summaryLimit)) })
     }
@@ -212,6 +215,68 @@ enum RSSFetcher {
         guard let url = URL(string: trimmed), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
               url.host != nil else { return nil }
         return trimmed
+    }
+
+    // Pictures load over https only; http ones are tried as https.
+    private static func imageURL(_ string: String, base: String) -> String? {
+        let trimmed = decodeEntities(string.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard !trimmed.isEmpty, !trimmed.lowercased().hasPrefix("data:"),
+              let resolved = URL(string: trimmed, relativeTo: URL(string: base))?.absoluteURL,
+              var components = URLComponents(url: resolved, resolvingAgainstBaseURL: false),
+              ["http", "https"].contains(components.scheme?.lowercased() ?? ""), components.host != nil else { return nil }
+        components.scheme = "https"
+        return components.url?.absoluteString
+    }
+
+    // &amp;, &#038; and &#x26; and the like, as HTML attributes write them.
+    private static func decodeEntities(_ string: String) -> String {
+        guard string.contains("&") else { return string }
+        let named = ["amp": "&", "quot": "\"", "apos": "'", "lt": "<", "gt": ">"]
+        var out = ""
+        var rest = Substring(string)
+        while let start = rest.firstIndex(of: "&") {
+            out += rest[..<start]
+            let after = rest[rest.index(after: start)...]
+            if let end = after.prefix(10).firstIndex(of: ";") {
+                let name = after[..<end]
+                let scalar: String? = if name.hasPrefix("#x") || name.hasPrefix("#X") {
+                    UInt32(name.dropFirst(2), radix: 16).flatMap(Unicode.Scalar.init).map { String($0) }
+                } else if name.hasPrefix("#") {
+                    UInt32(name.dropFirst()).flatMap(Unicode.Scalar.init).map { String($0) }
+                } else {
+                    named[name.lowercased()]
+                }
+                if let scalar {
+                    out += scalar
+                    rest = after[after.index(after: end)...]
+                    continue
+                }
+            }
+            out += "&"
+            rest = after
+        }
+        return out + rest
+    }
+
+    // The first <img> in an item's HTML that isn't a tracking pixel or a tiny icon,
+    // with its shape when the tag gives both width and height.
+    private static func firstPicture(in html: String, base: String) -> (url: String, aspect: Double?)? {
+        let tag = /<img\b[^>]*>/.ignoresCase()
+        let attribute = /([\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/
+        for match in html.prefix(200_000).matches(of: tag) {
+            var attributes: [String: String] = [:]
+            for pair in match.output.matches(of: attribute) {
+                attributes[pair.output.1.lowercased()] = String(pair.output.2 ?? pair.output.3 ?? pair.output.4 ?? "")
+            }
+            let width = attributes["width"].flatMap { Double($0) }
+            let height = attributes["height"].flatMap { Double($0) }
+            if let width, width < 40 { continue }
+            if let height, height < 40 { continue }
+            guard let src = attributes["src"], let url = imageURL(src, base: base) else { continue }
+            let aspect = width.flatMap { width in height.map { width / $0 } }
+            return (url, aspect)
+        }
+        return nil
     }
 
     private static func hackerNewsID(_ string: String) -> String? {
@@ -266,6 +331,9 @@ private final class FeedReader: NSObject, XMLParserDelegate {
         var content: String?
         var date: String?
         var image: String?
+        var imageAspect: Double?
+        // The width of `image`, so the largest of several offered is kept.
+        var imageWidth: Double?
         var commentCount: Int?
     }
 
@@ -295,8 +363,22 @@ private final class FeedReader: NSObject, XMLParserDelegate {
             }
         case "media:thumbnail", "media:content", "enclosure":
             let type = attributes["type"] ?? ""
-            let isImage = name == "media:thumbnail" || type.hasPrefix("image/") || attributes["medium"] == "image"
-            if isImage, current?.image == nil, let url = attributes["url"] { current?.image = url }
+            guard let url = attributes["url"], !url.isEmpty else { break }
+            // media:content often gives no type, only an image's address.
+            let looksLikeImage = type.isEmpty && attributes["medium"] == nil
+                && url.range(of: #"\.(jpe?g|png|gif|webp|avif)(\?|$)"#, options: [.regularExpression, .caseInsensitive]) != nil
+            let isImage = name == "media:thumbnail" || type.hasPrefix("image/") || attributes["medium"] == "image" || looksLikeImage
+            guard isImage else { break }
+            let width = attributes["width"].flatMap(Double.init)
+            let height = attributes["height"].flatMap(Double.init)
+            // The first image offered, or a wider one after it.
+            if current?.image == nil || (width ?? 0) > (current?.imageWidth ?? .infinity) {
+                current?.image = url
+                current?.imageWidth = width
+                current?.imageAspect = width.flatMap { width in height.flatMap { $0 > 0 ? width / $0 : nil } }
+            }
+        case "itunes:image":
+            if current?.image == nil, let url = attributes["href"], !url.isEmpty { current?.image = url }
         default:
             break
         }

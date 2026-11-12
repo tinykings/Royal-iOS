@@ -12,6 +12,7 @@ struct SettingsView: View {
     @AppStorage(Preference.redditOpen) private var redditOpen = OpenTarget.link
     @AppStorage(Preference.redditNSFW) private var redditNSFW = false
     @AppStorage(Preference.rssOpen) private var rssOpen = RSSOpenTarget.description
+    @AppStorage(Preference.rssLayout) private var rssLayout = FeedLayout.cards
     @AppStorage(Preference.feedTextSize) private var feedTextSize = FeedTextSize.standard
 
     var body: some View {
@@ -130,6 +131,9 @@ struct SettingsView: View {
                             RSSFeedsView()
                         } label: {
                             LabeledContent("Feeds", value: "\(store.rssFeeds.count)")
+                        }
+                        Picker("View", selection: $rssLayout) {
+                            ForEach(FeedLayout.allCases) { Text($0.title).tag($0) }
                         }
                         Picker("Tapping a post opens", selection: $rssOpen) {
                             ForEach(RSSOpenTarget.allCases) { Text($0.title).tag($0) }

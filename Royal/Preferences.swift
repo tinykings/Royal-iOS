@@ -6,6 +6,7 @@ enum Preference {
     static let youtubeLayout = "youtubeLayout"
     static let redditOpen = "redditOpen"
     static let rssOpen = "rssOpen"
+    static let rssLayout = "rssLayout"
     // The RSS feeds, as JSON; unset until the list is first changed.
     static let rssFeeds = "rssFeeds"
     static let youtubePlayback = "youtubePlayback"
@@ -66,7 +67,7 @@ private struct FeedTextSizeModifier: ViewModifier {
     }
 }
 
-// How Reddit and YouTube posts are shown.
+// How Reddit, RSS and YouTube posts are shown.
 enum FeedLayout: String, CaseIterable, Identifiable {
     case list, cards
 

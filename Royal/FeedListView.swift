@@ -27,6 +27,7 @@ struct FeedListView<Trailing: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(Preference.redditLayout) private var redditLayout = FeedLayout.cards
     @AppStorage(Preference.youtubeLayout) private var youtubeLayout = FeedLayout.cards
+    @AppStorage(Preference.rssLayout) private var rssLayout = FeedLayout.cards
     @AppStorage(Preference.redditOpen) private var redditOpen = OpenTarget.link
     @AppStorage(Preference.rssOpen) private var rssOpen = RSSOpenTarget.description
     // The RSS description showing.
@@ -529,7 +530,7 @@ struct FeedListView<Trailing: View>: View {
         switch post.source {
         case .reddit: return redditLayout
         case .youtube: return youtubeLayout
-        case .rss: return .list
+        case .rss: return rssLayout
         }
     }
 
@@ -1503,7 +1504,7 @@ struct PostRow: View {
                         }
                         .clipped()
                 } else {
-                    // Reddit images keep their own shape, capped so tall ones don't fill the
+                    // Reddit and RSS images keep their own shape, capped so tall ones don't fill the
                     // screen; narrow ones sit on a blurred copy of themselves across the tile,
                     // so the sides match the image in light and dark mode rather than leaving
                     // bars that read as a gap in the tile. The frame comes from Reddit's
