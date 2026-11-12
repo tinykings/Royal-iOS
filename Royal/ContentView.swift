@@ -6,7 +6,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     // The tabs in the order TabView lays them out, for mapping tab bar indexes back.
-    private static let tabOrder: [AppTab] = [.reddit, .rss, .all, .youtube, .settings]
+    private static let tabOrder: [AppTab] = [.rss, .reddit, .all, .youtube, .settings]
 
     var body: some View {
         // Landscape has no room for feeds under the video, so it plays full screen.
@@ -20,10 +20,10 @@ struct ContentView: View {
             // Hidden rather than removed so each tab keeps its scroll position.
             // All opens first. Tabs are icons only; labels are for VoiceOver.
             TabView(selection: $store.selectedTab) {
-                sourceTab(.reddit, icon: Image(uiImage: TabIcons.reddit)) { RedditFeedView() }
-                    .tag(AppTab.reddit)
                 sourceTab(.rss, icon: Image(uiImage: TabIcons.rss)) { RSSFeedView() }
                     .tag(AppTab.rss)
+                sourceTab(.reddit, icon: Image(uiImage: TabIcons.reddit)) { RedditFeedView() }
+                    .tag(AppTab.reddit)
                 CombinedFeedView()
                     .tabItem {
                         Image(uiImage: TabIcons.crown)

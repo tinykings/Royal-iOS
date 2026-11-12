@@ -6,7 +6,7 @@ iOS app combining Reddit, RSS feeds, and your YouTube subscriptions in one feed.
 
 ## Features
 
-- Tabs for Reddit, RSS, a combined **All** feed, YouTube, and settings. Posts can be saved for later.
+- Tabs for RSS, Reddit, a combined **All** feed, YouTube, and settings. Posts can be saved for later.
 - Reddit sort: **Best** or **Top** (today), from the subreddits you follow only, or **Top** (today) from one of them picked from the menu at the top. RSS: any RSS or Atom feeds, newest first, as cards with each item's image from the feed or as a list, starting with Hacker News stories over 150 points ([hnrss](https://hnrss.org/)), Krebs on Security, Pitchfork's Best New Albums and The Verge; paste a feed's or website's address to look up its feeds, and remove, import or export them (OPML) in Settings or from the tab's list button. Tapping an item shows its description from the feed, or opens its link. YouTube: your **Subscriptions** or the **Recommended** videos from your Home page, with any that are new since the last refresh first.
 - Uses your Reddit and YouTube logins from in-app sign-in pages—no API keys or OAuth setup. Reddit links open with that login, so you can vote and reply.
 - Plays YouTube videos in-app.
