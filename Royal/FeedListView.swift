@@ -1436,15 +1436,14 @@ struct PostRow: View {
                 card
             } else {
                 row
-                    // Room below a list thumbnail so the heart doesn't sit on it.
-                    .padding(.bottom, saved && thumbnail != nil ? 16 : 0)
                     .padding(Self.inset)
             }
         }
         .feedTextSize(textSize)
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .bottomTrailing) {
-            if saved {
+            // A list thumbnail shows the heart on itself instead.
+            if saved && !heartOnThumbnail {
                 Image(systemName: "heart.fill")
                     .font(.caption)
                     .foregroundStyle(.pink)
@@ -1483,8 +1482,25 @@ struct PostRow: View {
                 }
                 .frame(width: 96, height: 54)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(alignment: .bottomTrailing) {
+                    if saved {
+                        Image(systemName: "heart.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.pink)
+                            .padding(4)
+                            .background(.regularMaterial, in: Circle())
+                            .padding(4)
+                            .accessibilityLabel("Saved")
+                    }
+                }
             }
         }
+    }
+
+    // Saving leaves the row's size alone, so the list doesn't jump: the heart goes on a list
+    // thumbnail, or in the corner, where the meta line always leaves room for it.
+    private var heartOnThumbnail: Bool {
+        layout != .cards && thumbnail != nil
     }
 
     // A large image across the top of the tile with the text below.
@@ -1552,8 +1568,8 @@ struct PostRow: View {
                 Text(meta)
                     .foregroundStyle(.secondary)
             }
-            // Keeps the meta line clear of the heart in the corner.
-            .padding(.trailing, saved ? 18 : 0)
+            // Keeps the meta line clear of the heart in the corner, saved or not.
+            .padding(.trailing, heartOnThumbnail ? 0 : 18)
             .font(.caption)
         }
     }
