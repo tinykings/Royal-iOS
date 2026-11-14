@@ -263,6 +263,7 @@ final class FeedStore: ObservableObject {
     // Fetches the next page of each feed that has more; called near the end of a list.
     // After a failure it waits for `retry`, which the list's retry button passes.
     func loadMore(_ keys: [FeedKey], retry: Bool = false) async {
+        let shownBefore = Set(posts(combinedKeys).map(\.id))
         for key in keys {
             var state = state(key)
             guard let offset = state.next, !state.loading, !state.loadingMore,
@@ -280,10 +281,6 @@ final class FeedStore: ObservableObject {
                 let known = Set(state.posts.map(\.id))
                 state.posts += page.posts.filter { !known.contains($0.id) }
                 state.next = page.next
-                if combinedKeys.contains(key) {
-                    pagedSinceRefresh.formUnion(page.posts.map(\.id))
-                    rememberSeen(page.posts)
-                }
             } catch {
                 state = self.state(key)
                 guard state.loadedAt == loadedAt else { continue }
@@ -291,6 +288,13 @@ final class FeedStore: ObservableObject {
             }
             state.loadingMore = false
             feeds[key] = state
+        }
+        // A page ends the All feed further down, which also brings in more of the other
+        // sources' posts; they all stay at the bottom with the seen posts.
+        let revealed = posts(combinedKeys).filter { !shownBefore.contains($0.id) }
+        if !revealed.isEmpty {
+            pagedSinceRefresh.formUnion(revealed.map(\.id))
+            rememberSeen(revealed)
         }
         saveCache()
     }
@@ -313,15 +317,17 @@ final class FeedStore: ObservableObject {
         let previouslySeen: Set<String>
         let previousSources: Set<FeedSource>
         let pagedSinceRefresh: Set<String>
+        let previousVideos: Set<String>
 
         init(feeds: [Feed], lastRefresh: Date?, previousRefresh: Date?, previouslySeen: Set<String>,
-             previousSources: Set<FeedSource>, pagedSinceRefresh: Set<String>) {
+             previousSources: Set<FeedSource>, pagedSinceRefresh: Set<String>, previousVideos: Set<String>) {
             self.feeds = feeds
             self.lastRefresh = lastRefresh
             self.previousRefresh = previousRefresh
             self.previouslySeen = previouslySeen
             self.previousSources = previousSources
             self.pagedSinceRefresh = pagedSinceRefresh
+            self.previousVideos = previousVideos
         }
 
         // A feed this build no longer has, like Hacker News before RSS, is dropped
@@ -334,6 +340,8 @@ final class FeedStore: ObservableObject {
             previouslySeen = try container.decode(Set<String>.self, forKey: .previouslySeen)
             previousSources = try container.decode(Set<FeedSource>.self, forKey: .previousSources)
             pagedSinceRefresh = try container.decode(Set<String>.self, forKey: .pagedSinceRefresh)
+            // Caches saved before it existed don't have it.
+            previousVideos = try container.decodeIfPresent(Set<String>.self, forKey: .previousVideos) ?? []
         }
 
         private struct Lossy<Value: Decodable>: Decodable {
@@ -356,7 +364,8 @@ final class FeedStore: ObservableObject {
                     : Cache.Feed(key: key, posts: state.posts, next: state.next, loadedAt: state.loadedAt)
             },
             lastRefresh: lastRefresh, previousRefresh: previousRefresh, previouslySeen: previouslySeen,
-            previousSources: previousSources, pagedSinceRefresh: pagedSinceRefresh)
+            previousSources: previousSources, pagedSinceRefresh: pagedSinceRefresh,
+            previousVideos: previousVideos)
         guard let data = try? JSONEncoder().encode(cache) else { return }
         try? FileManager.default.createDirectory(at: .applicationSupportDirectory, withIntermediateDirectories: true)
         try? data.write(to: Self.cacheURL, options: .atomic)
@@ -373,6 +382,7 @@ final class FeedStore: ObservableObject {
         previouslySeen = cache.previouslySeen
         previousSources = cache.previousSources
         pagedSinceRefresh = cache.pagedSinceRefresh
+        previousVideos = cache.previousVideos
     }
 
     // MARK: RSS
@@ -492,6 +502,8 @@ final class FeedStore: ObservableObject {
     private static let sourcesKey = "allFeedSources"
     private static let seenLimit = 3000
     private static let markedReadKey = "allFeedMarkedRead"
+    private static let videosKey = "allFeedYouTubeIDs"
+    private static let videosLimit = 1000
 
     // Whether the All feed has ever been marked read on this install.
     @Published private(set) var hasMarkedRead = UserDefaults.standard.bool(forKey: FeedStore.markedReadKey)
@@ -507,6 +519,9 @@ final class FeedStore: ObservableObject {
     // Posts that arrived by scrolling to the end since the latest refresh. They stay with
     // the seen posts at the bottom rather than jumping up above the divider.
     private var pagedSinceRefresh: Set<String> = []
+    // Every video YouTube's feed had as of that earlier refresh, shown in All or not.
+    // All only shows the top of the YouTube feed, so these aren't all seen.
+    private var previousVideos: Set<String> = []
 
     // Remembers what this refresh shows, so the next refresh can tell what's new.
     // Posts from feeds that failed this time stay remembered from earlier refreshes.
@@ -523,6 +538,12 @@ final class FeedStore: ObservableObject {
         let currentSet = Set(current)
         let updated = stored.filter { !currentSet.contains($0) } + current
         defaults.set(Array(updated.suffix(Self.seenLimit)), forKey: Self.seenKey)
+        let storedVideos = defaults.stringArray(forKey: Self.videosKey) ?? []
+        previousVideos = Set(storedVideos)
+        let videos = state(.youtube).posts.map(\.id)
+        let videoSet = Set(videos)
+        let updatedVideos = storedVideos.filter { !videoSet.contains($0) } + videos
+        defaults.set(Array(updatedVideos.suffix(Self.videosLimit)), forKey: Self.videosKey)
         let now = Date()
         defaults.set(now, forKey: Self.refreshedKey)
         lastRefresh = now
@@ -575,11 +596,13 @@ final class FeedStore: ObservableObject {
     }
 
     // Splits the All feed into posts new since the previous refresh and those already seen.
-    // Reddit ranks posts, and RSS items can arrive dated earlier, so an older post can be new to the feed. YouTube is
-    // chronological, so its new videos are the ones above the newest video already seen.
-    // YouTube can add a video to the feed a while after it went up, so its age alone
-    // can't say whether it arrived since the previous refresh; that's the fallback only
-    // when none of the videos were seen before.
+    // Reddit ranks posts, and RSS items can arrive dated earlier, so an older post can be new to the feed.
+    // YouTube orders videos by when they went up, but can add one to the feed well after
+    // that, below videos already seen, so a new video is one above the newest video seen
+    // or one the feed didn't have at the previous refresh. Videos the feed had but All
+    // never showed, further down than it reached, aren't new. Age alone can't say whether
+    // a video arrived since the previous refresh; that's the fallback only when none of
+    // the videos were seen before.
     // A source new to the feed has nothing new yet, so it mixes in with the rest.
     // Before anything's been seen, the whole feed is new.
     func splitByRefresh(_ posts: [FeedPost]) -> (new: [FeedPost], seen: [FeedPost]) {
@@ -592,7 +615,10 @@ final class FeedStore: ObservableObject {
             if previouslySeen.contains(post.id) || pagedSinceRefresh.contains(post.id)
                 || !previousSources.contains(post.source) { return false }
             if post.source == .youtube {
-                if newestSeenVideo != nil { return videosAboveSeen.contains(post.id) }
+                if newestSeenVideo != nil {
+                    return videosAboveSeen.contains(post.id)
+                        || (!previousVideos.isEmpty && !previousVideos.contains(post.id))
+                }
                 if let publishedAt = post.publishedAt { return publishedAt > cutoff }
             }
             return true
