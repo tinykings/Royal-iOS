@@ -111,6 +111,7 @@ final class FeedStore: ObservableObject {
         }
         savedSync.scheduleSync(after: 0)
         restoreCache()
+        observeRSSBackup()
     }
 
     // Shows the synced library while sync is active, otherwise this device's own list.
@@ -436,7 +437,45 @@ final class FeedStore: ObservableObject {
 
     private func saveRSSFeeds() {
         RSSFeed.save(rssFeeds)
+        reloadRSS()
+    }
+
+    private func reloadRSS() {
         if isEnabled(.rss) { Task { await load([.rss], force: true) } }
+    }
+
+    // Follows the feed list's iCloud backup (RSSFeed.save): picks it up when it
+    // arrives on a new install or changes on another device, and backs this list
+    // up when it's the newer one.
+    private func observeRSSBackup() {
+        RSSFeed.migrateLocal()
+        NotificationCenter.default.addObserver(forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
+                                               object: NSUbiquitousKeyValueStore.default, queue: .main) { [weak self] note in
+            let keys = note.userInfo?[NSUbiquitousKeyValueStoreChangedKeysKey] as? [String] ?? []
+            guard keys.contains(RSSFeed.cloudKey) else { return }
+            MainActor.assumeIsolated { self?.reconcileRSSFeeds() }
+        }
+        NSUbiquitousKeyValueStore.default.synchronize()
+        reconcileRSSFeeds()
+    }
+
+    // The newer of this device's list and the iCloud copy wins.
+    private func reconcileRSSFeeds() {
+        let localModified = RSSFeed.localModified
+        guard let backup = RSSFeed.loadFromCloud() else {
+            if localModified > 0 { RSSFeed.saveToCloud(RSSFeed.Backup(feeds: rssFeeds, modified: localModified)) }
+            return
+        }
+        if backup.modified > localModified {
+            RSSFeed.adopt(backup)
+            guard backup.feeds != rssFeeds else { return }
+            let kept = Set(backup.feeds.map(\.url))
+            rssFeedErrors = rssFeedErrors.filter { kept.contains($0.key) }
+            rssFeeds = backup.feeds
+            reloadRSS()
+        } else if localModified > backup.modified {
+            RSSFeed.saveToCloud(RSSFeed.Backup(feeds: rssFeeds, modified: localModified))
+        }
     }
 
     // Every feed at once, newest items first. A feed that fails leaves the rest showing,
@@ -470,7 +509,7 @@ final class FeedStore: ObservableObject {
                 break
             }
         }
-        if titled { RSSFeed.save(rssFeeds) }
+        if titled { RSSFeed.save(rssFeeds, changed: false) }
         rssFeedErrors = errors
         if !list.isEmpty, errors.count == results.count, let first = errors.values.first {
             throw FeedError.failed(list.count == 1 ? first : "None of your feeds loaded (\(first)).")

@@ -25,16 +25,72 @@ struct RSSFeed: Codable, Hashable, Identifiable {
     ]
 
     // The list in Settings; the defaults until it's first changed.
+    //
+    // Kept in UserDefaults, and backed up to iCloud key-value storage under the same
+    // key so it comes back on a new device or after reinstalling, and follows changes
+    // made on the user's other devices. Each copy carries when the user last changed
+    // it; FeedStore keeps the newer one (reconcileRSSFeeds). Refreshed titles aren't
+    // a change: they stay on this device, so a new install fetching the defaults
+    // can't overwrite the backup before iCloud has delivered it.
     static func load() -> [RSSFeed] {
         guard let data = UserDefaults.standard.data(forKey: Preference.rssFeeds),
               let feeds = try? JSONDecoder().decode([RSSFeed].self, from: data) else { return defaults }
         return feeds
     }
 
-    static func save(_ feeds: [RSSFeed]) {
-        if let data = try? JSONEncoder().encode(feeds) {
-            UserDefaults.standard.set(data, forKey: Preference.rssFeeds)
+    // `changed` for the user's own changes, which are backed up; false for titles.
+    static func save(_ feeds: [RSSFeed], changed: Bool = true) {
+        guard let data = try? JSONEncoder().encode(feeds) else { return }
+        let local = UserDefaults.standard
+        local.set(data, forKey: Preference.rssFeeds)
+        if changed {
+            let modified = Date().timeIntervalSince1970
+            local.set(modified, forKey: modifiedKey)
+            saveToCloud(Backup(feeds: feeds, modified: modified))
+        } else if local.object(forKey: modifiedKey) == nil {
+            local.set(0.0, forKey: modifiedKey)
         }
+    }
+
+    // MARK: iCloud backup
+
+    // The iCloud copy: one value, so the list and its time always arrive together.
+    struct Backup: Codable {
+        var feeds: [RSSFeed]
+        var modified: Double
+    }
+
+    private static let modifiedKey = "rssFeedsModified"
+    static let cloudKey = Preference.rssFeeds
+
+    // When this device's list was last changed by the user; 0 for the defaults.
+    static var localModified: Double {
+        UserDefaults.standard.object(forKey: modifiedKey) as? Double ?? 0
+    }
+
+    static func loadFromCloud() -> Backup? {
+        guard let data = NSUbiquitousKeyValueStore.default.data(forKey: cloudKey) else { return nil }
+        return try? JSONDecoder().decode(Backup.self, from: data)
+    }
+
+    static func saveToCloud(_ backup: Backup) {
+        guard let data = try? JSONEncoder().encode(backup) else { return }
+        NSUbiquitousKeyValueStore.default.set(data, forKey: cloudKey)
+    }
+
+    // Takes the iCloud copy as this device's list, keeping its time.
+    static func adopt(_ backup: Backup) {
+        guard let data = try? JSONEncoder().encode(backup.feeds) else { return }
+        UserDefaults.standard.set(data, forKey: Preference.rssFeeds)
+        UserDefaults.standard.set(backup.modified, forKey: modifiedKey)
+    }
+
+    // Builds before the backup stored a list with no time. It was the user's, so it
+    // counts as changed now and is backed up. Once.
+    static func migrateLocal() {
+        let local = UserDefaults.standard
+        guard local.data(forKey: Preference.rssFeeds) != nil, local.object(forKey: modifiedKey) == nil else { return }
+        save(load())
     }
 
     // A pasted address as an https URL: feed:// and http:// links, and addresses

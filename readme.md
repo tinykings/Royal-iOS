@@ -12,7 +12,7 @@ iOS app combining Reddit, RSS feeds, and your YouTube subscriptions in one feed.
 - **YouTube**: your **Subscriptions** or the **Recommended** videos from your Home page, with any that are new since the last refresh first.
 - Uses your Reddit and YouTube logins from in-app sign-in pages—no API keys or OAuth setup. Reddit links open with that login, so you can vote and reply.
 - Plays YouTube videos in-app.
-- **iCloud sync**: saved posts, and the posts the All feed has shown, sync through your private iCloud database (CloudKit) between your devices, and saved posts appear on [Royal Saved](saved/README.md) on the web ([format](docs/sync-schema.md)). It uses the Apple Account signed in to iCloud; until one is, saves stay on the device.
+- **iCloud sync**: saved posts, and the posts the All feed has shown, sync through your private iCloud database (CloudKit) between your devices, and saved posts appear on [Royal Saved](saved/README.md) on the web ([format](docs/sync-schema.md)). It uses the Apple Account signed in to iCloud; until one is, saves stay on the device. The RSS feed list is backed up to iCloud key-value storage, so it returns on a new device or after reinstalling and follows changes made on your other devices (the most recent change wins).
 - Caps Reddit posts at five per subreddit, except when viewing a single subreddit; excludes pinned and NSFW posts.
 - The All feed shows posts new since the previous refresh. Pull up at the end to mark them read; pull up the empty feed to look back through earlier posts. Feeds refresh on their own after 15 minutes away; tap the current tab to jump to the top.
 
