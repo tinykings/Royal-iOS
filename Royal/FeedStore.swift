@@ -504,6 +504,8 @@ final class FeedStore: ObservableObject {
     private static let markedReadKey = "allFeedMarkedRead"
     private static let videosKey = "allFeedYouTubeIDs"
     private static let videosLimit = 1000
+    // How many of a source's posts are new when it first joins the All feed.
+    private static let firstLookCount = 20
 
     // Whether the All feed has ever been marked read on this install.
     @Published private(set) var hasMarkedRead = UserDefaults.standard.bool(forKey: FeedStore.markedReadKey)
@@ -603,17 +605,31 @@ final class FeedStore: ObservableObject {
     // never showed, further down than it reached, aren't new. Age alone can't say whether
     // a video arrived since the previous refresh; that's the fallback only when none of
     // the videos were seen before.
-    // A source new to the feed has nothing new yet, so it mixes in with the rest.
-    // Before anything's been seen, the whole feed is new.
+    // A source new to the feed, like one just logged into or turned on, starts with its
+    // first posts new so the feed doesn't look empty; the rest join the earlier posts.
+    // Before anything's been seen every source is new to the feed. Once those posts are
+    // marked read, or the next refresh comes, it goes by what's new since like the rest.
     func splitByRefresh(_ posts: [FeedPost]) -> (new: [FeedPost], seen: [FeedPost]) {
-        guard let previousRefresh, !previouslySeen.isEmpty else { return (posts, []) }
+        let firstUse = previousRefresh == nil || previouslySeen.isEmpty
+        var firstLook = Set<String>()
+        var counts: [FeedSource: Int] = [:]
+        for post in posts where firstUse || !previousSources.contains(post.source) {
+            guard counts[post.source, default: 0] < Self.firstLookCount else { continue }
+            counts[post.source, default: 0] += 1
+            if !previouslySeen.contains(post.id) && !pagedSinceRefresh.contains(post.id) {
+                firstLook.insert(post.id)
+            }
+        }
+        guard let previousRefresh, !firstUse else {
+            return (posts.filter { firstLook.contains($0.id) }, posts.filter { !firstLook.contains($0.id) })
+        }
         let cutoff = previousRefresh.timeIntervalSince1970
         let videos = state(.youtube).posts
         let newestSeenVideo = videos.firstIndex { previouslySeen.contains($0.id) }
         let videosAboveSeen = Set(videos.prefix(newestSeenVideo ?? 0).map(\.id))
         func isNew(_ post: FeedPost) -> Bool {
-            if previouslySeen.contains(post.id) || pagedSinceRefresh.contains(post.id)
-                || !previousSources.contains(post.source) { return false }
+            if !previousSources.contains(post.source) { return firstLook.contains(post.id) }
+            if previouslySeen.contains(post.id) || pagedSinceRefresh.contains(post.id) { return false }
             if post.source == .youtube {
                 if newestSeenVideo != nil {
                     return videosAboveSeen.contains(post.id)
