@@ -5,6 +5,9 @@ struct SettingsView: View {
     @EnvironmentObject private var store: FeedStore
     @State private var diagnostics = ""
     @State private var confirmingLogOut: FeedSource?
+    @State private var importingWatchLater = false
+    // How the last Watch Later import went.
+    @State private var watchLaterResult: String?
     @AppStorage(Preference.youtubeLayout) private var youtubeLayout = FeedLayout.cards
     @AppStorage(Preference.youtubePlayback) private var youtubePlayback = VideoPlayback.inApp
     @AppStorage(Preference.listWhilePlaying) private var listWhilePlaying = true
@@ -13,6 +16,21 @@ struct SettingsView: View {
     @AppStorage(Preference.rssOpen) private var rssOpen = RSSOpenTarget.description
     @AppStorage(Preference.rssLayout) private var rssLayout = FeedLayout.cards
     @AppStorage(Preference.feedTextSize) private var feedTextSize = FeedTextSize.standard
+
+    private func importWatchLater() {
+        importingWatchLater = true
+        watchLaterResult = nil
+        Task {
+            defer { importingWatchLater = false }
+            do {
+                let count = try await store.importWatchLater()
+                watchLaterResult = count == 0 ? "Everything in Watch Later is already saved."
+                    : "Saved \(count) video\(count == 1 ? "" : "s") from Watch Later."
+            } catch {
+                watchLaterResult = "Couldn't import Watch Later: \(error.localizedDescription)"
+            }
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -92,10 +110,23 @@ struct SettingsView: View {
                         }
                         Toggle("Show list view when playing video", isOn: $listWhilePlaying)
                             .disabled(youtubePlayback != .inApp)
+                        Button(action: importWatchLater) {
+                            HStack {
+                                Label("Import Watch Later from YouTube", systemImage: "clock")
+                                Spacer()
+                                if importingWatchLater { ProgressView() }
+                            }
+                        }
+                        .disabled(importingWatchLater || store.loggedIn[.youtube] != true)
+                        if let watchLaterResult {
+                            Text(watchLaterResult)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                     } header: {
                         Text("YouTube")
                     } footer: {
-                        Text("Cards show a large thumbnail with the title below. With the in-app player, every section can switch to List view while a video plays. YouTube feeds rely on undocumented page data and may break when YouTube changes its site.")
+                        Text("Cards show a large thumbnail with the title below. With the in-app player, every section can switch to List view while a video plays. Importing Watch Later saves every video in the playlist that isn't saved yet, marked with a clock; unsaving one takes it out of Watch Later too. Saving a video in Royal never adds it to Watch Later. YouTube feeds rely on undocumented page data and may break when YouTube changes its site.")
                     }
                 }
                 // Shown only while the source is on.

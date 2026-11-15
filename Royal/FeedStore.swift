@@ -167,10 +167,10 @@ final class FeedStore: ObservableObject {
 
     // MARK: Watch Later
 
-    // Videos in the YouTube account's Watch Later playlist show in Saved, marked as from
-    // there. It only goes one way: unsaving one takes it out of the playlist, but saving
-    // a video in the app leaves the playlist alone. A video taken out of the playlist on
-    // YouTube stays saved.
+    // Settings imports the videos in the YouTube account's Watch Later playlist into Saved,
+    // marked as from there. It only goes one way: unsaving one takes it out of the playlist,
+    // but saving a video in the app leaves the playlist alone. A video taken out of the
+    // playlist on YouTube stays saved.
     //
     // A video unsaved here waits to come out of the playlist until YouTube confirms it,
     // and isn't imported again meanwhile. With sync on, its tombstone keeps the Watch
@@ -220,13 +220,28 @@ final class FeedStore: ObservableObject {
         }
     }
 
-    // Brings new Watch Later videos into Saved and takes out those unsaved here. Runs at
-    // most once a minute unless forced, and only with YouTube on and logged in. A failure
-    // leaves Saved as it is.
-    func syncWatchLater(force: Bool = false) async {
-        guard isEnabled(.youtube), !checkingWatchLater else { return }
+    // Takes videos unsaved here, or with sync on anywhere, out of the playlist when an
+    // earlier try didn't. Does nothing with none waiting; otherwise runs at most once a
+    // minute unless forced, and only with YouTube on and logged in. Never imports.
+    func retryWatchLaterRemovals(force: Bool = false) async {
+        guard isEnabled(.youtube), !checkingWatchLater, !watchLaterRemovals.isEmpty else { return }
         if !force, let checked = watchLaterChecked, Date().timeIntervalSince(checked) < Self.watchLaterInterval { return }
         guard await session.isLoggedIn(.youtube) else { return }
+        _ = try? await checkWatchLater(importing: false)
+    }
+
+    // Saves every video in the playlist that isn't saved yet, from Settings; returns how
+    // many. Royal never imports on its own, since a playlist nobody clears out can hold
+    // years of videos already watched.
+    func importWatchLater() async throws -> Int {
+        guard !checkingWatchLater else { throw FeedError.failed("Already checking Watch Later.") }
+        guard await session.isLoggedIn(.youtube) else { throw FeedError.failed("Log in to YouTube first.") }
+        return try await checkWatchLater(importing: true)
+    }
+
+    // Reads the playlist, takes out the videos waiting to come out, and, when importing,
+    // saves the rest that aren't saved yet. Returns how many were saved.
+    private func checkWatchLater(importing: Bool) async throws -> Int {
         checkingWatchLater = true
         defer { checkingWatchLater = false }
         let started = Date()
@@ -237,8 +252,7 @@ final class FeedStore: ObservableObject {
             try? await Task.sleep(for: .milliseconds(100))
             await savedSync.waitUntilIdle(timeout: 4)
         }
-        guard let playlist = try? await session.watchLater() else { return }
-        let (videos, complete) = playlist
+        let (videos, complete) = try await session.watchLater()
         let inPlaylist = Set(videos.compactMap(\.videoId))
         let removals = watchLaterRemovals
         for videoId in removals.sorted() {
@@ -249,6 +263,7 @@ final class FeedStore: ObservableObject {
                 finishWatchLaterRemoval(videoId)
             }
         }
+        guard importing else { return 0 }
         // The playlist's first video lands at the top of Saved, the rest in its order below.
         // Left out: videos waiting to come out of the playlist, including any unsaved while
         // this ran, and those taken out since the list was fetched.
@@ -262,13 +277,14 @@ final class FeedStore: ObservableObject {
             post.watchLater = true
             imported.append(SavedPost(post: post, savedAt: now.addingTimeInterval(-0.001 * Double(imported.count))))
         }
-        guard !imported.isEmpty else { return }
+        guard !imported.isEmpty else { return 0 }
         if savedSync.isActive {
             for item in imported { savedSync.setSaved(item.post, true, at: item.savedAt) }
         } else {
             saved = (saved + imported).sorted { $0.savedAt > $1.savedAt }
             SavedPostsStorage.save(saved)
         }
+        return imported.count
     }
 
     // Channels subscribed to or unsubscribed from in the app while it runs, over what the
@@ -367,7 +383,7 @@ final class FeedStore: ObservableObject {
             feeds[key] = FeedState(posts: state.posts, error: error.localizedDescription, loaded: true, loadedAt: state.loadedAt)
         }
         loggedIn[key.source] = await session.isLoggedIn(key.source)
-        if key == .youtube { Task { await syncWatchLater() } }
+        if key == .youtube { Task { await retryWatchLaterRemovals() } }
     }
 
     // After a login page closes: reloads `keys` if any of `sources` is now logged in.

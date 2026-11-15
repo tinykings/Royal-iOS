@@ -323,8 +323,8 @@ struct FeedListView<Trailing: View>: View {
                 .onChange(of: savedOnly) { cancelNothingNew() }
                 .onDisappear { cancelNothingNew() }
                 .task(id: keys) { await store.load(keys) }
-                // Saved brings in what's been added to YouTube's Watch Later.
-                .task(id: savedOnly) { if savedOnly { await store.syncWatchLater() } }
+                // Videos unsaved from Watch Later that didn't come out of the playlist yet.
+                .task(id: savedOnly) { if savedOnly { await store.retryWatchLaterRemovals() } }
                 .sheet(item: $descriptionPost) { post in
                     RSSDescriptionView(post: post)
                 }
@@ -401,7 +401,7 @@ struct FeedListView<Trailing: View>: View {
         refresh = run
         cancelNothingNew()
         if savedOnly {
-            async let watchLater: Void = store.syncWatchLater(force: true)
+            async let watchLater: Void = store.retryWatchLaterRemovals(force: true)
             await store.load(keys, force: true)
             await watchLater
         } else {
