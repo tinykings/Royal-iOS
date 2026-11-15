@@ -46,6 +46,9 @@ export function normalizePost(post) {
     image: httpURL(post.image), imageAspect: finite(post.imageAspect), videoId: text(post.videoId),
     published: text(post.published), publishedAt: finite(post.publishedAt),
     nsfw: typeof post.nsfw === "boolean" ? post.nsfw : null,
+    // Imported from YouTube's Watch Later by iOS. Kept through an unsave here, so iOS
+    // takes the video out of the playlist and doesn't import it again.
+    ...(post.watchLater === true ? { watchLater: true } : {}),
   };
 }
 

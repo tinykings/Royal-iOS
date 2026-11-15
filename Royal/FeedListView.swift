@@ -323,6 +323,8 @@ struct FeedListView<Trailing: View>: View {
                 .onChange(of: savedOnly) { cancelNothingNew() }
                 .onDisappear { cancelNothingNew() }
                 .task(id: keys) { await store.load(keys) }
+                // Saved brings in what's been added to YouTube's Watch Later.
+                .task(id: savedOnly) { if savedOnly { await store.syncWatchLater() } }
                 .sheet(item: $descriptionPost) { post in
                     RSSDescriptionView(post: post)
                 }
@@ -398,7 +400,13 @@ struct FeedListView<Trailing: View>: View {
         let run = RefreshRun(id: (refresh?.id ?? 0) + 1)
         refresh = run
         cancelNothingNew()
-        await store.load(keys, force: true)
+        if savedOnly {
+            async let watchLater: Void = store.syncWatchLater(force: true)
+            await store.load(keys, force: true)
+            await watchLater
+        } else {
+            await store.load(keys, force: true)
+        }
         guard refresh?.id == run.id else { return }
         refresh?.finished = true
         if nothingNew { startNothingNew() }
@@ -498,7 +506,7 @@ struct FeedListView<Trailing: View>: View {
     private func postRow(_ post: FeedPost, nearEnd: Bool) -> some View {
         let isSaved = store.isSaved(post)
         return PostRow(post: post, showsSource: showsSource, showsDate: !savedOnly, layout: layout(for: post), saved: isSaved,
-                       playing: store.playingVideo?.id == post.id)
+                       fromWatchLater: isSaved && store.isFromWatchLater(post), playing: store.playingVideo?.id == post.id)
             .contentShape(RoundedRectangle(cornerRadius: PostRow.cornerRadius))
             .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: PostRow.cornerRadius))
             .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
@@ -1421,6 +1429,8 @@ struct PostRow: View {
     var showsDate = true
     var layout = FeedLayout.list
     var saved = false
+    // Saved by importing it from the YouTube account's Watch Later playlist; badged on the thumbnail.
+    var fromWatchLater = false
     // The video in the docked player; outlined so it's easy to find in the list.
     var playing = false
     @AppStorage(Preference.feedTextSize) private var textSize = FeedTextSize.standard
@@ -1482,6 +1492,9 @@ struct PostRow: View {
                 }
                 .frame(width: 96, height: 54)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(alignment: .bottomLeading) {
+                    if fromWatchLater { watchLaterBadge(.caption2) }
+                }
                 .overlay(alignment: .bottomTrailing) {
                     if saved {
                         Image(systemName: "heart.fill")
@@ -1521,6 +1534,9 @@ struct PostRow: View {
                             }
                         }
                         .clipped()
+                        .overlay(alignment: .bottomLeading) {
+                            if fromWatchLater { watchLaterBadge(.caption) }
+                        }
                 } else {
                     // Reddit and RSS images keep their own shape, capped so tall ones don't fill the
                     // screen; narrow ones sit on a blurred copy of themselves across the tile,
@@ -1572,6 +1588,17 @@ struct PostRow: View {
             .padding(.trailing, heartOnThumbnail ? 0 : 18)
             .font(.caption)
         }
+    }
+
+    // A clock, as YouTube marks Watch Later, on the corner of the video's thumbnail.
+    private func watchLaterBadge(_ font: Font) -> some View {
+        Image(systemName: "clock.fill")
+            .font(font)
+            .foregroundStyle(.secondary)
+            .padding(4)
+            .background(.regularMaterial, in: Circle())
+            .padding(4)
+            .accessibilityLabel("From Watch Later")
     }
 
     private var icon: String {

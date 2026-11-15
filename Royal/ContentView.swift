@@ -52,9 +52,12 @@ struct ContentView: View {
         }
         // Feeds open as they were left, so check logins apart from loading them.
         .task { await store.refreshLoginStatus() }
-        // Saved-post sync has no background timer; it catches up here.
+        // Saved-post sync has no background timer; it catches up here, and so does Watch Later.
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { store.savedSync.scheduleSync(after: 0) }
+            if phase == .active {
+                store.savedSync.scheduleSync(after: 0)
+                Task { await store.syncWatchLater() }
+            }
         }
         .tint(.royalAccent)
         .environmentObject(store)

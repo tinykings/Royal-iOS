@@ -65,6 +65,9 @@ struct FeedPost: Codable, Identifiable {
     var channelId: String? = nil
     // RSS only: the item's description (or full content), as the feed's HTML.
     var summary: String? = nil
+    // YouTube only, on saved posts: saved by importing it from the account's Watch Later
+    // playlist. Unsaving it takes it out of the playlist too.
+    var watchLater: Bool? = nil
 }
 
 enum FeedError: LocalizedError {
@@ -153,7 +156,7 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
               return res;
             };
             \(body)
-            return { fetchReddit, fetchSubscribedSubreddits, fetchYouTube, NotLoggedInError };
+            return { fetchReddit, fetchSubscribedSubreddits, fetchYouTube, fetchYouTubeWatchLater, NotLoggedInError };
             })();
 
             """
@@ -395,6 +398,34 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         guard channelId.range(of: "^UC[\\w-]{22}$", options: .regularExpression) != nil else {
             throw FeedError.failed("Unknown YouTube channel")
         }
+        let action = subscribed ? "subscribe" : "unsubscribe"
+        let body = try await youTubeAPI("subscription/\(action)", ["channelIds": [channelId]], doing: action)
+        // A request YouTube didn't take as signed in still answers 200, just without saying the
+        // channel's button changed.
+        let confirmed = body.range(of: "\"subscribed\"\\s*:\\s*\(subscribed)", options: .regularExpression) != nil
+        guard confirmed else {
+            throw FeedError.failed("YouTube didn't confirm the change. Check you're logged in to YouTube in Settings.")
+        }
+    }
+
+    // Takes a video out of the account's Watch Later playlist, as the playlist's own
+    // remove button does.
+    func removeFromWatchLater(videoId: String) async throws {
+        guard videoId.range(of: "^[\\w-]{11}$", options: .regularExpression) != nil else {
+            throw FeedError.failed("Unknown YouTube video")
+        }
+        let body = try await youTubeAPI("browse/edit_playlist", [
+            "playlistId": "WL",
+            "actions": [["action": "ACTION_REMOVE_VIDEO_BY_VIDEO_ID", "removedVideoId": videoId]],
+        ], doing: "remove the video from Watch Later")
+        guard body.contains("STATUS_SUCCEEDED") else {
+            throw FeedError.failed("YouTube didn't confirm removing the video from Watch Later.")
+        }
+    }
+
+    // A POST to YouTube's web API (youtubei/v1/<endpoint>) as the logged-in account, signed
+    // for the session the home page names. Returns the response body.
+    private func youTubeAPI(_ endpoint: String, _ fields: [String: Any], doing action: String) async throws -> String {
         let origin = Self.youTubeOrigin
         try await ensureLoaded()
         // The page's settings say which signed-in account and session the request is for.
@@ -415,13 +446,11 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
             throw FeedError.notLoggedIn("YouTube login required")
         }
 
-        let action = subscribed ? "subscribe" : "unsubscribe"
-        var request = URLRequest(url: URL(string: "\(origin)/youtubei/v1/subscription/\(action)?prettyPrint=false")!)
+        var request = URLRequest(url: URL(string: "\(origin)/youtubei/v1/\(endpoint)?prettyPrint=false")!)
         request.httpMethod = "POST"
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "context": ["client": ["clientName": "WEB", "clientVersion": version, "hl": "en"]],
-            "channelIds": [channelId],
-        ])
+        var body = fields
+        body["context"] = ["client": ["clientName": "WEB", "clientVersion": version, "hl": "en"]]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         for (field, value) in HTTPCookie.requestHeaderFields(with: cookies.filter { Self.cookie($0, matches: request.url!) }) {
             request.setValue(value, forHTTPHeaderField: field)
         }
@@ -438,18 +467,37 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         request.setValue(Self.desktopUserAgent, forHTTPHeaderField: "User-Agent")
         let (data, response) = try await session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        let body = String(decoding: data, as: UTF8.self)
+        let text = String(decoding: data, as: UTF8.self)
         #if DEBUG
-        NSLog("Royal %@ %@ -> %d %@", action, channelId, status, body.replacingOccurrences(of: "\n", with: " "))
+        NSLog("Royal %@ -> %d %@", endpoint, status, String(text.replacingOccurrences(of: "\n", with: " ").prefix(400)))
         #endif
         if status == 401 || status == 403 { throw FeedError.notLoggedIn("YouTube login required") }
         guard status == 200 else { throw FeedError.failed("YouTube couldn't \(action) (HTTP \(status))") }
-        // A request YouTube didn't take as signed in still answers 200, just without saying the
-        // channel's button changed.
-        let confirmed = body.range(of: "\"subscribed\"\\s*:\\s*\(subscribed)", options: .regularExpression) != nil
-        guard confirmed else {
-            throw FeedError.failed("YouTube didn't confirm the change. Check you're logged in to YouTube in Settings.")
+        return text
+    }
+
+    // The account's Watch Later playlist, in its order, and whether that's all of it.
+    func watchLater() async throws -> (posts: [FeedPost], complete: Bool) {
+        guard !sourcesScript.isEmpty else { throw FeedError.failed("sources.js missing from app bundle") }
+        let result = try await run(sourcesScript + """
+            try {
+              return JSON.stringify(await Royal.fetchYouTubeWatchLater());
+            } catch (e) {
+              return JSON.stringify({ error: String(e.message ?? e), notLoggedIn: e instanceof Royal.NotLoggedInError });
+            }
+            """)
+        struct Response: Decodable {
+            let posts: [FeedPost]?
+            let complete: Bool?
+            let error: String?
+            let notLoggedIn: Bool?
         }
+        guard let json = result as? String else { throw FeedError.failed("No result from page") }
+        let response = try JSONDecoder().decode(Response.self, from: Data(json.utf8))
+        if let error = response.error {
+            throw response.notLoggedIn == true ? FeedError.notLoggedIn(error) : FeedError.failed(error)
+        }
+        return (response.posts ?? [], response.complete ?? false)
     }
 
     struct Page {

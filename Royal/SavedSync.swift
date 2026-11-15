@@ -143,9 +143,17 @@ final class SavedSync: ObservableObject {
 
     // MARK: Local changes
 
-    func setSaved(_ post: FeedPost, _ isSaved: Bool) {
+    func setSaved(_ post: FeedPost, _ isSaved: Bool, at date: Date = Date()) {
         guard isActive else { return }
-        library.setSaved(post, isSaved)
+        library.setSaved(post, isSaved, now: date)
+        persist()
+        scheduleSync()
+    }
+
+    // An unsaved Watch Later video is out of the playlist now.
+    func clearWatchLater(postID: String) {
+        guard isActive else { return }
+        library.clearWatchLater(postID: postID)
         persist()
         scheduleSync()
     }

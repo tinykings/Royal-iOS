@@ -166,7 +166,8 @@ function renderPost(post) {
   meta.append(mark);
   const text = element("span");
   text.append([post.label || SOURCE_NAMES[post.source], post.score != null && count(post.score, "pt"),
-    post.created != null ? since(post.created) : published(post), post.nsfw && "NSFW"].filter(Boolean).join(" · "));
+    post.created != null ? since(post.created) : published(post), post.nsfw && "NSFW",
+    post.watchLater && "from Watch Later"].filter(Boolean).join(" · "));
   const other = post.commentsUrl !== post.url;
   if (post.comments != null) {
     text.append(" · ", other && !comments ? link(post.commentsUrl, count(post.comments, "comment")) : count(post.comments, "comment"));

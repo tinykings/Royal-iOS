@@ -74,6 +74,15 @@ test("saves are newest first, unsaves leave tombstones, and posts are sanitized"
   assert.equal(normalizePost(post("reddit", "i", { image: "http://insecure.test/x.png" })).image, "http://insecure.test/x.png");
 });
 
+test("a video imported from Watch Later keeps its mark through an unsave", () => {
+  const video = post("youtube", "yt_abcdefghijk", { videoId: "abcdefghijk", watchLater: true });
+  let state = setSaved(emptyState(), video, true, new Date("2026-11-10T10:00:00Z"));
+  assert.equal(savedPosts(state)[0].watchLater, true);
+  state = setSaved(state, { ...video, watchLater: undefined }, false, new Date("2026-11-10T11:00:00Z"));
+  assert.equal(state.saved.yt_abcdefghijk.post.watchLater, true);
+  assert.equal("watchLater" in normalizePost(post("youtube", "v", { watchLater: "yes" })), false);
+});
+
 function memoryStorage() {
   const values = {};
   return { values, get: async key => ({ [key]: structuredClone(values[key]) }), set: async entries => { Object.assign(values, structuredClone(entries)); }, remove: async key => { delete values[key]; } };

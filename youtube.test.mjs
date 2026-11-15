@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fetchYouTube, parseYouTubeFeed, NotLoggedInError, youTubePublishedAt } from "./sources.js";
+import { fetchYouTube, fetchYouTubeWatchLater, parseYouTubeFeed, NotLoggedInError, youTubePublishedAt } from "./sources.js";
 
 const video = (id = "abcdefghijk") => ({ videoRenderer: {
   videoId: id, title: { runs: [{ text: 'Video "title" } \\ test' }] },
@@ -214,5 +214,57 @@ test("YouTube subscriptions load further pages to the limit, signed for the page
     globalThis.fetch = async (url, init = {}) => { requests.push(init); return { ok: true, url, text: async () => page({ items: [video(), more("first")] }) }; };
     await fetchYouTube(100, { feed: "home" });
     assert.equal(requests.length, 1);
+  } finally { globalThis.fetch = original; }
+});
+
+test("YouTube's Watch Later loads the playlist, with every page, and says whether it's whole", async () => {
+  const original = globalThis.fetch;
+  const channel = "UC" + "c".repeat(22);
+  const entry = (id) => ({ playlistVideoRenderer: {
+    videoId: id, setVideoId: `set-${id}`, title: { runs: [{ text: `Saved ${id}` }] },
+    shortBylineText: { runs: [{ text: "Channel", navigationEndpoint: { browseEndpoint: { browseId: channel } } }] },
+    videoInfo: { runs: [{ text: "12K views" }, { text: " • " }, { text: "3 days ago" }] },
+  } });
+  // Playlists wrap the next page's token among other commands.
+  const more = (token) => ({ continuationItemRenderer: { continuationEndpoint: { commandExecutorCommand: { commands: [
+    { playlistVotingRefreshPopupCommand: {} }, { continuationCommand: { token } },
+  ] } } } });
+  const playlist = (contents) => page({ twoColumnBrowseResultsRenderer: { tabs: [{ tabRenderer: { selected: true, content: {
+    sectionListRenderer: { contents: [{ itemSectionRenderer: { contents: [{ playlistVideoListRenderer: { contents } }] } }] },
+  } } }] } });
+  try {
+    const requests = [];
+    let failPages = false;
+    globalThis.fetch = async (url, init = {}) => {
+      requests.push(url);
+      if (init.method !== "POST") return { ok: true, url, text: async () => playlist([entry("watchlate01"), more("next")]) };
+      if (failPages) return { ok: false, status: 500 };
+      return { ok: true, text: async () => JSON.stringify({ onResponseReceivedActions: [
+        { appendContinuationItemsAction: { continuationItems: [entry("watchlate02")] } },
+      ] }) };
+    };
+    const { posts, complete } = await fetchYouTubeWatchLater();
+    assert.equal(requests[0], "https://www.youtube.com/playlist?list=WL");
+    assert.deepEqual(posts.map((p) => p.videoId), ["watchlate01", "watchlate02"]);
+    assert.equal(complete, true);
+    assert.equal(posts[0].id, "yt_watchlate01");
+    assert.equal(posts[0].title, "Saved watchlate01");
+    assert.equal(posts[0].label, "Channel");
+    assert.equal(posts[0].published, "3 days ago");
+    assert.equal(posts[0].channelId, channel);
+
+    // A page that fails, or a limit that cuts the list short, leaves it incomplete.
+    failPages = true;
+    assert.deepEqual(await fetchYouTubeWatchLater().then((r) => [r.posts.length, r.complete]), [1, false]);
+    failPages = false;
+    assert.deepEqual(await fetchYouTubeWatchLater(1).then((r) => [r.posts.length, r.complete]), [1, false]);
+
+    // An empty playlist is whole; a page with no playlist on it isn't known to be.
+    globalThis.fetch = async (url) => ({ ok: true, url, text: async () => playlist([]) });
+    assert.deepEqual(await fetchYouTubeWatchLater(), { posts: [], complete: true });
+    globalThis.fetch = async (url) => ({ ok: true, url, text: async () => page({ items: [] }) });
+    assert.deepEqual(await fetchYouTubeWatchLater(), { posts: [], complete: false });
+    globalThis.fetch = async (url) => ({ ok: true, url, text: async () => '"LOGGED_IN":false' });
+    await assert.rejects(fetchYouTubeWatchLater(), NotLoggedInError);
   } finally { globalThis.fetch = original; }
 });

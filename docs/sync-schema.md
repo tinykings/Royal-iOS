@@ -38,7 +38,7 @@ with a higher version rather than misreading or overwriting them.
 |---|---|
 | recordName | `saved.<postID>`, e.g. `saved.t3_abc123`, `saved.hn_42`, `saved.yt_dQw4w9WgXcQ` |
 | `postID` | STRING, the `FeedPost.id` |
-| `post` | STRING, JSON of the normalized post (`sources.js` / `FeedPost` keys). `source` is `reddit`, `rss` or `youtube`; `hn` (Hacker News, which RSS replaced) still appears in older saves and means `rss`. RSS posts may carry `summary`, the item's HTML description (at most 20,000 characters), which iOS shows with scripts off |
+| `post` | STRING, JSON of the normalized post (`sources.js` / `FeedPost` keys). `source` is `reddit`, `rss` or `youtube`; `hn` (Hacker News, which RSS replaced) still appears in older saves and means `rss`. RSS posts may carry `summary`, the item's HTML description (at most 20,000 characters), which iOS shows with scripts off. YouTube posts iOS imported from the account's Watch Later playlist carry `watchLater: true`; clients keep it on the tombstone when unsaving, since iOS takes an unsaved video with it out of the playlist, and doesn't import it again, then drops it from the tombstone once YouTube confirms the video is out |
 | `savedAt` | STRING, ISO 8601 UTC, time of the last save **or** unsave |
 | `isSaved` | INT64, `1` saved, `0` unsaved (tombstone) |
 | `schemaVersion` | INT64 |

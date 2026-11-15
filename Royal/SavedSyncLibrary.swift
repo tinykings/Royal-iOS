@@ -92,6 +92,22 @@ struct SavedSyncLibrary: Codable {
         dirty[post.id] = Mark(rev: rev, mode: .set)
     }
 
+    // Videos unsaved after being imported from Watch Later, whose tombstone still says so:
+    // they're to come out of the playlist, and aren't imported from it again meanwhile.
+    var watchLaterRemovals: [String] {
+        entries.values.filter { !$0.isSaved && $0.post.watchLater == true }.compactMap(\.post.videoId).sorted()
+    }
+
+    // The video's out of Watch Later now, so its tombstone stops asking for that. Saving it
+    // again from the playlist later imports it anew.
+    mutating func clearWatchLater(postID: String) {
+        guard var entry = entries[postID], !entry.isSaved, entry.post.watchLater == true else { return }
+        entry.post.watchLater = nil
+        entries[postID] = entry
+        rev += 1
+        dirty[postID] = Mark(rev: rev, mode: .set)
+    }
+
     // Offers saves made outside sync. Only posts the library has no record of at all
     // are added, and a remote copy found later wins. Returns whether anything was added.
     @discardableResult
@@ -274,7 +290,7 @@ enum SavedSyncCodec {
                         score: post.score, comments: post.comments, created: post.created,
                         image: httpURL(post.image), imageAspect: post.imageAspect, videoId: post.videoId,
                         published: post.published, publishedAt: post.publishedAt, nsfw: post.nsfw,
-                        summary: post.summary)
+                        summary: post.summary, watchLater: post.watchLater == true ? true : nil)
     }
 
     static func encodePost(_ post: FeedPost) -> String {

@@ -230,10 +230,16 @@ function youTubeVideos(root, limit, posts = []) {
       const heading = text(section.title) || text(section.header?.itemSectionHeaderRenderer?.title);
       if (/most relev[ae]nt|recommended|for you/i.test(heading)) return;
     }
-    // The list's last item loads the next page when scrolled to.
-    const token = node.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token;
+    // The list's last item loads the next page when scrolled to. Playlists wrap the
+    // command in a commandExecutorCommand with others.
+    const endpoint = node.continuationItemRenderer?.continuationEndpoint;
+    const token = endpoint?.continuationCommand?.token
+      ?? endpoint?.commandExecutorCommand?.commands?.find((c) => c.continuationCommand)?.continuationCommand?.token;
     if (typeof token === "string") continuation ??= token;
-    const video = node.videoRenderer ?? node.gridVideoRenderer;
+    // Playlists (Watch Later) list their videos as playlistVideoRenderers, with views and
+    // age together in videoInfo: "12K views • 3 days ago".
+    const playlistVideo = node.playlistVideoRenderer;
+    const video = node.videoRenderer ?? node.gridVideoRenderer ?? playlistVideo;
     const lockup = node.lockupViewModel;
     const id = video?.videoId ?? (lockup?.contentType === "LOCKUP_CONTENT_TYPE_VIDEO" ? lockup.contentId : null);
     if (typeof id === "string" && /^[\w-]{11}$/.test(id) && !ids.has(id)) {
@@ -247,7 +253,8 @@ function youTubeVideos(root, limit, posts = []) {
           label: text(video?.ownerText ?? video?.shortBylineText ?? video?.longBylineText)
             || text(metadata?.metadata?.contentMetadataViewModel?.metadataRows?.[0]?.metadataParts?.[0]?.text)
             || "YouTube",
-          published: text(video?.publishedTimeText) || lockupAge(metadata),
+          published: text(video?.publishedTimeText) || lockupAge(metadata)
+            || (playlistVideo?.videoInfo?.runs ?? []).map((r) => r.text.trim()).find((part) => /\bago$/i.test(part)) || "",
           image: `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,
         });
         const channelId = channelIdIn(video ?? lockup);
@@ -299,16 +306,21 @@ async function fetchYouTubeContinuation(html, token) {
       ?? action.reloadContinuationItemsCommand?.continuationItems ?? []);
 }
 
-export async function fetchYouTube(limit, { feed = "subscriptions" } = {}) {
-  const path = YOUTUBE_FEEDS.get(feed);
-  if (!path) throw new Error("Invalid YouTube feed");
+// A YouTube page's HTML, as the signed-in account sees it.
+async function fetchYouTubePage(path) {
   const response = await fetch(`${YOUTUBE}${path}`, { credentials: "include" });
   if (response.status === 401 || response.status === 403) throw new NotLoggedInError("YouTube login required");
   if (!response.ok) throw new Error(`YouTube HTTP ${response.status}`);
   if (response.url && new URL(response.url).hostname !== "www.youtube.com") {
     throw new Error("Open YouTube and finish login or consent, then refresh.");
   }
-  const html = await response.text();
+  return response.text();
+}
+
+export async function fetchYouTube(limit, { feed = "subscriptions" } = {}) {
+  const path = YOUTUBE_FEEDS.get(feed);
+  if (!path) throw new Error("Invalid YouTube feed");
+  const html = await fetchYouTubePage(path);
   let page = parseYouTubePage(html, limit);
   // The first page holds only the latest few dozen uploads. Load on to the limit, or
   // anything uploaded since the last refresh past the first page would never show.
@@ -319,4 +331,27 @@ export async function fetchYouTube(limit, { feed = "subscriptions" } = {}) {
     page = youTubeVideos(items, limit, page.posts);
   }
   return page.posts;
+}
+
+// Most pages of Watch Later to load past the first; each holds up to 100 videos.
+const WATCH_LATER_MORE_PAGES = 9;
+
+// The videos in the account's Watch Later playlist, in the playlist's order, and whether
+// that's the whole playlist. It isn't when a page failed or the limit cut it short, so a
+// video missing from the list may still be in the playlist.
+export async function fetchYouTubeWatchLater(limit = 1000) {
+  const html = await fetchYouTubePage("/playlist?list=WL");
+  let page = parseYouTubePage(html, limit);
+  let complete = true;
+  for (let more = 0; page.continuation; more++) {
+    if (more >= WATCH_LATER_MORE_PAGES) { complete = false; break; }
+    let items;
+    try { items = await fetchYouTubeContinuation(html, page.continuation); } catch { complete = false; break; }
+    page = youTubeVideos(items, limit, page.posts);
+  }
+  if (page.posts.length >= limit) complete = false;
+  // An empty list is only taken at its word when the page is plainly a playlist, not a
+  // layout this doesn't recognize.
+  if (!page.posts.length && !html.includes('"playlistVideoListRenderer"')) complete = false;
+  return { posts: page.posts, complete };
 }

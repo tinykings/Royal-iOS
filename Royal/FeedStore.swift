@@ -136,9 +136,25 @@ final class FeedStore: ObservableObject {
         saved.contains { $0.post.id == post.id }
     }
 
+    // Whether the saved copy of the post came from the YouTube account's Watch Later playlist.
+    func isFromWatchLater(_ post: FeedPost) -> Bool {
+        post.source == .youtube && saved.first { $0.post.id == post.id }?.post.watchLater == true
+    }
+
     func toggleSaved(_ post: FeedPost) {
+        let saving = !isSaved(post)
+        // Unsaving a video imported from Watch Later takes it out of the playlist too. Saving
+        // in the app never puts anything in the playlist.
+        if let videoId = post.videoId {
+            if saving {
+                setWatchLaterRemoval(videoId, pending: false)
+            } else if isFromWatchLater(post) {
+                setWatchLaterRemoval(videoId, pending: true)
+                Task { await removeFromWatchLater(videoId) }
+            }
+        }
         if savedSync.isActive {
-            savedSync.setSaved(post, !isSaved(post))
+            savedSync.setSaved(post, saving)
             return
         }
         if let index = saved.firstIndex(where: { $0.post.id == post.id }) {
@@ -147,6 +163,112 @@ final class FeedStore: ObservableObject {
             saved.insert(SavedPost(post: post, savedAt: Date()), at: 0)
         }
         SavedPostsStorage.save(saved)
+    }
+
+    // MARK: Watch Later
+
+    // Videos in the YouTube account's Watch Later playlist show in Saved, marked as from
+    // there. It only goes one way: unsaving one takes it out of the playlist, but saving
+    // a video in the app leaves the playlist alone. A video taken out of the playlist on
+    // YouTube stays saved.
+    //
+    // A video unsaved here waits to come out of the playlist until YouTube confirms it,
+    // and isn't imported again meanwhile. With sync on, its tombstone keeps the Watch
+    // Later mark until then, so other devices (and Royal Saved on the web) leave it out
+    // too, and whichever device next finds it still in the playlist takes it out.
+
+    private static let watchLaterRemovalsKey = "watchLaterRemovals"
+    private static let watchLaterInterval: TimeInterval = 60
+    private var watchLaterChecked: Date?
+    private var checkingWatchLater = false
+    // When each video was last taken out of the playlist, so a list fetched before that
+    // doesn't bring it straight back.
+    private var watchLaterRemovedAt: [String: Date] = [:]
+
+    // Videos to take out of Watch Later: unsaved on this device, or, with sync on, anywhere.
+    private var watchLaterRemovals: Set<String> {
+        let local = Set(UserDefaults.standard.stringArray(forKey: Self.watchLaterRemovalsKey) ?? [])
+        return savedSync.isActive ? local.union(savedSync.library.watchLaterRemovals) : local
+    }
+
+    private func setWatchLaterRemoval(_ videoId: String, pending: Bool) {
+        var local = Set(UserDefaults.standard.stringArray(forKey: Self.watchLaterRemovalsKey) ?? [])
+        guard local.contains(videoId) != pending else { return }
+        if pending { local.insert(videoId) } else { local.remove(videoId) }
+        UserDefaults.standard.set(local.sorted(), forKey: Self.watchLaterRemovalsKey)
+    }
+
+    // The video's gone from the playlist; nothing's left to do for it.
+    private func finishWatchLaterRemoval(_ videoId: String) {
+        watchLaterRemovedAt[videoId] = Date()
+        setWatchLaterRemoval(videoId, pending: false)
+        savedSync.clearWatchLater(postID: "yt_\(videoId)")
+    }
+
+    // Returns whether the video's out of the playlist; a failure is retried at the next check.
+    @discardableResult
+    private func removeFromWatchLater(_ videoId: String) async -> Bool {
+        do {
+            try await session.removeFromWatchLater(videoId: videoId)
+            finishWatchLaterRemoval(videoId)
+            return true
+        } catch {
+            #if DEBUG
+            NSLog("Royal Watch Later removal of %@ failed: %@", videoId, error.localizedDescription)
+            #endif
+            return false
+        }
+    }
+
+    // Brings new Watch Later videos into Saved and takes out those unsaved here. Runs at
+    // most once a minute unless forced, and only with YouTube on and logged in. A failure
+    // leaves Saved as it is.
+    func syncWatchLater(force: Bool = false) async {
+        guard isEnabled(.youtube), !checkingWatchLater else { return }
+        if !force, let checked = watchLaterChecked, Date().timeIntervalSince(checked) < Self.watchLaterInterval { return }
+        guard await session.isLoggedIn(.youtube) else { return }
+        checkingWatchLater = true
+        defer { checkingWatchLater = false }
+        let started = Date()
+        watchLaterChecked = started
+        // Let saves from other devices arrive first, so a video unsaved there isn't imported again.
+        if savedSync.isActive {
+            savedSync.scheduleSync(after: 0)
+            try? await Task.sleep(for: .milliseconds(100))
+            await savedSync.waitUntilIdle(timeout: 4)
+        }
+        guard let playlist = try? await session.watchLater() else { return }
+        let (videos, complete) = playlist
+        let inPlaylist = Set(videos.compactMap(\.videoId))
+        let removals = watchLaterRemovals
+        for videoId in removals.sorted() {
+            if inPlaylist.contains(videoId) {
+                await removeFromWatchLater(videoId)
+            } else if complete {
+                // Taken out already, here or on YouTube.
+                finishWatchLaterRemoval(videoId)
+            }
+        }
+        // The playlist's first video lands at the top of Saved, the rest in its order below.
+        // Left out: videos waiting to come out of the playlist, including any unsaved while
+        // this ran, and those taken out since the list was fetched.
+        let skipped = removals.union(watchLaterRemovals)
+        let now = Date()
+        var imported: [SavedPost] = []
+        for video in videos {
+            guard let videoId = video.videoId, !skipped.contains(videoId), !isSaved(video),
+                  (watchLaterRemovedAt[videoId] ?? .distantPast) < started else { continue }
+            var post = video
+            post.watchLater = true
+            imported.append(SavedPost(post: post, savedAt: now.addingTimeInterval(-0.001 * Double(imported.count))))
+        }
+        guard !imported.isEmpty else { return }
+        if savedSync.isActive {
+            for item in imported { savedSync.setSaved(item.post, true, at: item.savedAt) }
+        } else {
+            saved = (saved + imported).sorted { $0.savedAt > $1.savedAt }
+            SavedPostsStorage.save(saved)
+        }
     }
 
     // Channels subscribed to or unsubscribed from in the app while it runs, over what the
@@ -245,6 +367,7 @@ final class FeedStore: ObservableObject {
             feeds[key] = FeedState(posts: state.posts, error: error.localizedDescription, loaded: true, loadedAt: state.loadedAt)
         }
         loggedIn[key.source] = await session.isLoggedIn(key.source)
+        if key == .youtube { Task { await syncWatchLater() } }
     }
 
     // After a login page closes: reloads `keys` if any of `sources` is now logged in.
