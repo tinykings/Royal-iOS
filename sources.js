@@ -154,6 +154,11 @@ export function youTubePublishedAt(published, now = Date.now() / 1000) {
 // YouTube exposes its feeds in page data, not a supported public session API.
 // Parse JSON only: never execute scripts from the fetched page.
 export function parseYouTubeFeed(html, limit = CONFIG.totalItems) {
+  return parseYouTubePage(html, limit).posts;
+}
+
+// The page's videos, and the token for the next page of them when the page has more.
+function parseYouTubePage(html, limit) {
   if (/"LOGGED_IN"\s*:\s*false/.test(html)) throw new NotLoggedInError("YouTube session is logged out");
   const assignment = /(?:var\s+ytInitialData|window\["ytInitialData"\]|ytInitialData)\s*=\s*/g;
   let data;
@@ -180,6 +185,14 @@ export function parseYouTubeFeed(html, limit = CONFIG.totalItems) {
   if (data.responseContext?.mainAppWebResponseContext?.loggedOut) {
     throw new NotLoggedInError("YouTube session is logged out");
   }
+  const tabs = data.contents?.twoColumnBrowseResultsRenderer?.tabs;
+  const selected = tabs?.find((tab) => tab.tabRenderer?.selected)?.tabRenderer;
+  if (!data.contents) throw new Error("YouTube feed unavailable. Check login and consent on YouTube.");
+  return youTubeVideos(selected?.content ?? data.contents, limit);
+}
+
+// Collects up to `limit` videos under `root`, after the `posts` already collected.
+function youTubeVideos(root, limit, posts = []) {
   const text = (value) => value?.simpleText ?? value?.runs?.map((r) => r.text).join("") ?? value?.content ?? "";
   // Lockups list views and age as unlabeled parts, e.g. "12K views", "3 days ago";
   // live streams show "693 watching" instead of an age.
@@ -200,9 +213,11 @@ export function parseYouTubeFeed(html, limit = CONFIG.totalItems) {
     }
     return null;
   };
-  const posts = [], ids = new Set();
+  const ids = new Set(posts.map((post) => post.videoId));
+  const added = [];
+  let continuation = null;
   function visit(node) {
-    if (!node || typeof node !== "object" || posts.length >= limit) return;
+    if (!node || typeof node !== "object" || posts.length + added.length >= limit) return;
     // Ranked carousels ("Most relevant"), Shorts, and other rich shelves are
     // supplemental sections, not the feed's own list of videos.
     if (node.richSectionRenderer || node.richShelfRenderer || node.reelShelfRenderer
@@ -215,6 +230,9 @@ export function parseYouTubeFeed(html, limit = CONFIG.totalItems) {
       const heading = text(section.title) || text(section.header?.itemSectionHeaderRenderer?.title);
       if (/most relev[ae]nt|recommended|for you/i.test(heading)) return;
     }
+    // The list's last item loads the next page when scrolled to.
+    const token = node.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token;
+    if (typeof token === "string") continuation ??= token;
     const video = node.videoRenderer ?? node.gridVideoRenderer;
     const lockup = node.lockupViewModel;
     const id = video?.videoId ?? (lockup?.contentType === "LOCKUP_CONTENT_TYPE_VIDEO" ? lockup.contentId : null);
@@ -224,7 +242,7 @@ export function parseYouTubeFeed(html, limit = CONFIG.totalItems) {
       if (title) {
         ids.add(id);
         const url = `${YOUTUBE}/watch?v=${id}`;
-        posts.push({
+        added.push({
           source: "youtube", id: `yt_${id}`, videoId: id, title, url, commentsUrl: url,
           label: text(video?.ownerText ?? video?.shortBylineText ?? video?.longBylineText)
             || text(metadata?.metadata?.contentMetadataViewModel?.metadataRows?.[0]?.metadataParts?.[0]?.text)
@@ -233,22 +251,53 @@ export function parseYouTubeFeed(html, limit = CONFIG.totalItems) {
           image: `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,
         });
         const channelId = channelIdIn(video ?? lockup);
-        if (channelId) posts[posts.length - 1].channelId = channelId;
+        if (channelId) added[added.length - 1].channelId = channelId;
       }
     }
     for (const value of Object.values(node)) visit(value);
   }
-  const tabs = data.contents?.twoColumnBrowseResultsRenderer?.tabs;
-  const selected = tabs?.find((tab) => tab.tabRenderer?.selected)?.tabRenderer;
-  if (!data.contents) throw new Error("YouTube feed unavailable. Check login and consent on YouTube.");
-  visit(selected?.content ?? data.contents);
+  visit(root);
   const now = Date.now() / 1000;
-  for (const post of posts) post.publishedAt = youTubePublishedAt(post.published, now);
-  return posts;
+  for (const post of added) post.publishedAt = youTubePublishedAt(post.published, now);
+  return { posts: posts.concat(added), continuation: posts.length + added.length < limit ? continuation : null };
 }
 
 // The page behind each feed: subscription uploads, or the recommendations on YouTube's Home.
 const YOUTUBE_FEEDS = new Map([["subscriptions", "/feed/subscriptions"], ["home", "/"]]);
+// Most pages of subscriptions to load past the first; each holds a few dozen videos.
+const YOUTUBE_MORE_PAGES = 4;
+
+// A setting from the page's ytcfg, e.g. "INNERTUBE_CLIENT_VERSION".
+function youTubeSetting(html, name) {
+  return new RegExp(`"${name}"\\s*:\\s*"?([\\w.%=-]+)`).exec(html)?.[1] ?? null;
+}
+
+// The next page of the feed, the way YouTube's site loads it on scrolling to the end.
+async function fetchYouTubeContinuation(html, token) {
+  const version = youTubeSetting(html, "INNERTUBE_CLIENT_VERSION") ?? "2.20261101.00.00";
+  const visitor = youTubeSetting(html, "VISITOR_DATA");
+  const headers = {
+    "X-Goog-AuthUser": youTubeSetting(html, "SESSION_INDEX") ?? "0",
+    "X-YouTube-Client-Name": "1",
+    "X-YouTube-Client-Version": version,
+  };
+  const pageId = youTubeSetting(html, "DELEGATED_SESSION_ID");
+  if (pageId) headers["X-Goog-PageId"] = pageId;
+  if (visitor) headers["X-Goog-Visitor-Id"] = visitor;
+  const response = await fetch(`${YOUTUBE}/youtubei/v1/browse?prettyPrint=false`, {
+    method: "POST", credentials: "include", headers,
+    userSession: youTubeSetting(html, "USER_SESSION_ID"),
+    body: JSON.stringify({
+      context: { client: { clientName: "WEB", clientVersion: version, hl: "en", ...(visitor ? { visitorData: visitor } : {}) } },
+      continuation: token,
+    }),
+  });
+  if (!response.ok) throw new Error(`YouTube HTTP ${response.status}`);
+  const data = JSON.parse(await response.text());
+  return (data.onResponseReceivedActions ?? []).flatMap((action) =>
+    action.appendContinuationItemsAction?.continuationItems
+      ?? action.reloadContinuationItemsCommand?.continuationItems ?? []);
+}
 
 export async function fetchYouTube(limit, { feed = "subscriptions" } = {}) {
   const path = YOUTUBE_FEEDS.get(feed);
@@ -259,5 +308,15 @@ export async function fetchYouTube(limit, { feed = "subscriptions" } = {}) {
   if (response.url && new URL(response.url).hostname !== "www.youtube.com") {
     throw new Error("Open YouTube and finish login or consent, then refresh.");
   }
-  return parseYouTubeFeed(await response.text(), limit);
+  const html = await response.text();
+  let page = parseYouTubePage(html, limit);
+  // The first page holds only the latest few dozen uploads. Load on to the limit, or
+  // anything uploaded since the last refresh past the first page would never show.
+  // Home's recommendations go on endlessly, and only the top matters there.
+  for (let more = 0; feed === "subscriptions" && page.continuation && more < YOUTUBE_MORE_PAGES; more++) {
+    let items;
+    try { items = await fetchYouTubeContinuation(html, page.continuation); } catch { break; }
+    page = youTubeVideos(items, limit, page.posts);
+  }
+  return page.posts;
 }

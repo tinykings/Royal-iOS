@@ -640,8 +640,9 @@ final class FeedStore: ObservableObject {
     // Reddit ranks posts, and RSS items can arrive dated earlier, so an older post can be new to the feed.
     // YouTube orders videos by when they went up, but can add one to the feed well after
     // that, below videos already seen, so a new video is one above the newest video seen
-    // or one the feed didn't have at the previous refresh. Videos the feed had but All
-    // never showed, further down than it reached, aren't new. Age alone can't say whether
+    // or one the feed didn't have at the previous refresh, above the deepest video it did
+    // have. Videos the feed had but All never showed, further down than it reached, aren't
+    // new. Age alone can't say whether
     // a video arrived since the previous refresh; that's the fallback only when none of
     // the videos were seen before.
     // A source new to the feed, like one just logged into or turned on, starts with its
@@ -666,13 +667,17 @@ final class FeedStore: ObservableObject {
         let videos = state(.youtube).posts
         let newestSeenVideo = videos.firstIndex { previouslySeen.contains($0.id) }
         let videosAboveSeen = Set(videos.prefix(newestSeenVideo ?? 0).map(\.id))
+        // Videos further down than the previous refresh reached are older than anything it had,
+        // not added since; this keeps a deeper fetch from calling them all new.
+        let deepestPreviousVideo = videos.lastIndex { previousVideos.contains($0.id) }
+        let videosWithinPrevious = Set(videos.prefix((deepestPreviousVideo ?? -1) + 1).map(\.id))
         func isNew(_ post: FeedPost) -> Bool {
             if !previousSources.contains(post.source) { return firstLook.contains(post.id) }
             if previouslySeen.contains(post.id) || pagedSinceRefresh.contains(post.id) { return false }
             if post.source == .youtube {
                 if newestSeenVideo != nil {
                     return videosAboveSeen.contains(post.id)
-                        || (!previousVideos.isEmpty && !previousVideos.contains(post.id))
+                        || (videosWithinPrevious.contains(post.id) && !previousVideos.contains(post.id))
                 }
                 if let publishedAt = post.publishedAt { return publishedAt > cutoff }
             }

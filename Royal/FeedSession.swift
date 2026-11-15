@@ -142,8 +142,11 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         let body = text.replacingOccurrences(of: "(?m)^export\\s+", with: "", options: .regularExpression)
         return """
             globalThis.Royal ??= (() => {
-            const fetch = async (url) => {
-              const r = await window.webkit.messageHandlers.nativeFetch.postMessage(String(url));
+            const fetch = async (url, init = {}) => {
+              const message = init.method === "POST"
+                ? { url: String(url), body: String(init.body ?? ""), headers: init.headers ?? {}, userSession: init.userSession ?? "" }
+                : String(url);
+              const r = await window.webkit.messageHandlers.nativeFetch.postMessage(message);
               const empty = [101, 204, 205, 304].includes(r.status);
               const res = new Response(empty ? null : r.body, { status: r.status });
               Object.defineProperty(res, "url", { value: r.url });
@@ -208,14 +211,25 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage,
                                replyHandler: @escaping (Any?, String?) -> Void) {
-        guard let string = message.body as? String, let url = URL(string: string), url.scheme == "https",
-              let host = url.host, Self.allowedHosts.contains(host) else {
+        // A string is a GET; an object is a POST to YouTube's API, for the feed's next page.
+        var post: YouTubePost?
+        var string = message.body as? String
+        if let object = message.body as? [String: Any], let target = object["url"] as? String,
+           let body = object["body"] as? String, URL(string: target)?.path == "/youtubei/v1/browse" {
+            string = target
+            let headers = (object["headers"] as? [String: Any] ?? [:]).compactMapValues { $0 as? String }
+            let userSession = object["userSession"] as? String
+            post = YouTubePost(body: Data(body.utf8), headers: headers.filter { Self.youTubePostHeaders.contains($0.key) },
+                               userSession: userSession?.isEmpty == false ? userSession : nil)
+        }
+        guard let string, let url = URL(string: string), url.scheme == "https",
+              let host = url.host, Self.allowedHosts.contains(host), post == nil || host == "www.youtube.com" else {
             replyHandler(nil, "Blocked request to \(message.body)")
             return
         }
         Task {
             do {
-                let (status, body, finalURL) = try await nativeFetch(url)
+                let (status, body, finalURL) = try await nativeFetch(url, post: post)
                 replyHandler(["status": status, "body": body, "url": finalURL], nil)
             } catch {
                 replyHandler(nil, error.localizedDescription)
@@ -231,7 +245,35 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
             && (cookie.expiresDate.map { $0 > Date() } ?? true)
     }
 
-    private func nativeFetch(_ url: URL) async throws -> (Int, String, String) {
+    // A request to YouTube's API from sources.js: its JSON body, the page's session headers,
+    // and the signed-in session it's for.
+    private struct YouTubePost {
+        let body: Data
+        let headers: [String: String]
+        let userSession: String?
+    }
+    private static let youTubePostHeaders: Set<String> = ["X-Goog-AuthUser", "X-Goog-PageId", "X-Goog-Visitor-Id",
+                                                          "X-YouTube-Client-Name", "X-YouTube-Client-Version"]
+    private static let youTubeOrigin = "https://www.youtube.com"
+
+    // YouTube signs API requests with a hash of the session, the time, the session's API
+    // cookie, and the origin; one per cookie it has. Nil when there's no login to sign with.
+    private static func youTubeAuthorization(_ cookies: [HTTPCookie], userSession: String?) -> String? {
+        func cookie(_ name: String) -> String? { cookies.first { $0.name == name }?.value }
+        guard let sapisid = cookie("SAPISID") ?? cookie("__Secure-3PAPISID") else { return nil }
+        let time = String(Int(Date().timeIntervalSince1970))
+        func hash(_ scheme: String, _ value: String) -> String {
+            let input = ([userSession].compactMap { $0 } + [time, value, youTubeOrigin]).joined(separator: " ")
+            let digest = Insecure.SHA1.hash(data: Data(input.utf8)).map { String(format: "%02x", $0) }.joined()
+            return "\(scheme) " + ([time, digest] + (userSession == nil ? [] : ["u"])).joined(separator: "_")
+        }
+        var authorization = [hash("SAPISIDHASH", sapisid)]
+        if let value = cookie("__Secure-1PAPISID") { authorization.append(hash("SAPISID1PHASH", value)) }
+        if let value = cookie("__Secure-3PAPISID") { authorization.append(hash("SAPISID3PHASH", value)) }
+        return authorization.joined(separator: " ")
+    }
+
+    private func nativeFetch(_ url: URL, post: YouTubePost? = nil) async throws -> (Int, String, String) {
         var request = URLRequest(url: url)
         let cookies = await cookieStore.allCookies().filter { Self.cookie($0, matches: url) }
         for (field, value) in HTTPCookie.requestHeaderFields(with: cookies) {
@@ -239,6 +281,18 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         }
         let agent = url.host == "www.youtube.com" ? Self.desktopUserAgent : userAgent
         if let agent { request.setValue(agent, forHTTPHeaderField: "User-Agent") }
+        if let post {
+            request.httpMethod = "POST"
+            request.httpBody = post.body
+            for (field, value) in post.headers { request.setValue(value, forHTTPHeaderField: field) }
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            if let authorization = Self.youTubeAuthorization(cookies, userSession: post.userSession) {
+                request.setValue(authorization, forHTTPHeaderField: "Authorization")
+            }
+            request.setValue(Self.youTubeOrigin, forHTTPHeaderField: "Origin")
+            request.setValue(Self.youTubeOrigin, forHTTPHeaderField: "X-Origin")
+            request.setValue("1", forHTTPHeaderField: "X-YouTube-Bootstrap-Logged-In")
+        }
         let (data, response) = try await session.data(for: request)
         let http = response as? HTTPURLResponse
         #if DEBUG
@@ -341,7 +395,7 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         guard channelId.range(of: "^UC[\\w-]{22}$", options: .regularExpression) != nil else {
             throw FeedError.failed("Unknown YouTube channel")
         }
-        let origin = "https://www.youtube.com"
+        let origin = Self.youTubeOrigin
         try await ensureLoaded()
         // The page's settings say which signed-in account and session the request is for.
         let (_, page, _) = try await nativeFetch(URL(string: origin + "/")!)
@@ -357,21 +411,9 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         let userSession = setting("USER_SESSION_ID")
 
         let cookies = await cookieStore.allCookies().filter { $0.domain.hasSuffix("youtube.com") }
-        func cookie(_ name: String) -> String? { cookies.first { $0.name == name }?.value }
-        guard let sapisid = cookie("SAPISID") ?? cookie("__Secure-3PAPISID") else {
+        guard let authorization = Self.youTubeAuthorization(cookies, userSession: userSession) else {
             throw FeedError.notLoggedIn("YouTube login required")
         }
-        // YouTube signs API requests with a hash of the session, the time, the session's API
-        // cookie, and the origin; one per cookie it has.
-        let time = String(Int(Date().timeIntervalSince1970))
-        func hash(_ scheme: String, _ value: String) -> String {
-            let input = ([userSession].compactMap { $0 } + [time, value, origin]).joined(separator: " ")
-            let digest = Insecure.SHA1.hash(data: Data(input.utf8)).map { String(format: "%02x", $0) }.joined()
-            return "\(scheme) " + ([time, digest] + (userSession == nil ? [] : ["u"])).joined(separator: "_")
-        }
-        var authorization = [hash("SAPISIDHASH", sapisid)]
-        if let value = cookie("__Secure-1PAPISID") { authorization.append(hash("SAPISID1PHASH", value)) }
-        if let value = cookie("__Secure-3PAPISID") { authorization.append(hash("SAPISID3PHASH", value)) }
 
         let action = subscribed ? "subscribe" : "unsubscribe"
         var request = URLRequest(url: URL(string: "\(origin)/youtubei/v1/subscription/\(action)?prettyPrint=false")!)
@@ -384,7 +426,7 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
             request.setValue(value, forHTTPHeaderField: field)
         }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(authorization.joined(separator: " "), forHTTPHeaderField: "Authorization")
+        request.setValue(authorization, forHTTPHeaderField: "Authorization")
         request.setValue(origin, forHTTPHeaderField: "Origin")
         request.setValue(origin, forHTTPHeaderField: "X-Origin")
         request.setValue(setting("SESSION_INDEX") ?? "0", forHTTPHeaderField: "X-Goog-AuthUser")

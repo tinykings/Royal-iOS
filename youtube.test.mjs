@@ -163,3 +163,56 @@ test("YouTube keeps the channel each video is from", () => {
   ] });
   assert.deepEqual(parseYouTubeFeed(html).map((p) => p.channelId), [channel, "UC" + "b".repeat(22), undefined]);
 });
+
+test("YouTube subscriptions load further pages to the limit, signed for the page's session", async () => {
+  const original = globalThis.fetch;
+  const more = (token) => ({ continuationItemRenderer: { continuationEndpoint: { continuationCommand: { token } } } });
+  const ytcfg = '<script>ytcfg.set({"INNERTUBE_CLIENT_VERSION":"2.20261110.01.00","USER_SESSION_ID":"123",'
+    + '"SESSION_INDEX":0,"VISITOR_DATA":"Cgt2aXNpdG9y%3D%3D"})</script>';
+  try {
+    const requests = [];
+    const pages = {
+      first: [{ richItemRenderer: { content: video("video000001") } }, more("second")],
+      second: [{ richItemRenderer: { content: video("video000002") } }, { richItemRenderer: { content: video("video000001") } }, more("again")],
+      again: [more("again")],
+    };
+    globalThis.fetch = async (url, init = {}) => {
+      requests.push([url, init]);
+      if (init.method !== "POST") {
+        return { ok: true, url, text: async () => ytcfg + page({ richGridRenderer: { contents: [
+          { richItemRenderer: { content: video("video000000") } }, more("first"),
+        ] } }) };
+      }
+      const { continuation } = JSON.parse(init.body);
+      return { ok: true, text: async () => JSON.stringify({ onResponseReceivedActions: [
+        { appendContinuationItemsAction: { continuationItems: pages[continuation] ?? [] } },
+      ] }) };
+    };
+    const posts = await fetchYouTube(3);
+    assert.deepEqual(posts.map((p) => p.videoId), ["video000000", "video000001", "video000002"]);
+    assert.equal(requests.length, 3);
+    const [url, init] = requests[1];
+    assert.equal(url, "https://www.youtube.com/youtubei/v1/browse?prettyPrint=false");
+    assert.equal(init.userSession, "123");
+    assert.equal(init.headers["X-YouTube-Client-Version"], "2.20261110.01.00");
+    assert.equal(init.headers["X-Goog-Visitor-Id"], "Cgt2aXNpdG9y%3D%3D");
+    assert.equal(JSON.parse(init.body).continuation, "first");
+    assert.equal(typeof posts[2].publishedAt, "number");
+
+    // Stops once the limit's reached or after a few pages, and keeps what loaded if a page fails.
+    requests.length = 0;
+    assert.equal((await fetchYouTube(1)).length, 1);
+    assert.equal(requests.length, 1);
+    requests.length = 0;
+    assert.equal((await fetchYouTube(100)).length, 3);
+    assert.equal(requests.length, 5);
+    globalThis.fetch = async (url, init = {}) => init.method === "POST" ? { ok: false, status: 500 }
+      : { ok: true, url, text: async () => page({ items: [video(), more("first")] }) };
+    assert.equal((await fetchYouTube(100)).length, 1);
+    // Home doesn't page.
+    requests.length = 0;
+    globalThis.fetch = async (url, init = {}) => { requests.push(init); return { ok: true, url, text: async () => page({ items: [video(), more("first")] }) }; };
+    await fetchYouTube(100, { feed: "home" });
+    assert.equal(requests.length, 1);
+  } finally { globalThis.fetch = original; }
+});
