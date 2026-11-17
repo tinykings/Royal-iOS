@@ -35,6 +35,8 @@ struct FeedState {
     // every time a row near the end appears.
     var moreError: String?
     var loadedAt: Date?
+    // Says the feed waits for a pull to refresh, as after logging in or changing the RSS feeds.
+    var notice: String?
 }
 
 enum AppTab: Hashable {
@@ -111,6 +113,10 @@ final class FeedStore: ObservableObject {
         }
         savedSync.scheduleSync(after: 0)
         restoreCache()
+        // Installs from before RSS feeds were tracked have taken in every feed they list.
+        if UserDefaults.standard.object(forKey: Self.rssFeedsKey) == nil && UserDefaults.standard.object(forKey: Self.seenKey) != nil {
+            UserDefaults.standard.set(rssFeeds.map(\.url), forKey: Self.rssFeedsKey)
+        }
         observeRSSBackup()
     }
 
@@ -386,20 +392,6 @@ final class FeedStore: ObservableObject {
         if key == .youtube { Task { await retryWatchLaterRemovals() } }
     }
 
-    // After a login page closes: reloads `keys` if any of `sources` is now logged in.
-    // The login status and the loading feeds change together, so the login card isn't
-    // replaced by the feeds' old logged-out errors while they reload.
-    func finishLogin(_ sources: [FeedSource], reloading keys: [FeedKey]) async {
-        var status: [FeedSource: Bool] = [:]
-        for source in FeedSource.allCases {
-            status[source] = await session.isLoggedIn(source)
-        }
-        loggedIn = status
-        if sources.contains(where: { status[$0] == true }) {
-            await load(keys, force: true)
-        }
-    }
-
     // Fetches the next page of each feed that has more; called near the end of a list.
     // After a failure it waits for `retry`, which the list's retry button passes.
     func loadMore(_ keys: [FeedKey], retry: Bool = false) async {
@@ -555,6 +547,10 @@ final class FeedStore: ObservableObject {
         let removed = Set(offsets.map { rssFeeds[$0].url })
         rssFeeds.remove(atOffsets: offsets)
         for url in removed { rssFeedErrors[url] = nil }
+        // Added again later, it starts over with only its latest items new.
+        let defaults = UserDefaults.standard
+        let taken = (defaults.stringArray(forKey: Self.rssFeedsKey) ?? []).filter { !removed.contains($0) }
+        defaults.set(taken, forKey: Self.rssFeedsKey)
         saveRSSFeeds()
     }
 
@@ -576,11 +572,15 @@ final class FeedStore: ObservableObject {
 
     private func saveRSSFeeds() {
         RSSFeed.save(rssFeeds)
-        reloadRSS()
+        noteRSSChanged()
     }
 
-    private func reloadRSS() {
-        if isEnabled(.rss) { Task { await load([.rss], force: true) } }
+    // Feeds only load on a pull to refresh, so a changed feed list waits for one.
+    private func noteRSSChanged() {
+        guard isEnabled(.rss) else { return }
+        var state = state(.rss)
+        state.notice = "Pull down to update your feeds."
+        feeds[.rss] = state
     }
 
     // Follows the feed list's iCloud backup (RSSFeed.save): picks it up when it
@@ -611,7 +611,7 @@ final class FeedStore: ObservableObject {
             let kept = Set(backup.feeds.map(\.url))
             rssFeedErrors = rssFeedErrors.filter { kept.contains($0.key) }
             rssFeeds = backup.feeds
-            reloadRSS()
+            noteRSSChanged()
         } else if localModified > backup.modified {
             RSSFeed.saveToCloud(RSSFeed.Backup(feeds: rssFeeds, modified: localModified))
         }
@@ -634,10 +634,20 @@ final class FeedStore: ObservableObject {
         var errors: [String: String] = [:]
         var posts: [FeedPost] = []
         var titled = false
+        // A feed new to the All feed brings in only its latest few items as new; the rest
+        // join the earlier posts.
+        let defaults = UserDefaults.standard
+        var taken = defaults.stringArray(forKey: Self.rssFeedsKey) ?? []
+        var olderItems: [FeedPost] = []
         for (index, feed) in rssFeeds.enumerated() {
             switch results[feed.url] {
             case .success(let result)?:
                 posts += result.posts
+                if !taken.contains(feed.url) && !result.posts.isEmpty {
+                    taken.append(feed.url)
+                    let newest = result.posts.sorted { ($0.created ?? 0) > ($1.created ?? 0) }
+                    olderItems += newest.dropFirst(Self.rssFirstLookCount)
+                }
                 if let title = result.title, !title.isEmpty, title != feed.title {
                     rssFeeds[index].title = title
                     titled = true
@@ -652,6 +662,11 @@ final class FeedStore: ObservableObject {
         rssFeedErrors = errors
         if !list.isEmpty, errors.count == results.count, let first = errors.values.first {
             throw FeedError.failed(list.count == 1 ? first : "None of your feeds loaded (\(first)).")
+        }
+        defaults.set(taken, forKey: Self.rssFeedsKey)
+        if !olderItems.isEmpty {
+            previouslySeen.formUnion(olderItems.map(\.id))
+            rememberSeen(olderItems)
         }
         var seenIDs = Set<String>()
         let newest = posts.filter { seenIDs.insert($0.id).inserted }
@@ -679,14 +694,15 @@ final class FeedStore: ObservableObject {
     private static let refreshedKey = "allFeedRefreshedAt"
     private static let sourcesKey = "allFeedSources"
     private static let seenLimit = 3000
-    private static let markedReadKey = "allFeedMarkedRead"
+    // RSS feeds whose items the All feed has taken in.
+    private static let rssFeedsKey = "allFeedRSSFeeds"
     private static let videosKey = "allFeedYouTubeIDs"
     private static let videosLimit = 1000
     // How many of a source's posts are new when it first joins the All feed.
     private static let firstLookCount = 20
+    // How many of an RSS feed's items are new when it's first added.
+    private static let rssFirstLookCount = 5
 
-    // Whether the All feed has ever been marked read on this install.
-    @Published private(set) var hasMarkedRead = UserDefaults.standard.bool(forKey: FeedStore.markedReadKey)
     // When the All feed was last refreshed; shown atop the feed.
     @Published private(set) var lastRefresh: Date?
     // When the All feed was refreshed before this one; the divider shows this time.
@@ -752,7 +768,8 @@ final class FeedStore: ObservableObject {
         if mergedSources != storedSources { defaults.set(mergedSources, forKey: Self.sourcesKey) }
     }
 
-    // Adds posts loaded after a refresh, so the next refresh doesn't call them new.
+    // Adds posts the All feed has taken in since its latest refresh, so the next refresh
+    // doesn't call them new.
     private func rememberSeen(_ posts: [FeedPost]) {
         let defaults = UserDefaults.standard
         let ids = posts.map(\.id)
@@ -760,19 +777,6 @@ final class FeedStore: ObservableObject {
         let stored = (defaults.stringArray(forKey: Self.seenKey) ?? []).filter { !idSet.contains($0) }
         defaults.set(Array((stored + ids).suffix(Self.seenLimit)), forKey: Self.seenKey)
         sendSeen()
-    }
-
-    // Marks everything the All feed shows as read, so it moves in with the earlier posts.
-    // The next refresh brings only what's arrived since.
-    func markAllRead() {
-        let current = posts(combinedKeys)
-        previouslySeen.formUnion(current.map(\.id))
-        rememberSeen(current)
-        // Published, so the feed redraws; the earlier posts now run up to the latest refresh.
-        previousRefresh = lastRefresh ?? Date()
-        hasMarkedRead = true
-        UserDefaults.standard.set(true, forKey: Self.markedReadKey)
-        saveCache()
     }
 
     // Splits the All feed into posts new since the previous refresh and those already seen.
@@ -786,8 +790,9 @@ final class FeedStore: ObservableObject {
     // the videos were seen before.
     // A source new to the feed, like one just logged into or turned on, starts with its
     // first posts new so the feed doesn't look empty; the rest join the earlier posts.
-    // Before anything's been seen every source is new to the feed. Once those posts are
-    // marked read, or the next refresh comes, it goes by what's new since like the rest.
+    // Before anything's been seen every source is new to the feed. From the next refresh
+    // it goes by what's new since like the rest. Nothing's hidden: the seen posts follow
+    // the new ones below a line at the previous refresh.
     func splitByRefresh(_ posts: [FeedPost]) -> (new: [FeedPost], seen: [FeedPost]) {
         let firstUse = previousRefresh == nil || previouslySeen.isEmpty
         var firstLook = Set<String>()
@@ -825,16 +830,20 @@ final class FeedStore: ObservableObject {
         return (posts.filter(isNew), posts.filter { !isNew($0) })
     }
 
-    // After logging in, retry feeds that failed.
-    func reloadFailed() async {
-        await refreshLoginStatus()
-        await load(feeds.filter { $0.value.error != nil }.map(\.key), force: true)
-    }
-
+    // Updates whether each source is logged in. Logging in doesn't load anything; a feed
+    // that failed for want of the login says to pull down instead of showing that error.
     func refreshLoginStatus() async {
+        let before = loggedIn
         for source in FeedSource.allCases {
             loggedIn[source] = await session.isLoggedIn(source)
             loginCookies[source] = await session.loginCookies(source)
+        }
+        for (key, state) in feeds where before[key.source] == false && loggedIn[key.source] == true
+            && state.error != nil && !state.loading {
+            var state = state
+            state.error = nil
+            state.notice = "Logged in. Pull down to load."
+            feeds[key] = state
         }
     }
 

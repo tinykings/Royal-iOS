@@ -58,8 +58,7 @@ A grow-only set. Merge = union: remote order first, then local ids it lacks, the
 keep the newest 3000. Matches iOS `allFeedSeenIDs` / `allFeedSources`.
 
 iOS merges the remote set into `allFeedSeenIDs` / `allFeedSources` as it arrives,
-and sends its own after each All refresh, page loaded at the end of All, and Mark
-all read. The merged set only takes effect at the next All
+and sends its own after each All refresh and page loaded at the end of All. The merged set only takes effect at the next All
 refresh (it becomes that refresh's `previouslySeen`); the posts on screen don't move.
 An iOS All refresh syncs while the feeds load and waits up to 4 s for it before
 recording the refresh. Note that seen means *shown by All*, not read: a refresh on

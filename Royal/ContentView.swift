@@ -36,9 +36,10 @@ struct ContentView: View {
                     .tabItem { Image(uiImage: TabIcons.settings).accessibilityLabel("Settings") }
                     .tag(AppTab.settings)
             }
-            // After visiting Settings (possibly to log in), retry feeds that failed.
+            // After visiting Settings (possibly to log in), check the logins; feeds load
+            // only on a pull to refresh.
             .onChange(of: store.selectedTab) { oldTab, _ in
-                if oldTab == .settings { Task { await store.reloadFailed() } }
+                if oldTab == .settings { Task { await store.refreshLoginStatus() } }
             }
             .background(TabReselect(onReselect: { index in
                 if Self.tabOrder.indices.contains(index) { store.reselect(Self.tabOrder[index]) }
