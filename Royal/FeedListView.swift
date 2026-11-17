@@ -1180,15 +1180,24 @@ struct RefreshDivider: View {
     let date: Date
 
     var body: some View {
-        HStack(spacing: 10) {
-            line
-            Text(label)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-                .fixedSize()
-            line
+        VStack(spacing: 8) {
+            // The horse from the old pull up, in gold, standing over the line.
+            Image("PullHorse")
+                .resizable()
+                .scaledToFit()
+                .colorMultiply(.royalAccent)
+                .frame(width: 64, height: 64 * 315 / 360)
+                .accessibilityHidden(true)
+            HStack(spacing: 10) {
+                line
+                Text(label)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                line
+            }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 12)
         .listRowInsets(EdgeInsets(top: 5, leading: 20, bottom: 5, trailing: 20))
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
