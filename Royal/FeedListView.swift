@@ -12,9 +12,6 @@ struct FeedListView<Trailing: View>: View {
     @State private var refresh: RefreshRun?
     // How far past the top the feed is pulled down, to refresh.
     @State private var pullDown: CGFloat = 0
-    // Counts down to showing the saved posts after a refresh of the All feed finds nothing new.
-    @State private var nothingNewCountdown: Int?
-    @State private var nothingNewTask: Task<Void, Never>?
     @AppStorage(Preference.redditLayout) private var redditLayout = FeedLayout.cards
     @AppStorage(Preference.youtubeLayout) private var youtubeLayout = FeedLayout.cards
     @AppStorage(Preference.rssLayout) private var rssLayout = FeedLayout.cards
@@ -37,8 +34,6 @@ struct FeedListView<Trailing: View>: View {
     var titleMenu: AnyView? = nil
     // What to say when the feed has nothing to show, in place of "No posts to show."
     var emptyText: String? = nil
-    // Called when a pull to refresh of the All feed brings nothing new, after a short countdown.
-    var onNothingNew: (() -> Void)? = nil
     // Optional nav bar control; when present the title moves to the leading edge.
     @ViewBuilder var trailing: Trailing
 
@@ -158,14 +153,6 @@ struct FeedListView<Trailing: View>: View {
                 .environment(\.defaultMinListRowHeight, 0)
                 // Posts sit on tiles over the grouped background.
                 .scrollContentBackground(.hidden)
-                .opacity(nothingNewCountdown != nil ? 0 : 1)
-                .overlay {
-                    if let seconds = nothingNewCountdown {
-                        NothingNewView(seconds: seconds)
-                            .transition(.opacity)
-                    }
-                }
-                .animation(.easeInOut(duration: 0.25), value: nothingNewCountdown == nil)
                 .background(Color(.systemGroupedBackground))
                 .hidesHeaderOnScroll($scrolledAway)
                 // Pulling down past the top refreshes, with the king coming down into the gap in
@@ -260,8 +247,6 @@ struct FeedListView<Trailing: View>: View {
                 .onChange(of: refresh?.finished) { _, finished in
                     if finished == true { proxy.scrollTo(Self.topID, anchor: .top) }
                 }
-                .onChange(of: savedOnly) { cancelNothingNew() }
-                .onDisappear { cancelNothingNew() }
                 .task(id: keys) { await store.load(keys) }
                 // Videos unsaved from Watch Later that didn't come out of the playlist yet.
                 .task(id: savedOnly) { if savedOnly { await store.retryWatchLaterRemovals() } }
@@ -288,7 +273,6 @@ struct FeedListView<Trailing: View>: View {
     private func refreshFeeds() async {
         let run = RefreshRun(id: (refresh?.id ?? 0) + 1)
         refresh = run
-        cancelNothingNew()
         if savedOnly {
             async let watchLater: Void = store.retryWatchLaterRemovals(force: true)
             await store.load(keys, force: true)
@@ -298,7 +282,6 @@ struct FeedListView<Trailing: View>: View {
         }
         guard refresh?.id == run.id else { return }
         refresh?.finished = true
-        if nothingNew { startNothingNew() }
         // Leaves the results up long enough to pass through them all, unless another
         // refresh has begun since.
         let linger = max(3, Double(keys.count) * RefreshStatus.interval)
@@ -306,39 +289,6 @@ struct FeedListView<Trailing: View>: View {
             try? await Task.sleep(for: .seconds(linger))
             if refresh?.id == run.id { refresh = nil }
         }
-    }
-
-    // Whether the All feed's refresh just now found no new posts. A refresh where every
-    // feed failed hasn't shown there's nothing new, so it doesn't count.
-    private var nothingNew: Bool {
-        guard onNothingNew != nil, tab == .all, !savedOnly,
-              keys.contains(where: { store.state($0).loaded && store.state($0).error == nil }) else { return false }
-        let posts = store.posts(keys).filter { $0.nsfw != true }
-        return store.splitByRefresh(posts).new.isEmpty
-    }
-
-    // Says there's nothing new, counts down from 3, then shows the saved posts.
-    private func startNothingNew() {
-        nothingNewTask?.cancel()
-        nothingNewCountdown = 3
-        nothingNewTask = Task {
-            for seconds in [2, 1] {
-                try? await Task.sleep(for: .seconds(1))
-                guard !Task.isCancelled else { return }
-                nothingNewCountdown = seconds
-            }
-            try? await Task.sleep(for: .seconds(1))
-            guard !Task.isCancelled else { return }
-            onNothingNew?()
-            nothingNewCountdown = nil
-            nothingNewTask = nil
-        }
-    }
-
-    private func cancelNothingNew() {
-        nothingNewTask?.cancel()
-        nothingNewTask = nil
-        nothingNewCountdown = nil
     }
 
     // The header's status while a refresh runs and a moment after.
@@ -1071,32 +1021,6 @@ struct RefreshStatus: View {
         case .done(let new?): "\(new) new"
         case .failed: "Couldn't refresh"
         }
-    }
-}
-
-// In the middle of the All feed when a refresh finds nothing new, counting down to the saved posts.
-struct NothingNewView: View {
-    let seconds: Int
-
-    var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "heart.fill")
-                .font(.system(size: 56))
-                .foregroundStyle(.pink)
-            Text("Sorry, there is nothing new to show you.")
-                .font(.headline)
-            Text("Loading saved in \(seconds)…")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-                .contentTransition(.numericText(countsDown: true))
-                .animation(.default, value: seconds)
-        }
-        .multilineTextAlignment(.center)
-        .padding(.horizontal, 32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityElement(children: .combine)
-        .allowsHitTesting(false)
     }
 }
 
