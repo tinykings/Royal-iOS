@@ -3,7 +3,9 @@ main[hidden] { display: none; }
 .noscript { max-width: 720px; margin: 40px auto; padding: 0 16px; }
 
 /* Header: crown, title, and the account button on the right. */
-header .account { margin-left: auto; padding: 6px 14px; }
+header .account { margin-left: auto; padding: 6px 14px; transition: filter .15s, background-color .15s; }
+header .account:hover { filter: brightness(1.1); }
+header .account.secondary:hover { filter: none; background: var(--placeholder); }
 @media (max-width: 719px) { header { flex-wrap: nowrap; } }
 
 .intro { margin: 32px 0 16px; text-align: center; }
@@ -26,6 +28,10 @@ footer { margin-top: 32px; }
 .settings-panel .settings { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 4px 20px 8px; margin: 12px 0; }
 .settings-panel .settings label:first-of-type { border-top: 0; }
 #sync-status:empty { display: none; }
+
+/* Each post keeps its heart's z-index to itself, so a heart never climbs over the
+   sticky header (or the docked player) as the post scrolls under it. */
+.post { isolation: isolate; }
 
 /* Unsave: a heart tag tucked behind the post's right edge that slides out on hover
    (or keyboard focus). On touch screens, with no hover, it stays out. */
