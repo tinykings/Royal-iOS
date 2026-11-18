@@ -118,9 +118,8 @@ struct RedditFeedView: View {
     @State private var subreddit: String?
 
     var body: some View {
-        // Top is always today's, so it uses the same feed as the All page. A single subreddit
-        // only has Top, since Reddit refuses its Hot and New; the sort picked for everything
-        // followed is kept for coming back.
+        // Top is always today's. A single subreddit only has Top, since Reddit refuses its
+        // Hot and New; the sort picked for everything followed is kept for coming back.
         let key: FeedKey = subreddit.map { FeedKey.subreddit(name: $0) }
             ?? .reddit(sort: sort, timeframe: "day")
         FeedListView(title: "Reddit", tab: .reddit, keys: [key],

@@ -7,6 +7,7 @@ export const CONFIG = {
   totalItems: 100,
   redditTimeWindow: "day", // hour | day | week | month | year | all
   maxPerSubreddit: 5, // keeps huge subs from crowding out small ones
+  redditMixTopPages: 4, // pages of 100 the mix sort reads from Top
 };
 
 const REDDIT = "https://www.reddit.com";
@@ -91,25 +92,80 @@ export async function fetchSubscribedSubreddits({ nsfw = false } = {}) {
   return names.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
 }
 
+// One page of a listing: its posts, and the name to pass as `after` for the next page.
+async function redditListing(path, query = {}) {
+  const params = new URLSearchParams({ limit: "100", raw_json: "1", ...query });
+  const { data } = await getJson(`${REDDIT}${path}.json?${params}`);
+  return { posts: data.children.map((c) => c.data), after: data.after };
+}
+
+// The home Top listing, up to `pages` pages down. A page past the first that fails ends
+// the list there, so a refusal further down still leaves the posts above it.
+async function redditTopPages(timeframe, pages) {
+  const posts = [];
+  let after = null;
+  for (let page = 0; page < pages; page++) {
+    let listing;
+    try {
+      listing = await redditListing("/top", after ? { t: timeframe, after } : { t: timeframe });
+    } catch (error) {
+      if (page === 0) throw error;
+      break;
+    }
+    posts.push(...listing.posts);
+    after = listing.after;
+    if (!after) break;
+  }
+  return posts;
+}
+
+// Orders posts so every subreddit's highest-scoring post comes before any subreddit's
+// second, and so on down to the cap, with the higher score first within each round.
+function spreadAcrossSubreddits(posts) {
+  const bySubreddit = new Map();
+  for (const post of [...posts].sort((a, b) => b.score - a.score)) {
+    const list = bySubreddit.get(post.subreddit) ?? [];
+    if (list.length < CONFIG.maxPerSubreddit) bySubreddit.set(post.subreddit, list.concat(post));
+  }
+  const spread = [];
+  for (let rank = 0; rank < CONFIG.maxPerSubreddit; rank++) {
+    const round = [...bySubreddit.values()].map((list) => list[rank]).filter(Boolean);
+    spread.push(...round.sort((a, b) => b.score - a.score));
+  }
+  return spread;
+}
+
 // Without `subreddit`, the home listing of everything followed. With it, that subreddit alone.
+//
+// The "mix" sort is the All feed's. Top ranks everything followed by score alone, and its
+// first 100 posts mostly come from the busiest subreddits, so the smaller ones never
+// arrive to be picked. Mix reads further down Top, adds Best, which Reddit doesn't rank
+// by score alone, and spreads the result across subreddits.
 export async function fetchReddit(limit, { sort = "best", timeframe = CONFIG.redditTimeWindow, subreddit = "", nsfw = false } = {}) {
   if (subreddit && !/^\w+$/.test(subreddit)) throw new Error("Invalid subreddit");
   // Reddit's network security refuses Hot and New everywhere. A single subreddit only has Top.
-  if (!(subreddit ? ["top"] : ["best", "top"]).includes(sort)) throw new Error("Invalid Reddit sort");
+  if (!(subreddit ? ["top"] : ["best", "top", "mix"]).includes(sort)) throw new Error("Invalid Reddit sort");
   if (!["hour", "day", "week", "month", "year", "all"].includes(timeframe)) throw new Error("Invalid Reddit timeframe");
   await requireSubscriptions();
 
-  const params = new URLSearchParams({ limit: "100", raw_json: "1" });
-  if (sort === "top") params.set("t", timeframe);
-  // Logged-in home listings cover subscriptions. Reddit now redirects combined
-  // r/a+b+c listings to its home page instead of returning JSON.
-  const path = subreddit ? `/r/${subreddit}/${sort}` : `/${sort}`;
-  const listing = await getJson(`${REDDIT}${path}.json?${params}`);
+  let listed;
+  if (sort === "mix") {
+    // Best only widens what Top found, so Top alone will do when Best fails.
+    const [top, best] = await Promise.all([
+      redditTopPages(timeframe, CONFIG.redditMixTopPages),
+      redditListing("/best").then((listing) => listing.posts, () => []),
+    ]);
+    listed = [...new Map(top.concat(best).map((p) => [p.name, p])).values()];
+  } else {
+    // Logged-in home listings cover subscriptions. Reddit now redirects combined
+    // r/a+b+c listings to its home page instead of returning JSON.
+    const path = subreddit ? `/r/${subreddit}/${sort}` : `/${sort}`;
+    listed = (await redditListing(path, sort === "top" ? { t: timeframe } : {})).posts;
+  }
 
-  const posts = listing.data.children
-    .map((c) => c.data)
-    .filter((p) => !p.stickied && (nsfw || !p.over_18));
+  let posts = listed.filter((p) => !p.stickied && (nsfw || !p.over_18));
   if (sort === "top") posts.sort((a, b) => b.score - a.score);
+  if (sort === "mix") posts = spreadAcrossSubreddits(posts);
 
   const perSub = new Map();
   const picked = [];

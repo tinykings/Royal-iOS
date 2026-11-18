@@ -18,9 +18,14 @@ enum FeedKey: Hashable, Codable {
         }
     }
 
-    // The combined page: Reddit's top posts today, the RSS feeds, YouTube subscriptions.
+    // The All feed's Reddit posts: today's Top read further down than the Reddit tab does,
+    // with Best, spread across subreddits so the busiest don't crowd out the rest
+    // (the "mix" sort in sources.js).
+    static let redditMix = FeedKey.reddit(sort: "mix", timeframe: "day")
+
+    // The combined page: the Reddit mix, the RSS feeds, YouTube subscriptions.
     // FeedStore.combinedKeys leaves out the sources turned off in Settings.
-    static let combined: [FeedKey] = [.reddit(sort: "top", timeframe: "day"), .rss, .youtube]
+    static let combined: [FeedKey] = [.redditMix, .rss, .youtube]
 }
 
 struct FeedState {
@@ -508,6 +513,11 @@ final class FeedStore: ObservableObject {
               let cache = try? JSONDecoder().decode(Cache.self, from: data) else { return }
         for feed in cache.feeds {
             feeds[feed.key] = FeedState(posts: feed.posts, loaded: true, next: feed.next, loadedAt: feed.loadedAt)
+        }
+        // Before the All feed had the mix, its Reddit posts were the Reddit tab's Top. A cache
+        // from then keeps showing them, rather than loading the mix before a refresh is asked for.
+        if feeds[.redditMix] == nil, let top = feeds[.reddit(sort: "top", timeframe: "day")] {
+            feeds[.redditMix] = top
         }
         lastRefresh = cache.lastRefresh
         previousRefresh = cache.previousRefresh
