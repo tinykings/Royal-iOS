@@ -5,8 +5,8 @@ iPhone. Sign in with Apple; there's no Royal
 server. Saved posts sync through Apple's CloudKit Web Services API with your private
 iCloud database, the same `RoyalSavedPost` records iOS writes
 ([sync schema](https://github.com/tinykings/Royal-iOS/blob/main/docs/sync-schema.md)).
-It never fetches Reddit or YouTube, and it never reads or writes the seen or All
-records.
+It never fetches Reddit or YouTube, and it only reads and writes saved-post records;
+the seen record iOS syncs is left alone.
 
 You can open a post, play a YouTube video on the page, and unsave (with Undo). An
 unsave syncs back to iOS as a tombstone, like everywhere else.

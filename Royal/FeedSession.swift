@@ -63,8 +63,6 @@ struct FeedPost: Codable, Identifiable {
     let nsfw: Bool?
     // YouTube only: the channel the video is from, when the page links it.
     var channelId: String? = nil
-    // RSS only: the item's description (or full content), as the feed's HTML.
-    var summary: String? = nil
     // YouTube only, on saved posts: saved by importing it from the account's Watch Later
     // playlist. Unsaving it takes it out of the playlist too.
     var watchLater: Bool? = nil
@@ -125,11 +123,12 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         + "(KHTML, like Gecko) Version/\(WebProfile.safariVersion).0 Safari/605.1.15"
 
     private let webView = WKWebView(frame: .zero, configuration: WebProfile.configuration())
-    private let session: URLSession = {
+    private let redirects = RedirectGuard()
+    private lazy var session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.httpCookieStorage = nil
         config.httpShouldSetCookies = false
-        return URLSession(configuration: config)
+        return URLSession(configuration: config, delegate: self.redirects, delegateQueue: nil)
     }()
     private var cookieStore: WKHTTPCookieStore { webView.configuration.websiteDataStore.httpCookieStore }
     private var userAgent: String?
@@ -166,6 +165,20 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         super.init()
         webView.navigationDelegate = self
         webView.configuration.userContentController.addScriptMessageHandler(self, contentWorld: .defaultClient, name: "nativeFetch")
+        redirects.cookies = { [weak self] url in await self?.cookies(for: url) ?? [] }
+        redirects.keep = { [weak self] cookies in await self?.keep(cookies) }
+    }
+
+    // The login cookies to send to a URL: only over https, and only to the sites
+    // sources.js may reach, so a redirect elsewhere doesn't take the login along.
+    private func cookies(for url: URL) async -> [HTTPCookie] {
+        guard url.scheme == "https", let host = url.host, Self.allowedHosts.contains(host) else { return [] }
+        return await cookieStore.allCookies().filter { Self.cookie($0, matches: url) }
+    }
+
+    // Keeps cookies a response set (Reddit rotates token_v2) in the shared profile.
+    private func keep(_ cookies: [HTTPCookie]) async {
+        for cookie in cookies { await cookieStore.setCookie(cookie) }
     }
 
     private func ensureLoaded() async throws {
@@ -278,7 +291,7 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
 
     private func nativeFetch(_ url: URL, post: YouTubePost? = nil) async throws -> (Int, String, String) {
         var request = URLRequest(url: url)
-        let cookies = await cookieStore.allCookies().filter { Self.cookie($0, matches: url) }
+        let cookies = await self.cookies(for: url)
         for (field, value) in HTTPCookie.requestHeaderFields(with: cookies) {
             request.setValue(value, forHTTPHeaderField: field)
         }
@@ -302,11 +315,10 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         NSLog("Royal fetch %d %@ -> %@ %@", http?.statusCode ?? 0, url.absoluteString,
               http?.url?.absoluteString ?? "", String(decoding: data.prefix(80), as: UTF8.self))
         #endif
-        // Keep refreshed session cookies (Reddit rotates token_v2) in the shared profile.
+        // Cookies set along the way are kept by RedirectGuard; these are the last response's,
+        // for the address it came from.
         if let http, let fields = http.allHeaderFields as? [String: String] {
-            for cookie in HTTPCookie.cookies(withResponseHeaderFields: fields, for: url) {
-                await cookieStore.setCookie(cookie)
-            }
+            await keep(HTTPCookie.cookies(withResponseHeaderFields: fields, for: http.url ?? url))
         }
         return (http?.statusCode ?? 0, String(decoding: data, as: UTF8.self), http?.url?.absoluteString ?? url.absoluteString)
     }
@@ -502,8 +514,6 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
 
     struct Page {
         let posts: [FeedPost]
-        // Where the next page starts, when the source has more.
-        let next: Int?
     }
 
     // NSFW posts and subreddits are always left out.
@@ -518,9 +528,8 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         return try JSONDecoder().decode([String].self, from: Data(json.utf8))
     }
 
-    func posts(_ key: FeedKey, offset: Int = 0, limit: Int = 100) async throws -> Page {
-        var arguments: [String: Any] = ["source": key.source.rawValue, "limit": limit,
-                                        "offset": offset, "subreddit": "",
+    func posts(_ key: FeedKey, limit: Int = 100) async throws -> Page {
+        var arguments: [String: Any] = ["source": key.source.rawValue, "limit": limit, "subreddit": "",
                                         "nsfw": Self.showsNSFW]
         switch key {
         case .reddit(let sort, let timeframe):
@@ -541,8 +550,8 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         guard !sourcesScript.isEmpty else { throw FeedError.failed("sources.js missing from app bundle") }
         let result = try await run(sourcesScript + """
             const fetchers = {
-              reddit: async () => ({ posts: await Royal.fetchReddit(limit, { sort, timeframe, subreddit, nsfw }), next: null }),
-              youtube: async () => ({ posts: await Royal.fetchYouTube(limit, { feed }), next: null }),
+              reddit: async () => ({ posts: await Royal.fetchReddit(limit, { sort, timeframe, subreddit, nsfw }) }),
+              youtube: async () => ({ posts: await Royal.fetchYouTube(limit, { feed }) }),
             };
             try {
               return JSON.stringify(await fetchers[source]());
@@ -553,7 +562,6 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
 
         struct Response: Decodable {
             let posts: [FeedPost]?
-            let next: Int?
             let error: String?
             let notLoggedIn: Bool?
         }
@@ -562,6 +570,33 @@ final class FeedSession: NSObject, WKNavigationDelegate, WKScriptMessageHandlerW
         if let error = response.error {
             throw response.notLoggedIn == true ? FeedError.notLoggedIn(error) : FeedError.failed(error)
         }
-        return Page(posts: response.posts ?? [], next: response.next)
+        return Page(posts: response.posts ?? [])
+    }
+}
+
+// URLSession follows redirects with the first request's headers, which would send its
+// login cookies and YouTube's signed Authorization header to wherever the redirect
+// points. This sends each hop the cookies for its own address instead (none outside
+// FeedSession.allowedHosts), drops Authorization once the host changes, and keeps the
+// cookies each redirect sets, which would otherwise be lost with no cookie storage.
+private final class RedirectGuard: NSObject, URLSessionTaskDelegate {
+    var cookies: ((URL) async -> [HTTPCookie])?
+    var keep: (([HTTPCookie]) async -> Void)?
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest) async -> URLRequest? {
+        if let from = response.url, let fields = response.allHeaderFields as? [String: String] {
+            let set = HTTPCookie.cookies(withResponseHeaderFields: fields, for: from)
+            if !set.isEmpty { await keep?(set) }
+        }
+        guard let url = request.url else { return nil }
+        var next = request
+        next.setValue(nil, forHTTPHeaderField: "Cookie")
+        if url.host != response.url?.host { next.setValue(nil, forHTTPHeaderField: "Authorization") }
+        let cookies = await self.cookies?(url) ?? []
+        for (field, value) in HTTPCookie.requestHeaderFields(with: cookies) {
+            next.setValue(value, forHTTPHeaderField: field)
+        }
+        return next
     }
 }

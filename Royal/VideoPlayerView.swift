@@ -68,7 +68,7 @@ struct VideoPanel: View {
 // it falls back to the mobile watch page.
 struct YouTubePlayer: UIViewRepresentable {
     // Embeds without a referrer fail with error 153, so loads name the project's site.
-    private static let referrer = "https://tinykings.github.io/"
+    private static let referrer = "https://royal.tinyk.ing/"
 
     let videoId: String
 
@@ -85,13 +85,18 @@ struct YouTubePlayer: UIViewRepresentable {
         // YouTube's fullscreen button needs element fullscreen.
         config.preferences.isElementFullscreenEnabled = true
         // The embed page shows its error inside the player; report it so we can fall back.
+        // Embeds fail as they load, so the check stops once the video plays, or after 30 s.
         config.userContentController.addUserScript(WKUserScript(source: """
             if (location.pathname.startsWith("/embed/")) {
+              let checks = 0;
               const check = setInterval(() => {
                 const error = document.querySelector(".ytp-error");
+                const video = document.querySelector("video");
                 if (error) {
                   clearInterval(check);
                   window.webkit.messageHandlers.playerError.postMessage(error.innerText.slice(0, 200));
+                } else if ((video && video.currentTime > 0) || ++checks >= 60) {
+                  clearInterval(check);
                 }
               }, 500);
             }

@@ -5,7 +5,6 @@ enum Preference {
     static let redditLayout = "redditLayout"
     static let youtubeLayout = "youtubeLayout"
     static let redditOpen = "redditOpen"
-    static let rssOpen = "rssOpen"
     static let rssLayout = "rssLayout"
     // The RSS feeds, as JSON; unset until the list is first changed.
     static let rssFeeds = "rssFeeds"
@@ -79,15 +78,6 @@ enum OpenTarget: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
     var title: String { self == .link ? "Link" : "Comments" }
-}
-
-// What tapping an RSS post opens: the item's description from the feed, or its link.
-// The other is in its swipe and long-press menus.
-enum RSSOpenTarget: String, CaseIterable, Identifiable {
-    case description, link
-
-    var id: String { rawValue }
-    var title: String { self == .description ? "Description" : "Link" }
 }
 
 // Where tapping a YouTube video plays it.

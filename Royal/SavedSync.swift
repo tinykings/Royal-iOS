@@ -29,8 +29,10 @@ final class SavedSync: ObservableObject {
     // wasn't ready (throttled, offline, or the sign-in needed confirming). Royal keeps trying.
     @Published private(set) var pendingEnable = true
 
-    // Called whenever the saved list, the seen ids, or whether sync is active may have changed.
+    // Called when the saved list, or whether sync is active, may have changed.
     var onChange: (() -> Void)?
+    // Called when seen ids arrived from another device.
+    var onSeenChange: (() -> Void)?
     // This device's All feed seen ids and sources, offered when sync turns on.
     var localSeen: (() -> (ids: [String], sources: [String]))?
 
@@ -46,6 +48,11 @@ final class SavedSync: ObservableObject {
     // Opening the app or saving a post meanwhile waits too, so it can't extend a throttle.
     private var notBefore: Date?
     private var failures = 0
+    // What changed since onChange and onSeenChange were last called.
+    private var savedChanged = false
+    private var seenChanged = false
+    // A write of the library waiting to happen; see persist().
+    private var writeTask: Task<Void, Never>?
 
     static var containerIdentifier: String? {
         guard let value = Bundle.main.object(forInfoDictionaryKey: "RoyalCloudKitContainer") as? String,
@@ -117,7 +124,9 @@ final class SavedSync: ObservableObject {
             verifiedAccount = true
             if let data = try? JSONEncoder().encode(new) { UserDefaults.standard.set(data, forKey: Self.settingsKey) }
             pendingEnable = false
-            persist()
+            savedChanged = true
+            seenChanged = true
+            persist(now: true)
             // They're this account's now, kept with its pending intentions; what stays
             // here is only what's saved while no account is syncing.
             SavedPostsStorage.save([])
@@ -133,12 +142,15 @@ final class SavedSync: ObservableObject {
     // Another Apple Account signed in to iCloud: hide this one's library, keeping its
     // file and pending intentions for when it signs in again, and turn on for the new one.
     private func switchAccount() {
+        // Keep this account's latest state in its file before letting go of it.
+        writeNow()
         settings = nil
         verifiedAccount = false
         UserDefaults.standard.removeObject(forKey: Self.settingsKey)
         library = SavedSyncLibrary()
         pendingEnable = true
-        onChange?()
+        savedChanged = true
+        persist()
     }
 
     // MARK: Local changes
@@ -146,7 +158,17 @@ final class SavedSync: ObservableObject {
     func setSaved(_ post: FeedPost, _ isSaved: Bool, at date: Date = Date()) {
         guard isActive else { return }
         library.setSaved(post, isSaved, now: date)
-        persist()
+        savedChanged = true
+        persist(now: true)
+        scheduleSync()
+    }
+
+    // Several saves at once, as a Watch Later import makes, written once.
+    func save(_ items: [SavedPost]) {
+        guard isActive, !items.isEmpty else { return }
+        for item in items { library.setSaved(item.post, true, now: item.savedAt) }
+        savedChanged = true
+        persist(now: true)
         scheduleSync()
     }
 
@@ -154,14 +176,15 @@ final class SavedSync: ObservableObject {
     func clearWatchLater(postID: String) {
         guard isActive else { return }
         library.clearWatchLater(postID: postID)
-        persist()
+        persist(now: true)
         scheduleSync()
     }
 
     // Saves made on this device before sync turned on.
     func importLocal(_ saved: [SavedPost]) {
         guard isActive, library.importLocal(saved) else { return }
-        persist()
+        savedChanged = true
+        persist(now: true)
         scheduleSync()
     }
 
@@ -219,6 +242,7 @@ final class SavedSync: ObservableObject {
             }
         } while again && configurationMatches && notBefore == nil
         busy = false
+        writeNow()
         // The Apple Account changed during the sync.
         if pendingEnable && !isOn { await attemptEnable() }
     }
@@ -329,6 +353,7 @@ final class SavedSync: ObservableObject {
                     guard deletion.recordID.zoneID == Self.zoneID,
                           let postID = SavedSyncCodec.postID(fromRecordName: deletion.recordID.recordName) else { continue }
                     library.applyRemoteDeletion(postID: postID)
+                    savedChanged = true
                 }
                 library.changeToken = try? NSKeyedArchiver.archivedData(withRootObject: changes.changeToken, requiringSecureCoding: true)
                 persist()
@@ -352,6 +377,7 @@ final class SavedSync: ObservableObject {
                 ids: record["ids"] as? String, sources: record["sources"] as? String,
                 schemaVersion: (record["schemaVersion"] as? NSNumber)?.intValue)
             library.applyRemoteSeen(ids: seen?.ids, sources: seen?.sources, systemFields: Self.archive(record))
+            if seen != nil { seenChanged = true }
             return
         }
         guard record.recordType == SavedSyncCodec.recordType, record.recordID.zoneID == Self.zoneID,
@@ -362,6 +388,7 @@ final class SavedSync: ObservableObject {
             isSaved: (record["isSaved"] as? NSNumber)?.intValue,
             schemaVersion: (record["schemaVersion"] as? NSNumber)?.intValue)
         library.applyRemote(postID: postID, save: save, systemFields: Self.archive(record))
+        if save != nil { savedChanged = true }
     }
 
     // The record to write: the last known revision when there is one, so the write is
@@ -402,12 +429,38 @@ final class SavedSync: ObservableObject {
 
     // MARK: Storage
 
-    private func persist() {
-        if let settings, let data = try? JSONEncoder().encode(library) {
-            try? FileManager.default.createDirectory(at: .applicationSupportDirectory, withIntermediateDirectories: true)
-            try? data.write(to: Self.libraryURL(settings), options: .atomic)
+    // Stores the library and tells FeedStore what changed. A sync changes the library many
+    // times over (each page pulled, each batch pushed), and the library holds every saved
+    // post, so those writes wait a moment and go out together; the end of a sync and the app
+    // leaving the screen write at once. The person's own changes (`now`) are written at once.
+    private func persist(now: Bool = false) {
+        if now { writeNow() } else { scheduleWrite() }
+        if savedChanged {
+            savedChanged = false
+            onChange?()
         }
-        onChange?()
+        if seenChanged {
+            seenChanged = false
+            onSeenChange?()
+        }
+    }
+
+    private func scheduleWrite() {
+        guard writeTask == nil else { return }
+        writeTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            self?.writeNow()
+        }
+    }
+
+    // Writes any change to the library now.
+    func writeNow() {
+        writeTask?.cancel()
+        writeTask = nil
+        guard let settings, let data = try? JSONEncoder().encode(library) else { return }
+        try? FileManager.default.createDirectory(at: .applicationSupportDirectory, withIntermediateDirectories: true)
+        try? data.write(to: Self.libraryURL(settings), options: .atomic)
     }
 
     // One library per container, environment, and Apple Account, so another account's

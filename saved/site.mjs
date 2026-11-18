@@ -1,7 +1,8 @@
 // Royal Saved: the website's storage, Apple sign-in and sync, without the page.
 // The CloudKit client, library and sync rules are in shared/ and follow
-// docs/sync-schema.md, so saves merge exactly as they do on iOS. This site only ever reads and writes saved posts: seen and All records are filtered
-// out before they reach the library, so it can never push them.
+// docs/sync-schema.md, so saves merge exactly as they do on iOS. This site only ever reads
+// and writes saved posts: other records are filtered out before they reach the library,
+// so it can never push them.
 import { CloudKitClient, CloudKitError, ROYAL_CLOUDKIT, appleSignInURL, callbackToken, describeCloudKitError } from "./shared/cloudkit.mjs";
 import { accountLibraryKey, createLibrary, LIBRARY_KEY, SYNC_SETTINGS_KEY } from "./shared/store.mjs";
 import { startSync } from "./shared/sync.mjs";
@@ -89,7 +90,6 @@ export function createSite({ storage, pending, locks, fetcher, config = SITE_CLO
   let onLocalChange = () => {};
   const library = createLibrary({
     storage: store, now,
-    fetchFeed: async () => { throw new Error("Royal Saved doesn't fetch feeds."); },
     onChange: () => onLocalChange(),
   });
   const getToken = async () => (await store.get(TOKEN_KEY))[TOKEN_KEY] ?? null;

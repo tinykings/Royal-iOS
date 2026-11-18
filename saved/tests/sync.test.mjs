@@ -20,17 +20,16 @@ function memoryStorage() {
 }
 
 // One browser: its own storage, feed results, clock, and CloudKit session.
-function device(server, { token, feeds = {} } = {}) {
+function device(server, { token } = {}) {
   const storage = memoryStorage();
   let clock = 1_000_000;
   const session = { token };
   const library = createLibrary({
     storage, now: () => (clock += 1000),
-    fetchFeed: async ({ source }) => ({ state: "ok", posts: feeds[source] ?? [] }),
   });
   const api = new CloudKitClient(CONFIG, { fetcher: server.fetch, getToken: async () => session.token, setToken: async value => { session.token = value; } });
   return {
-    storage, library, api, session, feeds,
+    storage, library, api, session,
     async enable() {
       const account = await api.currentUser();
       await library.useSync({ account, container: CONFIG.container, environment: CONFIG.environment }, startSync);
@@ -89,29 +88,16 @@ test("saves and unsaves sync both ways; the last accepted intention wins a confl
   assert.deepEqual(decodeRecord(record).entry.post.id, "x");
 });
 
-test("All refreshes replace the snapshot; a pending Mark all read applies on top of the newer one", async () => {
+test("records other than saved posts are left alone", async () => {
   const server = fakeCloudKit();
-  server.signIn("a", "_u"); server.signIn("b", "_u");
-  const a = device(server, { token: "a", feeds: { reddit: [post("reddit", "r1")], hn: [post("hn", "h1")] } });
-  const b = device(server, { token: "b", feeds: { hn: [post("hn", "other")] } });
-  await a.enable(); await b.enable();
-  await a.library.refreshAll(); await a.sync(); await b.sync();
-  let view = await b.library.view();
-  assert.deepEqual(view.all.new.map(p => p.id), ["r1", "h1"]);
-  assert.equal(view.all.refreshedAt, (await a.library.view()).all.refreshedAt);
-  // A refreshes again (r2 arrives) while B, offline, marks all read.
-  a.feeds.reddit = [post("reddit", "r2"), post("reddit", "r1")];
-  await a.library.refreshAll(); await a.sync();
-  await b.library.markAllRead();
-  await b.sync();
-  view = await b.library.view();
-  assert.deepEqual(view.all.new.map(p => p.id), [], "B's mark read covers A's newer snapshot");
-  assert.deepEqual(view.all.seen.map(p => p.id).sort(), ["h1", "r1", "r2"]);
+  server.signIn("a", "_u");
+  const a = device(server, { token: "a" });
+  await a.enable();
+  const seen = { recordName: "seen", recordType: "RoyalSeen", fields: { ids: { value: '["x"]', type: "STRING" }, sources: { value: '["rss"]', type: "STRING" }, schemaVersion: { value: 1, type: "INT64" } } };
+  assert.equal(decodeRecord(seen), null);
+  await a.library.setSaved(post("hn", "x"), true);
   await a.sync();
-  assert.deepEqual((await a.library.view()).all.new, []);
-  // Seen merges by union: B's local-only refresh ids are kept too.
-  const seen = JSON.parse(server.records("_u").find(r => r.recordName === "seen").fields.ids.value);
-  assert.ok(["r1", "h1", "r2"].every(id => seen.includes(id)));
+  assert.deepEqual(server.records("_u").map(r => r.recordName), ["saved.x"]);
 });
 
 test("changes made offline stay pending until a later sync", async () => {

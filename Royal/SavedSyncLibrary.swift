@@ -290,7 +290,7 @@ enum SavedSyncCodec {
                         score: post.score, comments: post.comments, created: post.created,
                         image: httpURL(post.image), imageAspect: post.imageAspect, videoId: post.videoId,
                         published: post.published, publishedAt: post.publishedAt, nsfw: post.nsfw,
-                        summary: post.summary, watchLater: post.watchLater == true ? true : nil)
+                        channelId: post.channelId, watchLater: post.watchLater == true ? true : nil)
     }
 
     static func encodePost(_ post: FeedPost) -> String {

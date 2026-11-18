@@ -3,7 +3,7 @@
 Status: in use. iOS (`Royal/SavedSyncLibrary.swift`, `Royal/SavedSync.swift`,
 always on, with the Apple Account signed in to iCloud) implements **`RoyalSavedPost` and
 `RoyalSeen`** and ignores `RoyalAllSnapshot`. Royal Saved (`saved/shared/sync.mjs`) reads and
-writes only `RoyalSavedPost`. `RoyalAllSnapshot` was written by the retired desktop
+writes only `RoyalSavedPost`, keeping every post key iOS uses (including `channelId` and `watchLater`). `RoyalAllSnapshot` was written by the retired desktop
 extension; no current client writes it.
 For Production the record types below must be created in Development and
 deployed (Production never creates them). Every client must read and write
@@ -38,7 +38,7 @@ with a higher version rather than misreading or overwriting them.
 |---|---|
 | recordName | `saved.<postID>`, e.g. `saved.t3_abc123`, `saved.hn_42`, `saved.yt_dQw4w9WgXcQ` |
 | `postID` | STRING, the `FeedPost.id` |
-| `post` | STRING, JSON of the normalized post (`sources.js` / `FeedPost` keys). `source` is `reddit`, `rss` or `youtube`; `hn` (Hacker News, which RSS replaced) still appears in older saves and means `rss`. RSS posts may carry `summary`, the item's HTML description (at most 20,000 characters), which iOS shows with scripts off. YouTube posts iOS imported from the account's Watch Later playlist carry `watchLater: true`; clients keep it on the tombstone when unsaving, since iOS takes an unsaved video with it out of the playlist, and doesn't import it again, then drops it from the tombstone once YouTube confirms the video is out |
+| `post` | STRING, JSON of the normalized post (`sources.js` / `FeedPost` keys). `source` is `reddit`, `rss` or `youtube`; `hn` (Hacker News, which RSS replaced) still appears in older saves and means `rss`. Older RSS saves may carry `summary`, the item's HTML description, which no client uses any more. YouTube posts iOS imported from the account's Watch Later playlist carry `watchLater: true`; clients keep it on the tombstone when unsaving, since iOS takes an unsaved video with it out of the playlist, and doesn't import it again, then drops it from the tombstone once YouTube confirms the video is out |
 | `savedAt` | STRING, ISO 8601 UTC, time of the last save **or** unsave |
 | `isSaved` | INT64, `1` saved, `0` unsaved (tombstone) |
 | `schemaVersion` | INT64 |

@@ -1,18 +1,16 @@
 // Stored library state. Each Apple Account that syncs gets its own library key, so
 // switching accounts never shows (or pushes) another account's data or pending
 // changes; without sync, the local library is used. All updates are serialized,
-// so overlapping messages or a refresh in flight can't lose changes. Fetching
-// happens outside the lock.
-import { ALL_SOURCES, applyAllRefresh, emptyState, markAllRead, savedPosts, setSaved, splitByRefresh } from "./library.mjs";
+// so overlapping changes and a sync in flight can't lose one another.
+import { emptyState, savedPosts, setSaved } from "./library.mjs";
 import { markDirty, pendingCount } from "./sync.mjs";
 
 export const LIBRARY_KEY = "royalLibrary";
 export const SYNC_SETTINGS_KEY = "royalSyncSettings";
 export const accountLibraryKey = ({ environment, container, account }) => `${LIBRARY_KEY}:${environment}:${container}:${account}`;
 
-export function createLibrary({ storage, fetchFeed, now = () => Date.now(), onChange = () => {} }) {
+export function createLibrary({ storage, now = () => Date.now(), onChange = () => {} }) {
   let queue = Promise.resolve();
-  let refreshing = null;
 
   const serialized = task => {
     const run = queue.then(task);
@@ -47,20 +45,12 @@ export function createLibrary({ storage, fetchFeed, now = () => Date.now(), onCh
     return next;
   };
 
-  const view = (state, syncSettings) => {
-    const split = splitByRefresh(state);
-    return {
-      all: {
-        new: split.new, seen: split.seen, errors: state.all.errors,
-        refreshedAt: state.all.refreshedAt, previousRefresh: state.all.previousRefresh,
-        hasMarkedRead: state.hasMarkedRead,
-      },
-      saved: savedPosts(state),
-      sync: syncSettings && state.sync
-        ? { enabled: true, environment: syncSettings.environment, pending: pendingCount(state), lastSync: state.sync.lastSync }
-        : { enabled: false },
-    };
-  };
+  const view = (state, syncSettings) => ({
+    saved: savedPosts(state),
+    sync: syncSettings && state.sync
+      ? { enabled: true, environment: syncSettings.environment, pending: pendingCount(state), lastSync: state.sync.lastSync }
+      : { enabled: false },
+  });
   const currentView = async () => {
     const syncSettings = await settings();
     return view(await update(state => state), syncSettings);
@@ -69,19 +59,6 @@ export function createLibrary({ storage, fetchFeed, now = () => Date.now(), onCh
   return {
     settings,
     view: currentView,
-    // Concurrent refresh requests share one fetch.
-    refreshAll() {
-      refreshing ??= (async () => {
-        try {
-          const results = Object.fromEntries(await Promise.all(ALL_SOURCES.map(async ({ source, options }) => [source, await fetchFeed({ source, options })])));
-          const at = now();
-          await userChange(state => applyAllRefresh(state, results, at), { refresh: true });
-          return currentView();
-        } finally { refreshing = null; }
-      })();
-      return refreshing;
-    },
-    async markAllRead() { await userChange(state => markAllRead(state, now()), { markRead: true }); return currentView(); },
     async setSaved(post, saved) {
       const postID = post?.id;
       await userChange(state => setSaved(state, post, Boolean(saved), new Date(now())), { saved: postID });

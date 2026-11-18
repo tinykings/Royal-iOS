@@ -58,6 +58,9 @@ struct ContentView: View {
             if phase == .active {
                 store.savedSync.scheduleSync(after: 0)
                 Task { await store.retryWatchLaterRemovals() }
+            } else if phase == .background {
+                // The sync library's routine writes wait a moment; don't leave one waiting.
+                store.savedSync.writeNow()
             }
         }
         .tint(.royalAccent)

@@ -61,7 +61,7 @@ test("signing in shows the phone's saved posts, newest first, without seen or Al
   assert.equal(result.signedIn, true);
   assert.deepEqual(result.saved.map(p => p.id), ["yt_new", "t3_old"]);
   const stored = [...b.storage.values.entries()].find(([key]) => key.startsWith("royalLibrary:"));
-  assert.deepEqual(JSON.parse(stored[1]).seen, []);
+  assert.equal(JSON.parse(stored[1]).seen, undefined);
   assert.equal(b.storage.values.get(TOKEN_KEY), '"web"');
 });
 

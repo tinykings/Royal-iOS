@@ -13,7 +13,6 @@ struct SettingsView: View {
     @AppStorage(Preference.listWhilePlaying) private var listWhilePlaying = true
     @AppStorage(Preference.redditLayout) private var redditLayout = FeedLayout.cards
     @AppStorage(Preference.redditOpen) private var redditOpen = OpenTarget.link
-    @AppStorage(Preference.rssOpen) private var rssOpen = RSSOpenTarget.description
     @AppStorage(Preference.rssLayout) private var rssLayout = FeedLayout.cards
     @AppStorage(Preference.feedTextSize) private var feedTextSize = FeedTextSize.standard
 
@@ -161,13 +160,10 @@ struct SettingsView: View {
                         Picker("View", selection: $rssLayout) {
                             ForEach(FeedLayout.allCases) { Text($0.title).tag($0) }
                         }
-                        Picker("Tapping a post opens", selection: $rssOpen) {
-                            ForEach(RSSOpenTarget.allCases) { Text($0.title).tag($0) }
-                        }
                     } header: {
                         Text("RSS")
                     } footer: {
-                        Text("Add, remove, import or export feeds under Feeds. Swipe right on a post, or press and hold it, to open the other.")
+                        Text("Add, remove, import or export feeds under Feeds. Tapping a post opens its link; for feeds with comment pages, like Hacker News, swipe right or press and hold to open the comments.")
                     }
                 }
                 SyncSection(sync: store.savedSync)

@@ -16,9 +16,6 @@ struct FeedListView<Trailing: View>: View {
     @AppStorage(Preference.youtubeLayout) private var youtubeLayout = FeedLayout.cards
     @AppStorage(Preference.rssLayout) private var rssLayout = FeedLayout.cards
     @AppStorage(Preference.redditOpen) private var redditOpen = OpenTarget.link
-    @AppStorage(Preference.rssOpen) private var rssOpen = RSSOpenTarget.description
-    // The RSS description showing.
-    @State private var descriptionPost: FeedPost?
     @AppStorage(Preference.youtubePlayback) private var youtubePlayback = VideoPlayback.inApp
     @AppStorage(Preference.listWhilePlaying) private var listWhilePlaying = true
     let title: String
@@ -39,7 +36,7 @@ struct FeedListView<Trailing: View>: View {
 
     var body: some View {
         // NSFW posts are left out, saved ones and ones cached from before included.
-        let posts = (savedOnly ? store.savedPosts : store.posts(keys)).filter { $0.nsfw != true }
+        let posts = savedOnly ? store.savedPosts.filter { $0.nsfw != true } : store.shownPosts(keys)
         // The header slides away while scrolling down, leaving more room for the feed,
         // and comes back on scrolling up, so its controls stay in reach during a video.
         let headerHidden = scrolledAway
@@ -56,7 +53,7 @@ struct FeedListView<Trailing: View>: View {
         let offered = tab == .all && !savedOnly && !store.sourcesChosen
             ? FeedSource.allCases.filter { !store.isEnabled($0) } : []
         // New posts first, then a line at the previous refresh and everything from before it.
-        let split = isAll ? store.splitByRefresh(posts) : nil
+        let split = isAll ? store.shownSplit(keys) : nil
         NavigationStack {
             ScrollViewReader { proxy in
                 List {
@@ -132,20 +129,14 @@ struct FeedListView<Trailing: View>: View {
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
                     }
-                    // Reaching any of the last rows fetches the next page.
-                    let shown = split.map { $0.new + $0.seen } ?? posts
-                    let endIDs = Set(shown.suffix(8).map(\.id))
                     if let split {
-                        ForEach(split.new) { postRow($0, nearEnd: endIDs.contains($0.id)) }
+                        ForEach(split.new) { postRow($0) }
                         if !split.new.isEmpty && !split.seen.isEmpty, let previous = store.previousRefresh {
                             RefreshDivider(prefix: "Previous refresh", date: previous)
                         }
-                        ForEach(split.seen) { postRow($0, nearEnd: endIDs.contains($0.id)) }
+                        ForEach(split.seen) { postRow($0) }
                     } else {
-                        ForEach(posts) { postRow($0, nearEnd: endIDs.contains($0.id)) }
-                    }
-                    if !savedOnly && !posts.isEmpty {
-                        moreStatus
+                        ForEach(posts) { postRow($0) }
                     }
                 }
                 .listStyle(.plain)
@@ -250,9 +241,6 @@ struct FeedListView<Trailing: View>: View {
                 .task(id: keys) { await store.load(keys) }
                 // Videos unsaved from Watch Later that didn't come out of the playlist yet.
                 .task(id: savedOnly) { if savedOnly { await store.retryWatchLaterRemovals() } }
-                .sheet(item: $descriptionPost) { post in
-                    RSSDescriptionView(post: post)
-                }
                 .fullScreenCover(item: $browserURL) { item in
                     AppBrowser(url: item.url)
                         // Clear so the feed shows behind while swiping the browser away.
@@ -317,32 +305,7 @@ struct FeedListView<Trailing: View>: View {
         }
     }
 
-    // At the end of the list: a spinner while the next page loads, or a retry button
-    // when it failed.
-    @ViewBuilder
-    private var moreStatus: some View {
-        let states = keys.map { store.state($0) }
-        if states.contains(where: \.loadingMore) {
-            ProgressView()
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-        } else if states.contains(where: { $0.moreError != nil }) {
-            Button {
-                Task { await store.loadMore(keys, retry: true) }
-            } label: {
-                Label("Couldn't load more. Try Again", systemImage: "arrow.clockwise")
-                    .font(.footnote)
-                    .frame(maxWidth: .infinity)
-            }
-            .padding(.vertical, 8)
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
-        }
-    }
-
-    private func postRow(_ post: FeedPost, nearEnd: Bool) -> some View {
+    private func postRow(_ post: FeedPost) -> some View {
         let isSaved = store.isSaved(post)
         return PostRow(post: post, showsSource: showsSource, showsDate: !savedOnly, layout: layout(for: post), saved: isSaved,
                        fromWatchLater: isSaved && store.isFromWatchLater(post), playing: store.playingVideo?.id == post.id)
@@ -352,9 +315,6 @@ struct FeedListView<Trailing: View>: View {
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
             .onTapGesture { open(post) }
-            .onAppear {
-                if nearEnd && !savedOnly { Task { await store.loadMore(keys) } }
-            }
             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                 saveButton(for: post, isSaved: isSaved)
                     .tint(.pink)
@@ -408,16 +368,13 @@ struct FeedListView<Trailing: View>: View {
     }
 
     // The open options a tap doesn't use: the other of link/comments, or for a video,
-    // its YouTube page in a Safari view without leaving the app. RSS offers the other
-    // of description/link.
+    // its YouTube page in a Safari view without leaving the app. RSS items open their
+    // link; those with a comments page of their own (Hacker News) offer it here.
     @ViewBuilder
     private func alternateActions(for post: FeedPost) -> some View {
         if post.source == .rss {
-            if rssOpen == .link {
-                Button { descriptionPost = post } label: { Label("Open description", systemImage: "doc.text") }
-                    .tint(.blue)
-            } else {
-                Button { openInBrowser(post.url) } label: { Label("Open link", systemImage: "link") }
+            if post.commentsUrl != post.url {
+                Button { openInBrowser(post.commentsUrl) } label: { Label("Open comments", systemImage: "bubble.left.and.bubble.right") }
                     .tint(.blue)
             }
         } else if post.source == .youtube {
@@ -440,13 +397,13 @@ struct FeedListView<Trailing: View>: View {
         redditOpen
     }
 
-    // Videos play where Settings says; Reddit opens its link or comments, and RSS its
-    // description or link, per Settings.
+    // Videos play where Settings says; Reddit opens its link or comments, per Settings,
+    // and RSS its link.
     private func open(_ post: FeedPost) {
         if post.source == .youtube {
             play(post, with: youtubePlayback)
         } else if post.source == .rss {
-            if rssOpen == .description { descriptionPost = post } else { openInBrowser(post.url) }
+            openInBrowser(post.url)
         } else {
             openInBrowser(openTarget(for: post) == .comments ? post.commentsUrl : post.url)
         }

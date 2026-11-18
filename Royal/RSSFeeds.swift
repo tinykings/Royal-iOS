@@ -1,7 +1,6 @@
 import CryptoKit
 import SwiftUI
 import UniformTypeIdentifiers
-import WebKit
 
 // A feed on the RSS tab, added in Settings or from an OPML file.
 struct RSSFeed: Codable, Hashable, Identifiable {
@@ -135,11 +134,23 @@ enum RSSFetcher {
         return try await Task.detached { try parse(data, feedURL: url) }.value
     }
 
+    // Feeds and the pages linking them are well under this; anything bigger isn't read
+    // into memory.
+    static let maxDownload = 10_000_000
+
     private static func get(_ url: URL) async throws -> (data: Data, url: URL, status: Int) {
         var request = URLRequest(url: url)
         request.setValue("application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5",
                          forHTTPHeaderField: "Accept")
-        let (data, response) = try await session.data(for: request)
+        let (bytes, response) = try await session.bytes(for: request)
+        let tooBig = FeedError.failed("The feed is too large (over \(maxDownload / 1_000_000) MB).")
+        if response.expectedContentLength > maxDownload { throw tooBig }
+        var data = Data()
+        if response.expectedContentLength > 0 { data.reserveCapacity(Int(response.expectedContentLength)) }
+        for try await byte in bytes {
+            data.append(byte)
+            if data.count > maxDownload { throw tooBig }
+        }
         let http = response as? HTTPURLResponse
         return (data, http?.url ?? url, http?.statusCode ?? 0)
     }
@@ -252,9 +263,6 @@ enum RSSFetcher {
         return Result(title: reader.title, posts: posts)
     }
 
-    // Descriptions can be whole articles; this keeps the cache and synced saves small.
-    private static let summaryLimit = 20_000
-
     private static func post(from item: FeedReader.Item, feedURL: URL, label: String) -> FeedPost? {
         let guidLink = item.guid.flatMap(httpURL)
         guard let url = item.link.flatMap(httpURL) ?? guidLink ?? item.comments.flatMap(httpURL) else { return nil }
@@ -280,8 +288,7 @@ enum RSSFetcher {
         return FeedPost(source: .rss, id: id, title: shownTitle, url: url, commentsUrl: comments ?? url, label: label,
                         score: score, comments: commentCount, created: item.date.flatMap(date)?.timeIntervalSince1970,
                         image: image?.url, imageAspect: image?.aspect, videoId: nil, published: nil,
-                        publishedAt: nil, nsfw: nil,
-                        summary: summary.flatMap { $0.isEmpty ? nil : String($0.prefix(summaryLimit)) })
+                        publishedAt: nil, nsfw: nil)
     }
 
     private static func httpURL(_ string: String) -> String? {
@@ -384,13 +391,19 @@ enum RSSFetcher {
         return formatter
     }
 
-    private static func date(_ string: String) -> Date? {
+    // Made once: feeds can have hundreds of items, each with a date. Date formatters are
+    // safe to share between the feeds parsing at once.
+    private static let iso = ISO8601DateFormatter()
+    private static let isoFractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    static func date(_ string: String) -> Date? {
         let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
-        let iso = ISO8601DateFormatter()
-        if let date = iso.date(from: trimmed) { return date }
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = iso.date(from: trimmed) { return date }
-        return rfc822.lazy.compactMap { $0.date(from: trimmed) }.first
+        return iso.date(from: trimmed) ?? isoFractional.date(from: trimmed)
+            ?? rfc822.lazy.compactMap { $0.date(from: trimmed) }.first
     }
 }
 
@@ -417,13 +430,28 @@ private final class FeedReader: NSObject, XMLParserDelegate {
     private var current: Item?
     private var path: [String] = []
     private var text = ""
+    // Inside an Atom `type="xhtml"` content or summary, whose markup arrives as elements
+    // rather than text: the depth of `path` below which elements are collected back into
+    // HTML, so the item keeps them (for its first picture and its text).
+    private var xhtmlDepth: Int?
 
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
                 qualifiedName qName: String?, attributes: [String: String] = [:]) {
         let name = elementName.lowercased()
+        if let xhtmlDepth, path.count >= xhtmlDepth {
+            path.append(name)
+            let rendered = attributes.sorted { $0.key < $1.key }
+                .map { " \(Self.localName($0.key))=\"\(Self.escape($0.value, quotes: true))\"" }.joined()
+            text += "<\(Self.localName(elementName))\(rendered)>"
+            return
+        }
         if path.isEmpty { isFeed = ["rss", "feed", "rdf:rdf"].contains(name) }
         path.append(name)
         text = ""
+        if current != nil, name == "content" || name == "summary", attributes["type"]?.lowercased() == "xhtml" {
+            xhtmlDepth = path.count
+            return
+        }
         if name == "item" || name == "entry" {
             current = Item()
             return
@@ -459,7 +487,18 @@ private final class FeedReader: NSObject, XMLParserDelegate {
     }
 
     func parser(_ parser: XMLParser, foundCharacters string: String) {
-        text += string
+        text += xhtmlDepth == nil ? string : Self.escape(string, quotes: false)
+    }
+
+    // An element or attribute name without its namespace prefix: xhtml:img is img.
+    private static func localName(_ name: String) -> String {
+        name.split(separator: ":").last.map(String.init) ?? name
+    }
+
+    private static func escape(_ string: String, quotes: Bool) -> String {
+        let escaped = string.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+        return quotes ? escaped.replacingOccurrences(of: "\"", with: "&quot;") : escaped
     }
 
     func parser(_ parser: XMLParser, foundCDATA CDATABlock: Data) {
@@ -470,6 +509,14 @@ private final class FeedReader: NSObject, XMLParserDelegate {
                 qualifiedName qName: String?) {
         let name = elementName.lowercased()
         path.removeLast()
+        if let depth = xhtmlDepth {
+            if path.count >= depth {
+                text += "</\(Self.localName(elementName))>"
+                return
+            }
+            // The content or summary itself closes.
+            xhtmlDepth = nil
+        }
         let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
         text = ""
         guard var item = current else {
@@ -782,113 +829,6 @@ struct RSSFeedsView: View {
             }
         } catch {
             notice = error.localizedDescription
-        }
-    }
-}
-
-// MARK: Description
-
-// An RSS item's description, from its feed. Feeds' HTML shows without scripts, and
-// its links open in a Safari view.
-struct RSSDescriptionView: View {
-    let post: FeedPost
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            DescriptionWebView(html: Self.page(post), baseURL: URL(string: post.url))
-                .ignoresSafeArea(edges: .bottom)
-                .navigationTitle(post.label)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { dismiss() }
-                    }
-                    ToolbarItemGroup(placement: .bottomBar) {
-                        Button {
-                            if let url = URL(string: post.url) { SafariView.present(url) }
-                        } label: {
-                            Label("Open Link", systemImage: "link")
-                                .labelStyle(.titleAndIcon)
-                        }
-                        Spacer()
-                        if post.commentsUrl != post.url {
-                            Button {
-                                if let url = URL(string: post.commentsUrl) { SafariView.present(url) }
-                            } label: {
-                                Label("Comments", systemImage: "bubble.left.and.bubble.right")
-                                    .labelStyle(.titleAndIcon)
-                            }
-                        }
-                    }
-                }
-        }
-    }
-
-    private static func page(_ post: FeedPost) -> String {
-        func escape(_ string: String) -> String {
-            string.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
-                .replacingOccurrences(of: ">", with: "&gt;")
-        }
-        let date = post.created.map {
-            "<p class=meta>\(escape(Date(timeIntervalSince1970: $0).formatted(date: .abbreviated, time: .shortened)))</p>"
-        } ?? ""
-        let body = post.summary ?? "<p class=meta>This post has no description.</p>"
-        return """
-            <!doctype html>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; media-src https:; style-src 'unsafe-inline'">
-            <style>
-            :root { color-scheme: light dark; }
-            body { font: -apple-system-body; margin: 16px 16px 40px; overflow-wrap: anywhere; line-height: 1.45; }
-            h1 { font: -apple-system-title2; font-weight: 700; margin: 0 0 4px; }
-            .meta { color: gray; font: -apple-system-footnote; margin: 0 0 16px; }
-            img, video { max-width: 100%; height: auto; }
-            pre { white-space: pre-wrap; }
-            a { color: #b8860b; }
-            </style>
-            <h1>\(escape(post.title))</h1>
-            \(date)
-            \(body)
-            """
-    }
-}
-
-private struct DescriptionWebView: UIViewRepresentable {
-    let html: String
-    let baseURL: URL?
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        // Feeds' pages get no cookies from the app's logins.
-        config.websiteDataStore = .nonPersistent()
-        config.defaultWebpagePreferences.allowsContentJavaScript = false
-        let webView = WKWebView(frame: .zero, configuration: config)
-        webView.navigationDelegate = context.coordinator
-        webView.loadHTMLString(html, baseURL: baseURL)
-        return webView
-    }
-
-    func updateUIView(_ webView: WKWebView, context: Context) {}
-
-    final class Coordinator: NSObject, WKNavigationDelegate {
-        // Only the description itself loads here; anything after it is a link to open.
-        private var loaded = false
-
-        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
-                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            guard !loaded, navigationAction.navigationType == .other else {
-                if let url = navigationAction.request.url, ["http", "https"].contains(url.scheme ?? "") {
-                    Task { @MainActor in SafariView.present(url) }
-                }
-                decisionHandler(.cancel)
-                return
-            }
-            loaded = true
-            decisionHandler(.allow)
         }
     }
 }
