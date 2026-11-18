@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fetchReddit, fetchSubscribedSubreddits, NotLoggedInError } from "./sources.js";
+import { CONFIG, fetchReddit, fetchSubscribedSubreddits, NotLoggedInError } from "./sources.js";
 
 test("Reddit sort uses personalized Best and score-ranked Top with timeframe, and has no New", async () => {
   const originalFetch = globalThis.fetch;
@@ -136,6 +136,76 @@ test("A single subreddit uses its own listing, only sorts by Top, and isn't capp
     await assert.rejects(fetchReddit(100, { sort: "hot" }), /Invalid Reddit sort/);
     // Without a subreddit, the home listing keeps its cap.
     assert.equal((await fetchReddit(100, { sort: "top" })).length, 5);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// A stand-in for Reddit's home listings: Top in pages of `after`, and Best. `fail` names
+// requests ("top", "top:<after>", "best") to answer with an error.
+function mockHome({ top, best = [], fail = [] }) {
+  const requests = [];
+  const post = ([name, subreddit, score]) => ({ data: {
+    name, title: name, subreddit, score, created_utc: 1,
+    permalink: `/r/${subreddit}/comments/${name}`, url: `https://example.com/${name}`,
+  } });
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(url);
+    if (parsed.pathname.startsWith("/subreddits/mine/")) {
+      return { ok: true, json: async () => ({ data: { children: [{ data: { display_name: "test" } }], after: null } }) };
+    }
+    requests.push(parsed);
+    const after = parsed.searchParams.get("after");
+    const request = parsed.pathname === "/best.json" ? "best" : after ? `top:${after}` : "top";
+    if (fail.includes(request)) return { ok: false, status: 500 };
+    const page = request === "best" ? { posts: best } : top[after ?? ""];
+    return { ok: true, json: async () => ({ data: { children: page.posts.map(post), after: page.after ?? null } }) };
+  };
+  return requests;
+}
+
+test("Reddit mix reads on down Top, adds Best, and takes each subreddit's best post before any second", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = mockHome({
+    top: {
+      "": { posts: [["big1", "big", 900], ["big2", "big", 800], ["big3", "big", 700]], after: "p2" },
+      p2: { posts: [["big4", "big", 600], ["mid1", "mid", 90], ["big5", "big", 500]], after: "p3" },
+      p3: { posts: [["big6", "big", 400], ["mid2", "mid", 50]], after: null },
+    },
+    best: [["small1", "small", 7], ["mid1", "mid", 90], ["small2", "small", 3]],
+  });
+  try {
+    const posts = await fetchReddit(100, { sort: "mix", timeframe: "day" });
+    assert.deepEqual(posts.map((post) => post.id),
+      ["big1", "mid1", "small1", "big2", "mid2", "small2", "big3", "big4", "big5"]);
+    assert.deepEqual(requests.map((url) => `${url.pathname} ${url.searchParams.get("after") ?? ""}`).sort(),
+      ["/best.json ", "/top.json ", "/top.json p2", "/top.json p3"]);
+    assert.ok(requests.every((url) => url.pathname === "/best.json" || url.searchParams.get("t") === "day"));
+    // The limit cuts the spread list, so it's the busiest subreddit's extra posts that go.
+    assert.deepEqual((await fetchReddit(4, { sort: "mix" })).map((post) => post.id), ["big1", "mid1", "small1", "big2"]);
+    await assert.rejects(fetchReddit(100, { sort: "mix", subreddit: "swift" }), /Invalid Reddit sort/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Reddit mix stops at its page limit, and keeps what loaded when a later page or Best fails", async () => {
+  const originalFetch = globalThis.fetch;
+  const endless = (after) => ({ posts: [[`post${after}`, `sub${after}`, 10]], after: String(Number(after) + 1) });
+  const top = Object.fromEntries(["", "1", "2", "3", "4", "5"].map((after) => [after, endless(after || "0")]));
+  try {
+    let requests = mockHome({ top });
+    assert.equal((await fetchReddit(100, { sort: "mix" })).length, CONFIG.redditMixTopPages);
+    assert.equal(requests.filter((url) => url.pathname === "/top.json").length, CONFIG.redditMixTopPages);
+
+    requests = mockHome({ top, best: [["liked", "quiet", 2]], fail: ["top:2"] });
+    assert.deepEqual((await fetchReddit(100, { sort: "mix" })).map((post) => post.id), ["post0", "post1", "liked"]);
+
+    mockHome({ top, fail: ["best"] });
+    assert.equal((await fetchReddit(100, { sort: "mix" })).length, CONFIG.redditMixTopPages);
+
+    mockHome({ top, best: [["liked", "quiet", 2]], fail: ["top"] });
+    await assert.rejects(fetchReddit(100, { sort: "mix" }), /HTTP 500/);
   } finally {
     globalThis.fetch = originalFetch;
   }

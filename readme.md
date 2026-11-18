@@ -15,6 +15,7 @@ iOS app combining Reddit, RSS feeds, and your YouTube subscriptions in one feed.
 - Plays YouTube videos in-app.
 - **iCloud sync**: saved posts, and the posts the All feed has shown, sync through your private iCloud database (CloudKit) between your devices, and saved posts appear on [Royal Saved](saved/README.md) on the web ([format](docs/sync-schema.md)). It uses the Apple Account signed in to iCloud; until one is, saves stay on the device. The RSS feed list is backed up to iCloud key-value storage, so it returns on a new device or after reinstalling and follows changes made on your other devices (the most recent change wins).
 - Caps Reddit posts at five per subreddit, except when viewing a single subreddit; excludes pinned and NSFW posts.
+- The All feed's Reddit posts are a mix: today's Top read four pages down, together with Best, ordered so every subreddit's highest-scoring post comes before any subreddit's second. Top's first page alone is mostly the busiest subreddits, which left the quieter ones out. Best can bring in a post older than a day.
 - The All feed puts posts new since the previous refresh first, then a line with that refresh's time and the posts from before it. Feeds only refresh when pulled down; tap the current tab to jump to the top.
 
 ## Build
@@ -46,6 +47,7 @@ Edit `CONFIG` in `sources.js`:
 | `totalItems` | `100` | Maximum items per feed |
 | `redditTimeWindow` | `"day"` | Reddit Top window when none is given (the app always asks for `day`) |
 | `maxPerSubreddit` | `5` | Maximum posts selected per subreddit |
+| `redditMixTopPages` | `4` | Pages of 100 posts the All feed's Reddit mix reads from Top |
 
 The RSS feeds a new install starts with are `RSSFeed.defaults` in `Royal/RSSFeeds.swift`. The RSS tab shows the newest 100 items across all feeds.
 
