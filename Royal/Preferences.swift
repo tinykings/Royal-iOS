@@ -16,6 +16,8 @@ enum Preference {
     // Sources turned off in Settings, comma separated. Their tabs show a dot and
     // their posts leave the All feed.
     static let disabledSources = "disabledSources"
+    // Words whose posts are hidden, as a string array (BlockedWords).
+    static let blockedWords = "blockedWords"
 }
 
 // Text size for feed posts, a step on the Settings slider. Default follows the

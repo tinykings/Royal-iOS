@@ -98,6 +98,25 @@ final class FeedStore: ObservableObject {
                                   forKey: Preference.disabledSources)
     }
 
+    // Posts whose titles contain one of these are left out of the feeds.
+    @Published private(set) var blockedWords = BlockedWords.load() {
+        didSet {
+            blockedWords.save()
+            feedsVersion &+= 1
+        }
+    }
+
+    func addBlockedWord(_ word: String) {
+        guard let word = blockedWords.normalized(word) else { return }
+        blockedWords = BlockedWords(blockedWords.words + [word])
+    }
+
+    func removeBlockedWords(at offsets: IndexSet) {
+        var words = blockedWords.words
+        words.remove(atOffsets: offsets)
+        blockedWords = BlockedWords(words)
+    }
+
     init() {
         savedSync = SavedSync()
         indexSaved()
@@ -839,10 +858,10 @@ final class FeedStore: ObservableObject {
     private var shown: [[FeedKey]: Shown] = [:]
 
     // The feeds' posts as a list shows them: mixed, without NSFW posts (ones cached from
-    // before NSFW was left out included).
+    // before NSFW was left out included) or posts with blocked words in their titles.
     func shownPosts(_ keys: [FeedKey]) -> [FeedPost] {
         if let memo = shown[keys], memo.feedsVersion == feedsVersion { return memo.posts }
-        let list = posts(keys).filter { $0.nsfw != true }
+        let list = posts(keys).filter { $0.nsfw != true && !blockedWords.blocks($0.title) }
         shown[keys] = Shown(feedsVersion: feedsVersion, posts: list)
         return list
     }

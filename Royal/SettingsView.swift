@@ -92,6 +92,15 @@ struct SettingsView: View {
                 } footer: {
                     Text("A source turned off leaves the All feed, and its tab becomes a dot.")
                 }
+                Section {
+                    NavigationLink {
+                        BlockedWordsView()
+                    } label: {
+                        LabeledContent("Blocked Words", value: store.blockedWords.words.isEmpty ? "None" : "\(store.blockedWords.words.count)")
+                    }
+                } footer: {
+                    Text("Hides posts whose titles contain a blocked word.")
+                }
                 // Shown only while the source is on.
                 if store.isEnabled(.youtube) {
                     Section {
