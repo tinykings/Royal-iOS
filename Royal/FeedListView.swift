@@ -132,7 +132,10 @@ struct FeedListView<Trailing: View>: View {
                     if let split {
                         ForEach(split.new) { postRow($0) }
                         if !split.new.isEmpty && !split.seen.isEmpty, let previous = store.previousRefresh {
-                            RefreshDivider(prefix: "Previous refresh", date: previous)
+                            RefreshDivider(prefix: "Previous refresh", date: previous) {
+                                withAnimation { proxy.scrollTo(Self.topID, anchor: .top) }
+                                scrolledAway = false
+                            }
                         }
                         ForEach(split.seen) { postRow($0) }
                     } else {
@@ -1059,16 +1062,28 @@ struct PullIndicator: View {
 struct RefreshDivider: View {
     let prefix: String
     let date: Date
+    // Tapping the horse returns to the top of the feed.
+    var onReturnToTop: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 8) {
             // The horse from the old pull up, in gold, standing over the line.
-            Image("PullHorse")
-                .resizable()
-                .scaledToFit()
-                .colorMultiply(.royalAccent)
-                .frame(width: 64, height: 64 * 315 / 360)
-                .accessibilityHidden(true)
+            Button(action: onReturnToTop) {
+                VStack(spacing: 4) {
+                    Image("PullHorse")
+                        .resizable()
+                        .scaledToFit()
+                        .colorMultiply(.royalAccent)
+                        .frame(width: 64, height: 64 * 315 / 360)
+                    Text("Tap to return to top")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            // Plain, so only the horse and its caption take the tap, not the whole row.
+            .buttonStyle(.plain)
+            .accessibilityLabel("Return to top")
             HStack(spacing: 10) {
                 line
                 Text(label)
@@ -1082,7 +1097,6 @@ struct RefreshDivider: View {
         .listRowInsets(EdgeInsets(top: 5, leading: 20, bottom: 5, trailing: 20))
         .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
-        .accessibilityElement(children: .combine)
     }
 
     private var line: some View {
