@@ -348,7 +348,20 @@ struct FeedListView<Trailing: View>: View {
 
     private func saveButton(for post: FeedPost, isSaved: Bool) -> some View {
         Button {
-            withAnimation { store.toggleSaved(post) }
+            // Every visible row reads whether a post is saved, so this publishes to the
+            // whole list. Applying it while the swipe is still closing, inside withAnimation,
+            // reconfigures that lazy list and it corrects its scroll position onto the wrong
+            // row, usually the bottom. Apply the change once this action has returned, and
+            // keep the list itself out of the animation.
+            let saving = !isSaved
+            Task { @MainActor in
+                guard store.isSaved(post) != saving else { return }
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    store.toggleSaved(post)
+                }
+            }
         } label: {
             Label(isSaved ? "Unsave" : "Save", systemImage: isSaved ? "heart.slash" : "heart")
         }
